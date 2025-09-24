@@ -1,17 +1,46 @@
 // Importa el módulo Express
-const express = require('express');
+const express = require("express");
+const cors = require("cors");
+
+// Importa las rutas
+const authRoutes = require("./routes/auth");
 
 // Crea una instancia de la aplicación Express
 const app = express();
 
-// Define el puerto donde el servidor escuchará
-const port = 3000;
+// Configuración de CORS
+app.use(
+  cors({
+    origin: "*", // En producción, deberías especificar el origen exacto de tu frontend
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
-// Define una ruta para la página de inicio (ruta raíz)
-app.get('/', (req, res) => {
-  // Envía una respuesta al cliente
-  res.send('<h1>¡Hola desde mi primera app con Express!</h1>');
+// Middleware para procesar JSON
+app.use(express.json());
+
+// Define el puerto donde el servidor escuchará
+const port = process.env.PORT || 3000;
+
+// Rutas base
+app.get("/", (req, res) => {
+  res.send(`
+    <h1>API de Invenicum</h1>
+    <h2>Endpoints disponibles:</h2>
+    <ul>
+      <li><strong>POST /api/auth/login</strong> - Iniciar sesión</li>
+      <li><strong>POST /api/auth/register</strong> - Registrar nuevo usuario</li>
+      <li><strong>POST /api/auth/logout</strong> - Cerrar sesión</li>
+    </ul>
+    <p>Estado: API funcionando correctamente</p>
+    <p>Versión: 1.0.0</p>
+    <p>Timestamp: ${new Date().toISOString()}</p>
+  `);
 });
+
+// Usar las rutas de autenticación
+app.use("/api/" + process.env.API_VERSION + "/auth", authRoutes);
 
 // Inicia el servidor
 app.listen(port, () => {
