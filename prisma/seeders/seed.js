@@ -1,11 +1,12 @@
 require('dotenv').config({ path: '../.env' }); 
-const { PrismaClient } = require('../../src/generated/prisma');
+const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 
 const prisma = new PrismaClient();
 
 // npm run db:reset  - Si quieres resetear la base de datos y cargar los datos
 // npm run db:seed  - Si solo quieres cargar los datos
+// npx prisma migrate deploy - Si solo quieres aplicar migraciones sin cargar datos
 
 const defaultUsers = [
     {

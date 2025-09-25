@@ -24,6 +24,10 @@ app.use(express.json());
 // Define el puerto donde el servidor escuchará
 const port = process.env.PORT || 3000;
 
+// Usar las rutas
+app.use('/api/auth', authRoutes);
+app.use('/api', containerRoutes);
+
 // Rutas base
 app.get("/", (req, res) => {
   res.send(`
@@ -42,7 +46,7 @@ app.get("/", (req, res) => {
 
 // Usar las rutas de autenticación
 app.use("/api/" + process.env.API_VERSION + "/auth", authRoutes);
-app.use("/api/" + process.env.API_VERSION + "/containers", containerRoutes);
+app.use("/api/" + process.env.API_VERSION + "/", containerRoutes);
 
 // Inicia el servidor
 app.listen(port, () => {
