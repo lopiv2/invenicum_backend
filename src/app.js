@@ -4,6 +4,7 @@ const cors = require("cors");
 
 // Importa las rutas
 const authRoutes = require("./routes/auth");
+const containerRoutes = require("./routes/containers");
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -41,6 +42,7 @@ app.get("/", (req, res) => {
 
 // Usar las rutas de autenticación
 app.use("/api/" + process.env.API_VERSION + "/auth", authRoutes);
+app.use("/api/" + process.env.API_VERSION + "/containers", containerRoutes);
 
 // Inicia el servidor
 app.listen(port, () => {
