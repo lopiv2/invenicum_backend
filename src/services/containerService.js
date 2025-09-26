@@ -1,28 +1,39 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// Objeto de inclusión (Prisma Eager Loading)
+// Define qué relaciones cargar automáticamente con el contenedor
+const containerInclude = {
+    assetTypes: {
+        // Incluir las definiciones de campos para cada AssetType
+        include: {
+            fieldDefinitions: true,
+        }
+    },
+    // Opcional: Si deseas que los items del inventario también se carguen
+    items: true 
+};
+
+/**
+ * Crea un nuevo contenedor para un usuario.
+ * @param {number} userId - ID del usuario propietario.
+ * @param {object} data - Datos del contenedor ({name, description}).
+ * @returns {Promise<{success: boolean, message?: string, data?: object}>}
+ */
 const createContainer = async (userId, data) => {
     try {
-        console.log("Creando contenedor para usuario:", userId);
-        console.log("Datos recibidos:", data);
-
         if (!userId || !data.name) {
+            // Este error ya debería ser manejado en la capa de rutas, pero es una buena defensa.
             throw new Error('Se requiere el ID de usuario y el nombre del contenedor');
         }
 
-        const containerData = {
-            name: data.name,
-            description: data.description || '',
-            userId: parseInt(userId)
-        };
-
-        console.log("Datos a insertar:", containerData);
-
         const container = await prisma.container.create({
-            data: containerData
+            data: {
+                name: data.name,
+                description: data.description || '',
+                userId: parseInt(userId)
+            }
         });
-
-        console.log("Contenedor creado:", container);
 
         return {
             success: true,
@@ -33,22 +44,26 @@ const createContainer = async (userId, data) => {
         console.error("Error al crear contenedor:", error);
         return {
             success: false,
-            message: `Error al crear el contenedor: ${error.message}`
+            message: error.message || 'Error al crear el contenedor'
         };
     }
 };
 
+/**
+ * Obtiene todos los contenedores de un usuario, incluyendo AssetTypes y FieldDefinitions.
+ * @param {number} userId - ID del usuario propietario.
+ * @returns {Promise<{success: boolean, message?: string, data?: object[]}>}
+ */
 const getContainers = async (userId) => {
     try {
-        console.log("Buscando contenedores para usuario:", userId);
+        console.log("Buscando contenedores y tipos de activo para usuario:", userId);
         
         const containers = await prisma.container.findMany({
             where: {
                 userId: parseInt(userId)
             },
-            include: {
-                items: true
-            }
+            // Carga Eager para AssetTypes y FieldDefinitions
+            include: containerInclude
         });
 
         return {
@@ -64,6 +79,12 @@ const getContainers = async (userId) => {
     }
 };
 
+/**
+ * Obtiene un contenedor específico por ID, verificando la propiedad.
+ * @param {number} id - ID del contenedor.
+ * @param {number} userId - ID del usuario propietario.
+ * @returns {Promise<{success: boolean, message?: string, data?: object}>}
+ */
 const getContainerById = async (id, userId) => {
     try {
         const container = await prisma.container.findFirst({
@@ -71,15 +92,14 @@ const getContainerById = async (id, userId) => {
                 id: parseInt(id),
                 userId: parseInt(userId)
             },
-            include: {
-                items: true
-            }
+            // Carga Eager para AssetTypes y FieldDefinitions
+            include: containerInclude
         });
 
         if (!container) {
             return {
                 success: false,
-                message: 'Contenedor no encontrado'
+                message: 'Contenedor no encontrado o acceso denegado.'
             };
         }
 
@@ -96,6 +116,13 @@ const getContainerById = async (id, userId) => {
     }
 };
 
+/**
+ * Actualiza un contenedor específico por ID, verificando la propiedad.
+ * @param {number} id - ID del contenedor a actualizar.
+ * @param {number} userId - ID del usuario propietario.
+ * @param {object} data - Datos para actualizar ({name, description}).
+ * @returns {Promise<{success: boolean, message?: string, data?: object}>}
+ */
 const updateContainer = async (id, userId, data) => {
     try {
         const container = await prisma.container.update({
@@ -107,9 +134,8 @@ const updateContainer = async (id, userId, data) => {
                 name: data.name,
                 description: data.description
             },
-            include: {
-                items: true
-            }
+            // Carga Eager para devolver la estructura de datos completa
+            include: containerInclude
         });
 
         return {
@@ -119,6 +145,10 @@ const updateContainer = async (id, userId, data) => {
         };
     } catch (error) {
         console.error("Error al actualizar contenedor:", error);
+        // Manejar el error de "registro no encontrado para actualización"
+        if (error.code === 'P2025') { 
+            return { success: false, message: 'Contenedor no encontrado o acceso denegado.' };
+        }
         return {
             success: false,
             message: error.message || 'Error al actualizar el contenedor'
@@ -126,8 +156,15 @@ const updateContainer = async (id, userId, data) => {
     }
 };
 
+/**
+ * Elimina un contenedor específico por ID, verificando la propiedad.
+ * @param {number} id - ID del contenedor a eliminar.
+ * @param {number} userId - ID del usuario propietario.
+ * @returns {Promise<{success: boolean, message?: string, data?: object}>}
+ */
 const deleteContainer = async (id, userId) => {
     try {
+        // Prisma maneja las eliminaciones en cascada si están configuradas en schema.prisma
         const container = await prisma.container.delete({
             where: {
                 id: parseInt(id),
@@ -142,6 +179,10 @@ const deleteContainer = async (id, userId) => {
         };
     } catch (error) {
         console.error("Error al eliminar contenedor:", error);
+        // Manejar el error de "registro no encontrado para eliminación"
+        if (error.code === 'P2025') { 
+            return { success: false, message: 'Contenedor no encontrado o acceso denegado.' };
+        }
         return {
             success: false,
             message: error.message || 'Error al eliminar el contenedor'

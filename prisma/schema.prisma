@@ -1,36 +1,71 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
 }
 
 model User {
-  id         Int         @id @default(autoincrement())
-  email      String      @unique
-  password   String
-  name       String?
-  containers Container[]
+  id          Int         @id @default(autoincrement())
+  email       String      @unique
+  password    String
+  name        String?
+  containers  Container[]
 }
 
 model Container {
-  id          Int            @id @default(autoincrement())
-  name        String
-  description String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  userId      Int
-  user        User          @relation(fields: [userId], references: [id])
-  items       InventoryItem[]
+  id            Int            @id @default(autoincrement())
+  name          String
+  description   String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  userId        Int
+  user          User           @relation(fields: [userId], references: [id])
+  items         InventoryItem[]
+  // RELACIÓN AÑADIDA: Un contenedor puede tener muchos tipos de activo
+  assetTypes    AssetType[]
 }
+
+// NUEVO MODELO: Define la plantilla para un tipo de activo (Ej: "Ordenador")
+model AssetType {
+  id                Int                     @id @default(autoincrement())
+  name              String
+  imageUrl          String?                 @map("image_url") // Mapeo para snake_case en la DB
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  
+  // Relación con Container (Muchos a Uno)
+  containerId       Int
+  container         Container               @relation(fields: [containerId], references: [id])
+  
+  // Relación con CustomFieldDefinition (Uno a Muchos)
+  fieldDefinitions  CustomFieldDefinition[]
+  
+  @@map("asset_type")
+}
+
+// NUEVO MODELO: Define cada campo que tendrá un AssetType (Ej: "Serial Number", "Fecha de Compra")
+model CustomFieldDefinition {
+  id              Int         @id @default(autoincrement())
+  name            String
+  // El tipo debe ser mapeado a una cadena o un enum de la DB (TEXT, INTEGER, etc.)
+  type            String      
+  isRequired      Boolean     @default(false) @map("is_required")
+  // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
+  dataListId      Int?        @map("data_list_id") 
+  
+  // Relación con AssetType (Muchos a Uno)
+  assetTypeId     Int         @map("asset_type_id")
+  assetType       AssetType   @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  @@map("custom_field_definition")
+}
+
 
 model InventoryItem {
   id          Int       @id @default(autoincrement())

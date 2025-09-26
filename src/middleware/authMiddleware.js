@@ -14,7 +14,7 @@ const verifyToken = (req, res, next) => {
 
         // Extraer el token (eliminar 'Bearer ' del inicio)
         const token = bearerHeader.split(' ')[1];
-        console.log("Token recibido:", token);
+        //console.log("Token recibido:", token);
 
         // Verificar el token
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tu-secret-key-temporal');

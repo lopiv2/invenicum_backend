@@ -82,12 +82,18 @@ router.post('/containers', verifyToken, async (req, res) => {
 
 router.get('/containers/:id', verifyToken, async (req, res) => {
     try {
-        const container = await containerService.getContainerById(parseInt(req.params.id), req.user.id);
-        if (!container) {
-            return res.status(404).json({ error: 'Container not found' });
+        const result = await containerService.getContainerById(parseInt(req.params.id), req.user.id);
+        
+        if (result.success) {
+            // El servicio devuelve { success: true, data: container }
+            res.json(result); 
+        } else {
+            // El servicio devolvió success: false (Contenedor no encontrado)
+            return res.status(404).json(result);
         }
-        res.json(container);
+
     } catch (error) {
+        // ...
         res.status(500).json({ error: error.message });
     }
 });
