@@ -14,7 +14,7 @@ const app = express();
 app.use(
   cors({
     origin: "*", // En producción, deberías especificar el origen exacto de tu frontend
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
