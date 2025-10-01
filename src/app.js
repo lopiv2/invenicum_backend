@@ -6,6 +6,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const containerRoutes = require("./routes/containersRoutes");
 const assetTypeRoutes = require("./routes/assetTypeRoutes");
+const itemRoutes = require("./routes/itemRoutes"); // Asegúrate de importar las rutas de ítems
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -45,6 +46,7 @@ app.get("/", (req, res) => {
 app.use("/api/" + process.env.API_VERSION + "/auth", authRoutes);
 app.use("/api/" + process.env.API_VERSION + "/", containerRoutes);
 app.use("/api/" + process.env.API_VERSION + "/", assetTypeRoutes);
+app.use("/api/" + process.env.API_VERSION + "/", itemRoutes); // Usa las rutas de ítems
 
 // Inicia el servidor
 app.listen(port, () => {

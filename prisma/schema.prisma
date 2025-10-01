@@ -45,6 +45,7 @@ model AssetType {
   
   // Relación con CustomFieldDefinition (Uno a Muchos)
   fieldDefinitions  CustomFieldDefinition[]
+  inventoryItems                    InventoryItem[] 
   
   @@map("asset_type")
 }
@@ -68,13 +69,22 @@ model CustomFieldDefinition {
 
 
 model InventoryItem {
-  id          Int       @id @default(autoincrement())
-  name        String
-  description String?
-  quantity    Int       @default(1)
-  options     Json?     // Para almacenar propiedades personalizadas como JSON
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  containerId Int
-  container   Container @relation(fields: [containerId], references: [id])
+  id                Int       @id @default(autoincrement())
+  name              String
+  description       String?
+  
+  // 🛑 LÍNEA ELIMINADA: quantity Int @default(1) 
+  
+  assetTypeId       Int       @map("asset_type_id")
+  assetType         AssetType @relation(fields: [assetTypeId], references: [id])
+  
+  customFieldValues Json?     @map("custom_field_values")
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  containerId       Int
+  container         Container @relation(fields: [containerId], references: [id])
+  
+  @@map("inventory_item") 
 }

@@ -191,7 +191,6 @@ router.post("/containers/:containerId/items", verifyToken, async (req, res) => {
     if (!container) {
       return res.status(404).json({ error: "Container not found" });
     }
-
     const item = await inventoryItemService.createItem(
       parseInt(req.params.containerId),
       req.body
