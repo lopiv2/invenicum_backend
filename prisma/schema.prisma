@@ -19,13 +19,13 @@ model User {
 }
 
 model Container {
-  id            Int            @id @default(autoincrement())
+  id            Int             @id @default(autoincrement())
   name          String
   description   String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
   userId        Int
-  user          User           @relation(fields: [userId], references: [id])
+  user          User            @relation(fields: [userId], references: [id])
   items         InventoryItem[]
   // RELACIÓN AÑADIDA: Un contenedor puede tener muchos tipos de activo
   assetTypes    AssetType[]
@@ -45,7 +45,7 @@ model AssetType {
   
   // Relación con CustomFieldDefinition (Uno a Muchos)
   fieldDefinitions  CustomFieldDefinition[]
-  inventoryItems                    InventoryItem[] 
+  inventoryItems    InventoryItem[]
   
   @@map("asset_type")
 }
@@ -69,22 +69,43 @@ model CustomFieldDefinition {
 
 
 model InventoryItem {
-  id                Int       @id @default(autoincrement())
+  id                Int                     @id @default(autoincrement())
   name              String
   description       String?
   
-  // 🛑 LÍNEA ELIMINADA: quantity Int @default(1) 
+  assetTypeId       Int                     @map("asset_type_id")
+  assetType         AssetType               @relation(fields: [assetTypeId], references: [id])
   
-  assetTypeId       Int       @map("asset_type_id")
-  assetType         AssetType @relation(fields: [assetTypeId], references: [id])
+  customFieldValues Json?                   @map("custom_field_values")
   
-  customFieldValues Json?     @map("custom_field_values")
-  
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
   
   containerId       Int
-  container         Container @relation(fields: [containerId], references: [id])
+  container         Container               @relation(fields: [containerId], references: [id])
+
+  // NUEVA RELACIÓN: Un ítem de inventario puede tener múltiples imágenes
+  images            InventoryItemImage[]
   
   @@map("inventory_item") 
+}
+
+// NUEVO MODELO: Almacena la URL o ruta de una imagen adjunta a un InventoryItem
+model InventoryItemImage {
+  id                Int       @id @default(autoincrement())
+  url               String    // URL o ruta al archivo de la imagen
+  
+  // Opcional: descripción para accesibilidad o contexto
+  altText           String?   @map("alt_text")
+  
+  // Opcional: Un número para definir el orden en el que se muestran las imágenes
+  order             Int       @default(0)
+  
+  // Relación con InventoryItem (Muchos a Uno)
+  inventoryItemId   Int       @map("inventory_item_id")
+  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  
+  @@map("inventory_item_image")
 }
