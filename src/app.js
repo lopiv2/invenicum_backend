@@ -14,34 +14,11 @@ const assetTypeRoutes = require("./routes/assetTypeRoutes");
 
 const itemRoutes = require("./routes/itemRoutes");
 
-// ... (imports de rutas se mantienen igual) ...
-
 // Crea una instancia de la aplicación Express
 const app = express();
 
-// 🔑 CONSTANTES DE ENTORNO
-const STATIC_URL_PREFIX = process.env.STATIC_URL_PREFIX || "/images";
-const UPLOAD_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
-const API_VERSION = process.env.API_VERSION || "v1";
-const port = process.env.PORT || 3000;
-
 // ----------------------------------------------------
-// 1. CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS
-// ----------------------------------------------------
-const UPLOAD_DIR_ABSOLUTE = path.join(__dirname, UPLOAD_FOLDER);
-
-// 💡 Buena práctica: Asegurar que el directorio de subidas exista.
-if (!fs.existsSync(UPLOAD_DIR_ABSOLUTE)) {
-  fs.mkdirSync(UPLOAD_DIR_ABSOLUTE, { recursive: true });
-  console.log(`Created uploads directory: ${UPLOAD_DIR_ABSOLUTE}`);
-}
-
-// 🔑 USANDO VARIABLES DE ENTORNO: Sirve archivos estáticos
-// e.g., app.use('/images', express.static('/ruta/absoluta/uploads/inventory'));
-app.use(STATIC_URL_PREFIX, express.static(UPLOAD_DIR_ABSOLUTE));
-
-// ----------------------------------------------------
-// 2. MIDDLEWARES (CORS, JSON)
+// 1. MIDDLEWARES (CORS, JSON)
 // ----------------------------------------------------
 app.use(
   cors({
@@ -52,6 +29,30 @@ app.use(
 );
 
 app.use(express.json());
+
+// 🔑 CONSTANTES DE ENTORNO
+const STATIC_URL_PREFIX = process.env.STATIC_URL_PREFIX || "/images";
+const UPLOAD_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
+const API_VERSION = process.env.API_VERSION || "v1";
+const port = process.env.PORT || 3000;
+
+// ----------------------------------------------------
+// 2. CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS
+// ----------------------------------------------------
+const UPLOAD_DIR_ABSOLUTE = path.join(__dirname, UPLOAD_FOLDER);
+
+// 💡 Buena práctica: Asegurar que el directorio de subidas exista.
+if (!fs.existsSync(UPLOAD_DIR_ABSOLUTE)) {
+  fs.mkdirSync(UPLOAD_DIR_ABSOLUTE, { recursive: true });
+  console.log(`Created uploads directory: ${UPLOAD_DIR_ABSOLUTE}`);
+}
+
+// Ahora, express.static se ejecuta DESPUÉS de CORS, por lo que las cabeceras CORS
+// se aplicarán correctamente a las respuestas de las imágenes.
+app.use(
+  process.env.STATIC_URL_PREFIX,
+  express.static(path.join(__dirname, process.env.UPLOAD_FOLDER))
+);
 
 // ----------------------------------------------------
 // 3. RUTAS

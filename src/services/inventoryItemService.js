@@ -2,24 +2,32 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const path = require("path");
 const fs = require("fs");
-require('dotenv').config();
+require("dotenv").config();
 
 // 💡 Ruta Absoluta donde se guardan los archivos
 // Asumimos que la carpeta 'uploads/inventory' está un nivel por encima del archivo de servicio
-const UPLOAD_DIR_ABSOLUTE = path.join(__dirname, '..', process.env.UPLOAD_FOLDER);
+const UPLOAD_DIR_ABSOLUTE = path.join(
+  __dirname,
+  "..",
+  process.env.UPLOAD_FOLDER
+);
 
 class InventoryItemService {
   async createItem(data) {
     // Extraemos los archivos y el resto de los datos del ítem
-    const files = data.files || []; // Array de archivos de Multer
-    // El resto del body (name, description, assetTypeId, customFieldValues, etc.)
+    const files = data.files || [];
     const itemData = { ...data };
-    delete itemData.files; // Quitamos 'files' para que Prisma no intente guardarlo directamente
+    delete itemData.files; // Limpiamos files
 
     const containerId = parseInt(itemData.containerId);
     const assetTypeId = parseInt(itemData.assetTypeId);
 
+    // 🛑 Limpiamos las IDs del objeto de datos para que Prisma no las rechace en el 'spread'.
+    delete itemData.containerId;
+    delete itemData.assetTypeId;
+
     if (isNaN(containerId) || isNaN(assetTypeId)) {
+      // Usamos file.path aquí, ya que Multer lo proporciona en el contexto de la ruta.
       files.forEach((file) => fs.unlinkSync(file.path));
       throw new Error("Invalid Container ID or Asset Type ID.");
     }
@@ -31,17 +39,12 @@ class InventoryItemService {
       try {
         itemData.customFieldValues = JSON.parse(itemData.customFieldValues);
       } catch (e) {
-        console.error(
-          "Failed to parse customFieldValues:",
-          itemData.customFieldValues
-        );
         files.forEach((file) => fs.unlinkSync(file.path));
         throw new Error("Invalid JSON format for custom fields.");
       }
     }
 
     // 1. Mapear archivos a URLs públicas
-    // Usando '/images/' como ruta estática (ver configuración de Express)
     const baseImageUrl = process.env.STATIC_URL_PREFIX;
     const imageRelations = files.map((file, index) => {
       const publicUrl = path
@@ -49,8 +52,8 @@ class InventoryItemService {
         .replace(/\\/g, "/");
       return {
         url: publicUrl,
-        filename: file.filename, // 💡 Guardar el nombre del archivo para futura eliminación
-        order: index, 
+        // 🛑 'filename' NO existe en el modelo InventoryItemImage, así que NO se incluye.
+        order: index,
       };
     });
 
@@ -58,9 +61,18 @@ class InventoryItemService {
       // 2. Crear el ítem y las imágenes dentro de una sola transacción de Prisma
       const newItem = await prisma.inventoryItem.create({
         data: {
+          // 🔑 Usamos el spread solo para los campos directos que quedan (name, description, customFieldValues)
           ...itemData,
-          containerId: containerId,
-          assetTypeId: assetTypeId,
+
+          // 🔑 Corregido: Usar 'connect' para las relaciones de Muchos a Uno (Container, AssetType)
+          container: {
+            connect: { id: containerId },
+          },
+          assetType: {
+            connect: { id: assetTypeId },
+          },
+
+          // Conexión anidada para crear las imágenes
           images: {
             create: imageRelations,
           },
@@ -75,14 +87,19 @@ class InventoryItemService {
       return { success: true, data: newItem };
     } catch (error) {
       console.error("Prisma error during item creation:", error);
+
+      // 🔑 Corregido: Usamos la ruta absoluta centralizada para la limpieza
       files.forEach((file) => {
+        // Reconstruimos la ruta: UPLOAD_DIR_ABSOLUTE + nombre del archivo generado por Multer
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, file.filename);
         try {
           fs.unlinkSync(absolutePath);
         } catch (err) {
+          // Si falla la limpieza, registramos el error, pero no bloqueamos el error principal.
           console.error("Error cleaning up file:", err);
         }
       });
+
       throw new Error("Failed to create inventory item and associate images.");
     }
   }
@@ -93,7 +110,7 @@ class InventoryItemService {
         containerId,
         assetTypeId,
         container: {
-          userId: userId, 
+          userId: userId,
         },
       },
       include: {
@@ -118,7 +135,6 @@ class InventoryItemService {
       },
     });
   }
-  
 
   async updateItem(id, containerId, data) {
     const { imageUrls, ...updateData } = data;
@@ -160,9 +176,7 @@ class InventoryItemService {
       })
     );
 
-    const [, updatedItem] = await prisma.$transaction(
-      updateActions
-    );
+    const [, updatedItem] = await prisma.$transaction(updateActions);
 
     return updatedItem;
   }
@@ -180,21 +194,21 @@ class InventoryItemService {
         },
       },
       // 💡 Incluir las imágenes es FUNDAMENTAL
-      include: { 
-        images: true 
+      include: {
+        images: true,
       },
     });
 
     if (!itemToDelete) {
       throw new Error("Item not found or access denied.");
     }
-    
+
     // 2. BORRAR ARCHIVOS DEL DISCO
     if (itemToDelete.images && itemToDelete.images.length > 0) {
       for (const image of itemToDelete.images) {
         // Asumimos que el campo `filename` o el nombre del archivo está en la DB
         // Si no está, lo extraemos de la URL:
-        const filename = path.basename(image.url); 
+        const filename = path.basename(image.url);
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
 
         try {
