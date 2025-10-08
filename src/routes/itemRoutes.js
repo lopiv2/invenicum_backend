@@ -5,6 +5,35 @@ const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware"); // Asumimos que es tu middleware de autenticación
 const containerService = require("../services/containerService");
 const inventoryItemService = require("../services/inventoryItemService");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const UPLOAD_DIR = path.join(__dirname, "../uploads/inventory");
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  // 1. Dónde guardar el archivo
+  destination: (req, file, cb) => {
+    cb(null, UPLOAD_DIR);
+  },
+  // 2. Cómo nombrar el archivo (usamos un timestamp para unicidad)
+  filename: (req, file, cb) => {
+    // Obtenemos la extensión original
+    const ext = path.extname(file.originalname);
+    // Creamos un nombre único (ej: item-1700000000000.jpg)
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "item-" + uniqueSuffix + ext);
+  },
+});
+
+const upload = multer({
+  storage: storage,
+  // Opcional: Limitar el tamaño de los archivos
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
 
 // Middleware de Logging (Opcional, pero útil)
 router.use((req, res, next) => {
@@ -24,12 +53,10 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
     const userId = req.user.id;
 
     if (isNaN(containerId) || isNaN(assetTypeId)) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Invalid containerId or assetTypeId.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid containerId or assetTypeId.",
+      });
     }
 
     // 1. Verificar la pertenencia del contenedor
@@ -38,12 +65,10 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
       userId
     );
     if (!containerResult.success) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Container not found or access denied.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Container not found or access denied.",
+      });
     }
 
     // 2. Llamar al servicio de inventario para obtener los ítems filtrados
@@ -65,40 +90,64 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
 // RUTA DE CREACIÓN (CREATE)
 // POST /items
 // ===============================================
-router.post("/items", verifyToken, async (req, res) => {
+router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
+  // IMPORTANTE: Los archivos ya han sido guardados en ./uploads/inventory en este punto.
   try {
     const userId = req.user.id;
+
+    // Los campos de texto están en req.body; los archivos están en req.files
     const { containerId, name } = req.body;
+    const uploadedFiles = req.files || []; // Array de objetos de archivo de Multer
 
     if (!containerId || !name) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "Container ID and name are required.",
-        });
+      // 💡 MANEJO DE ERRORES: Si falla la validación, borra los archivos que ya se subieron.
+      uploadedFiles.forEach((file) => fs.unlinkSync(file.path));
+      return res.status(400).json({
+        success: false,
+        message: "Container ID and name are required.",
+      });
     }
 
-    // 1. Verificar la pertenencia del contenedor ANTES de crear
+    // 1. Verificar la pertenencia del contenedor
     const containerResult = await containerService.getContainerById(
-      containerId,
+      parseInt(containerId),
       userId
     );
     if (!containerResult.success) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Container not found or access denied.",
-        });
+      // 💡 MANEJO DE ERRORES: Si falla la autorización, borra los archivos.
+      uploadedFiles.forEach((file) => fs.unlinkSync(file.path));
+      return res.status(404).json({
+        success: false,
+        message: "Container not found or access denied.",
+      });
     }
 
-    // 2. Crear el ítem
-    const itemResult = await inventoryItemService.createItem(req.body);
+    // 2. Crear el objeto de datos para el servicio
+    const itemData = {
+      ...req.body,
+      // PASAMOS la información de los archivos locales al servicio.
+      // El servicio usará `file.filename` para construir la URL pública.
+      files: uploadedFiles,
+    };
+
+    // 3. Llamar al servicio de inventario para crear el ítem
+    const itemResult = await inventoryItemService.createItem(itemData);
 
     // 201 Created. Devolvemos el objeto creado con su ID.
     res.status(201).json(itemResult);
   } catch (error) {
+    // 💡 MANEJO DE ERRORES: Si ocurre un error en el servicio, borra los archivos.
+    // Hay que asegurarse de que `req.files` esté disponible aquí.
+    if (req.files) {
+      req.files.forEach((file) => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (err) {
+          console.error("Error cleaning up file:", err);
+        }
+      });
+    }
+
     console.error("Error creating item:", error);
     res.status(500).json({ success: false, error: error.message });
   }
@@ -109,37 +158,38 @@ router.post("/items", verifyToken, async (req, res) => {
 // PUT /items/:id
 // ===============================================
 router.put("/items/:id", verifyToken, async (req, res) => {
-    let itemId; 
-    
-    try {
-        itemId = parseInt(req.params.id); 
-        const userId = req.user.id;
-        // 💡 1. Extraer containerId del body
-        const { containerId } = req.body; 
-        
-        if (isNaN(itemId) || !containerId) {
-            // ... (validación de error)
-        }
+  let itemId;
 
-        // ... (Verificación de pertenencia del contenedor)
+  try {
+    itemId = parseInt(req.params.id);
+    const userId = req.user.id;
+    // 💡 1. Extraer containerId del body
+    const { containerId } = req.body;
 
-        // 🎯 2. Llamar al servicio con los 3 argumentos que espera: id, containerId, y el body completo (data)
-        const updatedItem = await inventoryItemService.updateItem(
-            itemId, 
-            containerId, // <-- Argumento 2: containerId
-            req.body     // <-- Argumento 3: data completa
-        ); 
-        
-        if (!updatedItem) {
-            return res.status(404).json({ success: false, message: "Item not found." });
-        }
-
-        res.status(200).json(updatedItem); 
-        
-    } catch (error) {
-        console.error(`Error updating item ${itemId ? itemId : 'N/A'}:`, error); 
-        res.status(500).json({ success: false, error: error.message });
+    if (isNaN(itemId) || !containerId) {
+      // ... (validación de error)
     }
+
+    // ... (Verificación de pertenencia del contenedor)
+
+    // 🎯 2. Llamar al servicio con los 3 argumentos que espera: id, containerId, y el body completo (data)
+    const updatedItem = await inventoryItemService.updateItem(
+      itemId,
+      containerId, // <-- Argumento 2: containerId
+      req.body // <-- Argumento 3: data completa
+    );
+
+    if (!updatedItem) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Item not found." });
+    }
+
+    res.status(200).json(updatedItem);
+  } catch (error) {
+    console.error(`Error updating item ${itemId ? itemId : "N/A"}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // ===============================================
