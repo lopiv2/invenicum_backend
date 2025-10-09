@@ -136,38 +136,101 @@ class InventoryItemService {
     });
   }
 
-  async updateItem(id, containerId, data) {
-    const { imageUrls, ...updateData } = data;
+  async updateItem(id, data) {
+    // 1. Desestructurar y preparar los datos.
+    const {
+      imageIdsToDelete,
+      filesToUpload,
+      containerId: containerIdStr,
+      assetTypeId: assetTypeIdStr,
+      customFieldValues, // <-- Aquí viene como String JSON escapado
+      ...updateData
+    } = data;
 
-    // 💡 NOTA: La lógica de eliminar imágenes del disco durante la actualización
-    // es compleja y requiere buscar las imágenes existentes que NO están en `imageUrls`
-    // y borrarlas antes de actualizar. Por ahora, asumiremos que se maneja
-    // la eliminación de la DB aquí, pero el borrado del disco se puede añadir después.
+    // 2. Conversión de tipos y limpieza.
+    const itemIdInt = parseInt(id);
+    const containerIdInt = parseInt(containerIdStr);
+    const assetTypeIdInt = parseInt(assetTypeIdStr);
+
+    if (isNaN(itemIdInt) || isNaN(containerIdInt) || isNaN(assetTypeIdInt)) {
+      throw new Error(
+        "Invalid ID format provided for item, container, or asset type."
+      );
+    }
+
+    // 🚀 SOLUCIÓN CLAVE: Parsear customFieldValues
+    let parsedCustomFieldValues = {};
+    if (customFieldValues && typeof customFieldValues === "string") {
+      try {
+        // Intentamos parsear el string JSON escapado que viene del frontend
+        parsedCustomFieldValues = JSON.parse(customFieldValues);
+      } catch (e) {
+        console.error("Error parsing customFieldValues:", e);
+        throw new Error("Invalid JSON format for custom field values.");
+      }
+    }
 
     const updateActions = [];
 
-    // 1. Eliminar las imágenes de la DB que ya NO están en la lista imageUrls
-    if (imageUrls && Array.isArray(imageUrls)) {
+    // ===========================================
+    // PASO A: ELIMINACIÓN DE IMÁGENES (DB y Disco)
+    // ===========================================
+    if (imageIdsToDelete && imageIdsToDelete.length > 0) {
+      // Asegurar que imageIdsToDelete sea un array de Int (Multer lo convierte a String)
+      const idsToDeleteInt = imageIdsToDelete
+        .map((id) => parseInt(id))
+        .filter((id) => !isNaN(id));
+
+      // 1. Encontrar las URLs de las imágenes que vamos a eliminar
+      const imagesToDelete = await prisma.inventoryItemImage.findMany({
+        where: {
+          id: { in: idsToDeleteInt },
+          inventoryItemId: itemIdInt,
+        },
+        select: { url: true },
+      });
+
+      // 2. Eliminar las imágenes del disco
+      for (const img of imagesToDelete) {
+        const filename = path.basename(img.url);
+        const imagePath = path.join(UPLOAD_DIR, filename);
+
+        try {
+          if (fs.existsSync(imagePath)) {
+            fs.unlinkSync(imagePath);
+          }
+        } catch (err) {
+          console.error(`Error deleting file ${imagePath}:`, err);
+        }
+      }
+
+      // 3. Eliminar las referencias de la base de datos
       updateActions.push(
         prisma.inventoryItemImage.deleteMany({
           where: {
-            inventoryItemId: id,
-            url: {
-              notIn: imageUrls,
-            },
+            id: { in: idsToDeleteInt },
+            inventoryItemId: itemIdInt,
           },
         })
       );
     }
 
-    // 2. Actualizar el ítem principal
+    // ===========================================
+    // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
+    // ===========================================
     updateActions.push(
       prisma.inventoryItem.update({
         where: {
-          id,
-          containerId,
+          id: itemIdInt,
+          containerId: containerIdInt,
         },
-        data: updateData,
+        data: {
+          ...updateData,
+          containerId: containerIdInt,
+          assetTypeId: assetTypeIdInt,
+          // 🚀 USAMOS EL OBJETO PARSEADO (Formato correcto para Prisma)
+          customFieldValues: parsedCustomFieldValues,
+        },
         include: {
           images: {
             orderBy: { order: "asc" },
@@ -176,9 +239,63 @@ class InventoryItemService {
       })
     );
 
-    const [, updatedItem] = await prisma.$transaction(updateActions);
+    // ===========================================
+    // PASO C: AÑADIR NUEVAS IMÁGENES
+    // ===========================================
+    if (filesToUpload && filesToUpload.length > 0) {
+      const lastImage = await prisma.inventoryItemImage.findFirst({
+        where: { inventoryItemId: itemIdInt },
+        orderBy: { order: "desc" },
+        select: { order: true },
+      });
+      const startOrder = lastImage ? lastImage.order + 1 : 1;
 
-    return updatedItem;
+      const baseImageUrl = process.env.STATIC_URL_PREFIX;
+      const UPLOAD_WEB_PATH = "/"; // 🔑 Usamos la ruta relativa correcta
+
+      const newImagesData = filesToUpload.map((file, index) => {
+        // 🔑 CORRECCIÓN: Unimos STATIC_URL_PREFIX con la ruta web /images/ y el nombre del archivo.
+        // path.join() maneja las barras de forma segura, pero lo forzamos a usar '/' al final.
+        const publicUrl = path
+          .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
+          .replace(/\\/g, "/");
+
+        return {
+          url: publicUrl,
+          inventoryItemId: itemIdInt,
+          order: startOrder + index,
+        };
+      });
+
+      updateActions.push(
+        prisma.inventoryItemImage.createMany({
+          data: newImagesData,
+        })
+      );
+    }
+
+    // ===========================================
+    // PASO D: EJECUTAR TRANSACCIÓN Y DEVOLVER EL RESULTADO FINAL
+    // ===========================================
+
+    const results = await prisma.$transaction(updateActions);
+
+    // Encuentra el resultado de la actualización del ítem principal para devolverlo
+    const updatedItemResult = results.find(
+      (res) => typeof res === "object" && res.id === itemIdInt
+    );
+
+    if (updatedItemResult) {
+      // Asegura que devolvemos el ítem con las relaciones actualizadas
+      return prisma.inventoryItem.findUnique({
+        where: { id: itemIdInt },
+        include: { images: { orderBy: { order: "asc" } } },
+      });
+    }
+
+    throw new Error(
+      "Update failed or the item could not be retrieved after update."
+    );
   }
 
   // ----------------------------------------------------

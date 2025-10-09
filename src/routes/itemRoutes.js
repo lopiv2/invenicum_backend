@@ -157,40 +157,68 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
 // RUTA DE ACTUALIZACIÓN (UPDATE)
 // PUT /items/:id
 // ===============================================
-router.put("/items/:id", verifyToken, async (req, res) => {
-  let itemId;
+router.patch(
+  "/items/:id",
+  verifyToken,
+  upload.array("images"),
+  async (req, res) => {
+    let itemId;
+    const uploadedFiles = req.files || []; // Archivos nuevos subidos
 
-  try {
-    itemId = parseInt(req.params.id);
-    const userId = req.user.id;
-    // 💡 1. Extraer containerId del body
-    const { containerId } = req.body;
+    try {
+      itemId = parseInt(req.params.id);
+      const userId = req.user.id;
 
-    if (isNaN(itemId) || !containerId) {
-      // ... (validación de error)
+      // 💡 1. Extraer TODOS los datos del body (Multer los ha parseado)
+      const { containerId, imageIdsToDelete } = req.body;
+
+      if (isNaN(itemId) || !containerId) {
+        // ... (Manejo de errores si falla la validación)
+        uploadedFiles.forEach((file) => fs.unlinkSync(file.path)); // Limpieza
+        return res.status(400).json({
+          success: false,
+          message: "Invalid ID or missing containerId.",
+        });
+      }
+
+      // 2. Deserializar el array de IDs a eliminar
+      const idsToDelete = imageIdsToDelete ? JSON.parse(imageIdsToDelete) : [];
+
+      // 3. Crear el objeto de datos para el servicio
+      const itemData = {
+        ...req.body, // Incluye name, description, customFieldValues, etc.
+        filesToUpload: uploadedFiles, // Archivos nuevos
+        imageIdsToDelete: idsToDelete, // IDs de eliminación
+      };
+
+      // 4. Llamar al servicio con la data completa
+      const updatedItem = await inventoryItemService.updateItem(
+        itemId,
+        itemData // Pasamos toda la data, incluyendo archivos e IDs
+      );
+
+      if (!updatedItem) {
+        uploadedFiles.forEach((file) => fs.unlinkSync(file.path)); // Limpieza
+        return res
+          .status(404)
+          .json({ success: false, message: "Item not found." });
+      }
+
+      res.status(200).json(updatedItem);
+    } catch (error) {
+      // Manejo de errores y limpieza de archivos
+      uploadedFiles.forEach((file) => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (err) {
+          console.error("Error cleaning up file:", err);
+        }
+      });
+      console.error(`Error updating item ${itemId ? itemId : "N/A"}:`, error);
+      res.status(500).json({ success: false, error: error.message });
     }
-
-    // ... (Verificación de pertenencia del contenedor)
-
-    // 🎯 2. Llamar al servicio con los 3 argumentos que espera: id, containerId, y el body completo (data)
-    const updatedItem = await inventoryItemService.updateItem(
-      itemId,
-      containerId, // <-- Argumento 2: containerId
-      req.body // <-- Argumento 3: data completa
-    );
-
-    if (!updatedItem) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Item not found." });
-    }
-
-    res.status(200).json(updatedItem);
-  } catch (error) {
-    console.error(`Error updating item ${itemId ? itemId : "N/A"}:`, error);
-    res.status(500).json({ success: false, error: error.message });
   }
-});
+);
 
 // ===============================================
 // RUTA DE BORRADO (DELETE)
