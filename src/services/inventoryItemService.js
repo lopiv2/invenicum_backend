@@ -193,7 +193,7 @@ class InventoryItemService {
       // 2. Eliminar las imágenes del disco
       for (const img of imagesToDelete) {
         const filename = path.basename(img.url);
-        const imagePath = path.join(UPLOAD_DIR, filename);
+        const imagePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
 
         try {
           if (fs.existsSync(imagePath)) {
