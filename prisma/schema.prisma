@@ -29,6 +29,8 @@ model Container {
   items         InventoryItem[]
   // RELACIÓN AÑADIDA: Un contenedor puede tener muchos tipos de activo
   assetTypes    AssetType[]
+  // RELACIÓN AÑADIDA: Un contenedor puede tener muchas listas de datos
+  dataLists     DataList[]
 }
 
 // NUEVO MODELO: Define la plantilla para un tipo de activo (Ej: "Ordenador")
@@ -108,4 +110,20 @@ model InventoryItemImage {
   createdAt         DateTime  @default(now())
   
   @@map("inventory_item_image")
+}
+
+// Modelo para las listas de datos personalizadas
+model DataList {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  items       Json     // Almacenará el array de strings como JSON
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relación con Container (Muchos a Uno)
+  containerId Int      @map("container_id")
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  @@map("data_list")
 }

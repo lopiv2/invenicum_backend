@@ -94,11 +94,41 @@ router.put('/asset-types/:id', verifyToken, async (req, res) => {
 
 // --------------------------------------------------------------------
 // D (Delete) - Eliminar un Tipo de Activo
+// DELETE /asset-types/:id/assets
+// --------------------------------------------------------------------
+router.delete('/asset-types/:id/assets', verifyToken, async (req, res) => {
+    try {
+        const assetTypeId = req.params.id;
+        const userId = req.user.id;
+
+        const result = await assetTypeService.deleteAssetTypeItems(assetTypeId, userId);
+
+        if (result.success) {
+            res.status(204).send();
+        } else {
+            res.status(404).json(result);
+        }
+    } catch (error) {
+        console.error("Error al eliminar elementos del Tipo de Activo:", error);
+        if (error.message.includes("not found")) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: 'Error interno al eliminar los elementos del Tipo de Activo',
+            error: error.message
+        });
+    }
+});
+
 // DELETE /asset-types/:id
 // --------------------------------------------------------------------
 router.delete('/asset-types/:id', verifyToken, async (req, res) => {
     try {
-        const assetTypeId = parseInt(req.params.id);
+        const assetTypeId = req.params.id;
         const userId = req.user.id;
 
         const result = await assetTypeService.deleteAssetType(assetTypeId, userId);
@@ -108,10 +138,19 @@ router.delete('/asset-types/:id', verifyToken, async (req, res) => {
         } else {
             res.status(404).json(result);
         }
-
     } catch (error) {
         console.error("Error al eliminar Tipo de Activo:", error);
-        res.status(500).json({ success: false, message: 'Error interno al eliminar el Tipo de Activo', error: error.message });
+        if (error.message.includes("not found")) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
+        res.status(500).json({
+            success: false,
+            message: 'Error interno al eliminar el Tipo de Activo',
+            error: error.message
+        });
     }
 });
 

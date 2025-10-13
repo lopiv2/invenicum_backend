@@ -13,6 +13,7 @@ const containerRoutes = require("./routes/containersRoutes");
 const assetTypeRoutes = require("./routes/assetTypeRoutes");
 
 const itemRoutes = require("./routes/itemRoutes");
+const dataListRoutes = require("./routes/dataListRoutes");
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -75,6 +76,7 @@ app.use(API_BASE_PATH + "/auth", authRoutes);
 app.use(API_BASE_PATH + "/", containerRoutes);
 app.use(API_BASE_PATH + "/", assetTypeRoutes);
 app.use(API_BASE_PATH + "/", itemRoutes);
+app.use(API_BASE_PATH + "/", dataListRoutes);
 
 // Inicia el servidor
 app.listen(port, () => {

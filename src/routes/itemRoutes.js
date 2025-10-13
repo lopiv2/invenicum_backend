@@ -44,12 +44,12 @@ router.use((req, res, next) => {
 
 // ===============================================
 // RUTA DE LECTURA (READ - Filtrada)
-// GET /containers/:containerId/items?assetTypeId=...
+// GET /containers/:containerId/asset-types/:assetTypeId/items
 // ===============================================
-router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
+router.get("/containers/:containerId/asset-types/:assetTypeId/items", verifyToken, async (req, res) => {
   try {
     const containerId = parseInt(req.params.containerId);
-    const assetTypeId = parseInt(req.query.assetTypeId);
+    const assetTypeId = parseInt(req.params.assetTypeId);
     const userId = req.user.id;
 
     if (isNaN(containerId) || isNaN(assetTypeId)) {
@@ -72,7 +72,7 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
     }
 
     // 2. Llamar al servicio de inventario para obtener los ítems filtrados
-    const itemsResult = await inventoryItemService.getItemsByContainerAndType({
+    const itemsResult = await inventoryItemService.getItems({
       containerId,
       assetTypeId,
       userId,

@@ -59,13 +59,18 @@ async function createAssetType(containerId, userId, data) {
 
 /**
  * Obtiene un Tipo de Activo por ID.
- * @param {number} assetTypeId ID del Tipo de Activo.
+ * @param {number|string} assetTypeId ID del Tipo de Activo.
  * @param {number} userId ID del usuario para verificar la propiedad.
  */
 async function getAssetTypeById(assetTypeId, userId) {
   try {
+    const id = parseInt(assetTypeId);
+    if (isNaN(id)) {
+      return { success: false, message: "ID de tipo de activo inválido" };
+    }
+
     const assetType = await prisma.assetType.findUnique({
-      where: { id: assetTypeId },
+      where: { id },
       include: { container: true, fieldDefinitions: true },
     });
 
@@ -159,6 +164,41 @@ async function updateAssetType(assetTypeId, userId, updateData) {
 }
 
 /**
+ * Elimina todos los elementos asociados a un tipo de activo.
+ * @param {number} assetTypeId ID del Tipo de Activo.
+ * @param {number} userId ID del usuario para verificar la propiedad.
+ */
+async function deleteAssetTypeItems(assetTypeId, userId) {
+  // 1. Verificar propiedad antes de eliminar
+  const verification = await getAssetTypeById(assetTypeId, userId);
+  if (!verification.success) {
+    return verification;
+  }
+
+  try {
+    const id = parseInt(assetTypeId);
+    if (isNaN(id)) {
+      return { success: false, message: "ID de tipo de activo inválido" };
+    }
+
+    // Eliminar todos los InventoryItems asociados al AssetType
+    await prisma.inventoryItem.deleteMany({
+      where: { 
+        assetTypeId: id,
+        container: {
+          userId: userId
+        }
+      }
+    });
+
+    return { success: true, message: "Elementos del tipo de activo eliminados con éxito." };
+  } catch (error) {
+    console.error("Error en deleteAssetTypeItems:", error);
+    throw new Error("Error al eliminar los elementos del tipo de activo.");
+  }
+}
+
+/**
  * Elimina un Tipo de Activo.
  * @param {number} assetTypeId ID del Tipo de Activo.
  * @param {number} userId ID del usuario para verificar la propiedad.
@@ -167,23 +207,37 @@ async function deleteAssetType(assetTypeId, userId) {
   // 1. Verificar propiedad antes de eliminar
   const verification = await getAssetTypeById(assetTypeId, userId);
   if (!verification.success) {
-    return verification; // Devuelve el error de 404 o acceso denegado
+    return verification;
   }
 
-  // 2. Eliminar el AssetType (Prisma automáticamente elimina CustomFieldDefinitions
-  //    gracias a la configuración `onDelete: Cascade` en el schema)
   try {
-    await prisma.assetType.delete({
-      where: { id: assetTypeId },
+    const id = parseInt(assetTypeId);
+    if (isNaN(id)) {
+      return { success: false, message: "ID de tipo de activo inválido" };
+    }
+
+    // Realizamos todas las operaciones en una transacción
+    await prisma.$transaction(async (tx) => {
+      // 1. Primero eliminamos todos los InventoryItems asociados
+      await tx.inventoryItem.deleteMany({
+        where: { 
+          assetTypeId: id,
+          container: {
+            userId: userId
+          }
+        }
+      });
+
+      // 2. Luego eliminamos el AssetType y sus CustomFieldDefinitions (cascade)
+      await tx.assetType.delete({
+        where: { id }
+      });
     });
 
-    // 3. TODO: Eliminar o desasociar todos los InventoryItems que usan este AssetType
-    // Esto es crucial para mantener la integridad de la DB.
-
-    return { success: true, message: "Tipo de Activo eliminado con éxito." };
+    return { success: true, message: "Tipo de Activo y sus elementos eliminados con éxito." };
   } catch (error) {
-    console.error("Prisma Error en deleteAssetType:", error);
-    throw new Error("Error al eliminar el Tipo de Activo en la base de datos.");
+    console.error("Error en deleteAssetType:", error);
+    throw new Error("Error al eliminar el tipo de activo y sus elementos.");
   }
 }
 
@@ -192,4 +246,5 @@ module.exports = {
   getAssetTypeById,
   updateAssetType,
   deleteAssetType,
+  deleteAssetTypeItems,
 };
