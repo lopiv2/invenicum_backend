@@ -208,25 +208,30 @@ class InventoryItemService {
     let items = allItems; // Inicialmente, todos los ítems cargados
 
     if (Object.keys(aggregationFilters).length > 0) {
-      // Tomamos el primer (y único) filtro
+      // 1. Obtener la ID del campo a filtrar y el valor de filtro.
       const fieldId = Object.keys(aggregationFilters)[0].toString();
 
-      // Aseguramos que el valor del filtro sea una cadena de texto (ej: "45")
-      const filterValue = String(aggregationFilters[fieldId]);
+      // 2. SANEAR EL VALOR DE FILTRO: Asegurar que sea una cadena y limpiar espacios en blanco.
+      const filterValue = String(aggregationFilters[fieldId]).trim();
 
       // 🛑 Aplicar el filtro de customFieldValues en memoria
       items = allItems.filter((item) => {
         const customValues = item.customFieldValues || {};
         const itemValueRaw = customValues[fieldId];
 
-        // 🔑 Hacemos el valor del ítem robusto:
-        // Si es null/undefined, lo tratamos como cadena vacía. Si no, lo convertimos a String.
-        const itemValueString =
-          itemValueRaw === null || itemValueRaw === undefined
-            ? ""
-            : String(itemValueRaw);
+        // 3. SANEAR EL VALOR DEL ÍTEM:
+        let itemValueString = "";
 
-        // Hacemos una comparación estricta de cadenas.
+        // Si el valor existe, lo convertimos a String y le quitamos espacios.
+        if (
+          itemValueRaw !== null &&
+          itemValueRaw !== undefined &&
+          itemValueRaw !== ""
+        ) {
+          itemValueString = String(itemValueRaw).trim();
+        }
+
+        // 4. Comparación estricta de cadenas saneadas.
         return itemValueString === filterValue;
       });
     }
