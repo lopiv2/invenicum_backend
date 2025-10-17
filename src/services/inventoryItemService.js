@@ -32,17 +32,34 @@ class InventoryItemService {
       throw new Error("Invalid Container ID or Asset Type ID.");
     }
 
+    let customFieldValues = {};
+
     if (
       itemData.customFieldValues &&
       typeof itemData.customFieldValues === "string"
     ) {
       try {
-        itemData.customFieldValues = JSON.parse(itemData.customFieldValues);
+        customFieldValues = JSON.parse(itemData.customFieldValues);
       } catch (e) {
         files.forEach((file) => fs.unlinkSync(file.path));
         throw new Error("Invalid JSON format for custom fields.");
       }
+      // Reemplazamos el string con el objeto parseado
+      itemData.customFieldValues = customFieldValues;
     }
+
+    // =================================================================
+    // 🔑 NUEVA LÓGICA DE VALIDACIÓN (Opcional pero muy Recomendada)
+    // Se valida que los campos que deberían ser numéricos sean válidos.
+    // Esto previene errores de totales más adelante.
+    // =================================================================
+    try {
+      await this.validateCustomFieldValues(assetTypeId, customFieldValues);
+    } catch (error) {
+      files.forEach((file) => fs.unlinkSync(file.path));
+      throw error; // Relanzar el error de validación
+    }
+    // =================================================================
 
     // 1. Mapear archivos a URLs públicas
     const baseImageUrl = process.env.STATIC_URL_PREFIX;
@@ -52,7 +69,7 @@ class InventoryItemService {
         .replace(/\\/g, "/");
       return {
         url: publicUrl,
-        // 🛑 'filename' NO existe en el modelo InventoryItemImage, así que NO se incluye.
+        // Si el modelo InventoryItemImage NO tiene 'filename', esto está correcto.
         order: index,
       };
     });
@@ -64,7 +81,7 @@ class InventoryItemService {
           // 🔑 Usamos el spread solo para los campos directos que quedan (name, description, customFieldValues)
           ...itemData,
 
-          // 🔑 Corregido: Usar 'connect' para las relaciones de Muchos a Uno (Container, AssetType)
+          // Corregido: Usar 'connect' para las relaciones de Muchos a Uno (Container, AssetType)
           container: {
             connect: { id: containerId },
           },
@@ -88,14 +105,12 @@ class InventoryItemService {
     } catch (error) {
       console.error("Prisma error during item creation:", error);
 
-      // 🔑 Corregido: Usamos la ruta absoluta centralizada para la limpieza
+      // Limpieza de archivos si falla la creación en DB
       files.forEach((file) => {
-        // Reconstruimos la ruta: UPLOAD_DIR_ABSOLUTE + nombre del archivo generado por Multer
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, file.filename);
         try {
           fs.unlinkSync(absolutePath);
         } catch (err) {
-          // Si falla la limpieza, registramos el error, pero no bloqueamos el error principal.
           console.error("Error cleaning up file:", err);
         }
       });
@@ -104,22 +119,158 @@ class InventoryItemService {
     }
   }
 
-  async getItems({ containerId, assetTypeId, userId }) {
-    const items = await prisma.inventoryItem.findMany({
-      where: {
-        containerId,
-        assetTypeId,
-        container: {
-          userId: userId,
-        },
-      },
+  // ----------------------------------------------------
+  // 🔑 NUEVO MÉTODO DE VALIDACIÓN DE VALORES PERSONALIZADOS
+  // ----------------------------------------------------
+  async validateCustomFieldValues(assetTypeId, values) {
+    if (!values || Object.keys(values).length === 0) {
+      return; // No hay valores que validar
+    }
+
+    // 1. Obtener todas las definiciones de campo para este AssetType
+    const definitions = await prisma.customFieldDefinition.findMany({
+      where: { assetTypeId },
+    });
+
+    for (const def of definitions) {
+      const fieldKey = def.id.toString();
+      const value = values[fieldKey];
+
+      // 2. Validar campos requeridos (si es necesario)
+      if (
+        def.isRequired &&
+        (value === null || value === undefined || value === "")
+      ) {
+        throw new Error(`Field '${def.name}' is required but was empty.`);
+      }
+
+      // 3. Validar tipo de datos (IMPORTANTE para 'isSummable')
+      if (value !== null && value !== undefined && value !== "") {
+        // Si es tipo 'number' o 'currency', aseguramos que sea convertible a número
+        if (def.type === "number" || def.type === "currency") {
+          const numValue = parseFloat(value);
+          if (isNaN(numValue)) {
+            throw new Error(`Field '${def.name}' must be a valid number.`);
+          }
+          // Opcional: Si quieres guardar el valor como número en el JSON (no string),
+          // puedes convertirlo aquí, pero el parseo de Multer/JSON.parse
+          // a menudo lo deja como string, lo cual MySQL acepta en JSON.
+        }
+      }
+    }
+  }
+
+  async getItems({
+    containerId,
+    assetTypeId,
+    userId,
+    aggregationFilters = {},
+  }) {
+    // 1. Validar IDs
+    const cId = parseInt(containerId);
+    const aTId = parseInt(assetTypeId);
+    if (isNaN(cId) || isNaN(aTId)) {
+      throw new Error(
+        "Invalid ID format provided for container or asset type."
+      );
+    }
+
+    // 2. Obtener todas las definiciones de campo
+    const allFieldDefinitions = await prisma.customFieldDefinition.findMany({
+      where: { assetTypeId: aTId },
+      select: { id: true, name: true, type: true, isSummable: true },
+    });
+    const summableFieldDefinitions = allFieldDefinitions.filter(
+      (def) => def.isSummable
+    );
+
+    // 3. Inicializar resultados
+    const aggregationResults = {};
+
+    // 🔑 CONSTRUCCIÓN DE LA CLÁUSULA WHERE BASE (Solo filtros de Prisma)
+    const baseWhereClause = {
+      containerId: cId,
+      assetTypeId: aTId,
+      container: { userId: userId },
+    };
+
+    // 4. Obtener TODOS los ítems que cumplen las condiciones base (SIN filtros JSON)
+    const allItems = await prisma.inventoryItem.findMany({
+      where: baseWhereClause,
       include: {
         images: {
           orderBy: { order: "asc" },
         },
       },
     });
-    return { success: true, data: items };
+
+    // 🎯 PASO CRÍTICO: FILTRADO EN JAVASCRIPT
+    let items = allItems; // Inicialmente, todos los ítems cargados
+
+    if (Object.keys(aggregationFilters).length > 0) {
+      // Tomamos el primer (y único) filtro
+      const fieldId = Object.keys(aggregationFilters)[0].toString();
+
+      // Aseguramos que el valor del filtro sea una cadena de texto (ej: "45")
+      const filterValue = String(aggregationFilters[fieldId]);
+
+      // 🛑 Aplicar el filtro de customFieldValues en memoria
+      items = allItems.filter((item) => {
+        const customValues = item.customFieldValues || {};
+        const itemValueRaw = customValues[fieldId];
+
+        // 🔑 Hacemos el valor del ítem robusto:
+        // Si es null/undefined, lo tratamos como cadena vacía. Si no, lo convertimos a String.
+        const itemValueString =
+          itemValueRaw === null || itemValueRaw === undefined
+            ? ""
+            : String(itemValueRaw);
+
+        // Hacemos una comparación estricta de cadenas.
+        return itemValueString === filterValue;
+      });
+    }
+
+    // 5. Lógica de CONTEO (Count)
+    const totalCount = items.length; // Usamos la lista filtrada 'items'
+
+    if (Object.keys(aggregationFilters).length > 0) {
+      const fieldId = Object.keys(aggregationFilters)[0];
+      aggregationResults[`count_${fieldId}`] = totalCount;
+    }
+
+    // 6. CÁLCULO DE SUMATORIOS en JavaScript
+    // El sumatorio se hace sobre la lista ya filtrada ('items')
+    for (const def of summableFieldDefinitions) {
+      const fieldKey = def.id.toString();
+      let totalSum = 0;
+
+      items.forEach((item) => {
+        const value = item.customFieldValues?.[fieldKey];
+        const isPresentAndValid =
+          value !== undefined && value !== null && value !== "";
+
+        if (def.isSummable && isPresentAndValid) {
+          // El valor se lee como string (ej: "45") y se parsea a float para sumar.
+          const numValue = parseFloat(value);
+          if (!isNaN(numValue)) totalSum += numValue;
+        }
+      });
+
+      if (def.isSummable) {
+        aggregationResults[`sum_${fieldKey}`] = totalSum;
+      }
+    }
+
+    // 7. Devolver los items junto con los totales
+    return {
+      success: true,
+      data: items,
+      totals: {
+        definitions: summableFieldDefinitions,
+        aggregations: aggregationResults,
+      },
+    };
   }
 
   async getItemById(id, containerId) {

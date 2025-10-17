@@ -2,47 +2,102 @@
 
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const path = require("path");
+const fs = require("fs");
+require("dotenv").config();
 
-// Importamos el servicio de contenedores para la verificación de propiedad
-const containerService = require("./containerService");
+// 💡 CONFIGURACIÓN DE RUTAS FÍSICAS BASADAS EN .env
+const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
+const ASSET_TYPES_SUBDIR =
+  process.env.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR || "asset-types";
+
+// 🔑 RUTA ABSOLUTA para las imágenes de Asset Types (e.g., ../uploads/inventory/asset-types)
+const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.join(
+  __dirname,
+  "..",
+  UPLOAD_BASE_FOLDER,
+  ASSET_TYPES_SUBDIR
+);
+
+// 🔑 RUTA ABSOLUTA para las imágenes de Inventory Items (e.g., ../uploads/inventory)
+const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
+  __dirname,
+  "..",
+  UPLOAD_BASE_FOLDER
+);
 
 /**
- * Crea un nuevo Tipo de Activo y sus definiciones de campo.
+ * Crea un nuevo Tipo de Activo y sus definiciones de campo con múltiples imágenes.
  * @param {number} containerId ID del contenedor padre.
- * @param {number} userId ID del usuario (para la capa de seguridad, aunque el router ya validó la propiedad del contenedor).
- * @param {object} data Datos del AssetType (name, imageUrl, fieldDefinitions).
+ * @param {number} userId ID del usuario (para la capa de seguridad).
+ * @param {object} data Datos del AssetType (name, fieldDefinitions, files).
  */
 async function createAssetType(containerId, userId, data) {
-  const { name, imageUrl, fieldDefinitions } = data;
+  const { name, fieldDefinitions } = data;
+  const files = data.files || [];
 
   if (!name || !fieldDefinitions) {
+    // Si falla, limpia todos los archivos subidos
+    files.forEach((file) => fs.unlinkSync(file.path));
     return {
       success: false,
       message: "Se requiere nombre y definiciones de campo.",
     };
   }
 
-  // Convertir las definiciones de campo para el formato 'createMany' o 'create' de Prisma.
-  // Esto asegura que cada campo se asocie correctamente con el AssetType que se va a crear.
-  const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
-    name: def.name,
-    type: def.type,
-    isRequired: def.isRequired,
-    dataListId: def.dataListId || null,
-  }));
+  // 1. Preparar las relaciones de imágenes
+  const baseImageUrl = process.env.STATIC_URL_PREFIX || ""; // /images
+  const UPLOAD_WEB_PATH =
+    process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR; // asset-types
+
+  const imageRelations = files.map((file, index) => {
+    // La URL resultante será: /images/asset-types/filename.jpg
+    const publicUrl = path
+      .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
+      .replace(/\\/g, "/");
+    return {
+      url: publicUrl,
+      filename: file.filename, // Guardar el nombre del archivo para el borrado físico
+      order: index,
+    };
+  });
+
+  // Convertir las definiciones de campo para el formato 'create' de Prisma.
+  const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => {
+    // Aseguramos que los valores sean booleanos (o 'false' si no están presentes)
+    const isSummableInput = !!def.isSummable;
+    const isNumeric =
+      def.type === "number" || def.type === "currency" || def.type === "número";
+
+    return {
+      name: def.name,
+      type: def.type,
+      isRequired: !!def.isRequired,
+      dataListId: def.dataListId || null,
+
+      // 🚀 ¡NUEVOS CAMPOS INCLUIDOS Y VALIDADOS!
+      // isSummable solo se permite si el tipo de campo es numérico.
+      isSummable: isNumeric ? isSummableInput : false,
+    };
+  });
 
   try {
     const newAssetType = await prisma.assetType.create({
       data: {
         name,
-        imageUrl,
         containerId,
         fieldDefinitions: {
           create: fieldDefinitionsForPrisma,
         },
+        images: {
+          create: imageRelations,
+        },
       },
       include: {
         fieldDefinitions: true,
+        images: {
+          orderBy: { order: "asc" },
+        },
       },
     });
 
@@ -53,6 +108,8 @@ async function createAssetType(containerId, userId, data) {
     };
   } catch (error) {
     console.error("Prisma Error en createAssetType:", error);
+    // Limpieza de archivos en caso de error de DB
+    files.forEach((file) => fs.unlinkSync(file.path));
     throw new Error("Error al crear el Tipo de Activo en la base de datos.");
   }
 }
@@ -71,7 +128,13 @@ async function getAssetTypeById(assetTypeId, userId) {
 
     const assetType = await prisma.assetType.findUnique({
       where: { id },
-      include: { container: true, fieldDefinitions: true },
+      include: {
+        container: true,
+        fieldDefinitions: true,
+        images: {
+          orderBy: { order: "asc" },
+        },
+      },
     });
 
     if (!assetType) {
@@ -102,142 +165,333 @@ async function getAssetTypeById(assetTypeId, userId) {
 }
 
 /**
- * Actualiza un Tipo de Activo y sus definiciones de campo.
+ * Actualiza un Tipo de Activo y sus definiciones de campo y gestiona imágenes.
  * @param {number} assetTypeId ID del Tipo de Activo.
  * @param {number} userId ID del usuario para verificar la propiedad.
- * @param {object} updateData Datos a actualizar (name, imageUrl, fieldDefinitions, etc.).
+ * @param {object} updateData Datos a actualizar (name, fieldDefinitions, filesToUpload, imageIdsToDelete).
  */
 async function updateAssetType(assetTypeId, userId, updateData) {
-  const { fieldDefinitions, ...assetTypeUpdates } = updateData;
+  const {
+    fieldDefinitions,
+    filesToUpload,
+    imageIdsToDelete,
+    ...assetTypeUpdates
+  } = updateData;
 
-  // 1. Verificar propiedad antes de actualizar
-  const verification = await getAssetTypeById(assetTypeId, userId);
-  if (!verification.success) {
-    return verification; // Devuelve el error de 404 o acceso denegado
+  const assetTypeIdInt = parseInt(assetTypeId);
+  if (isNaN(assetTypeIdInt)) {
+    throw new Error("ID de tipo de activo inválido.");
   }
 
-  // Lógica compleja de actualización de campos anidados (transacción)
-  try {
-    const result = await prisma.$transaction(async (prisma) => {
-      // Si hay nuevas definiciones de campo, necesitamos borrar las antiguas y crear las nuevas
-      if (fieldDefinitions) {
-        // 1. Borrar todas las definiciones de campo antiguas
-        await prisma.customFieldDefinition.deleteMany({
-          where: { assetTypeId: assetTypeId },
-        });
+  // 1. Verificar propiedad antes de actualizar
+  const verification = await getAssetTypeById(assetTypeIdInt, userId);
+  if (!verification.success) {
+    if (filesToUpload && filesToUpload.length > 0) {
+      filesToUpload.forEach((file) => fs.unlinkSync(file.path));
+    }
+    return verification;
+  }
 
-        // 2. Crear las nuevas definiciones
-        const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
-          name: def.name,
-          type: def.type,
-          isRequired: def.isRequired,
-          dataListId: def.dataListId || null,
-          assetTypeId: assetTypeId, // Asegurar que el ID se asigna
-        }));
+  const updateActions = [];
 
-        await prisma.customFieldDefinition.createMany({
-          data: fieldDefinitionsForPrisma,
-        });
-      }
+  // ===========================================
+  // PASO A: ELIMINACIÓN DE IMÁGENES (DB y Disco)
+  // ===========================================
+  if (imageIdsToDelete && imageIdsToDelete.length > 0) {
+    const idsToDeleteInt = imageIdsToDelete
+      .map((id) => parseInt(id))
+      .filter((id) => !isNaN(id));
 
-      // 3. Actualizar los campos principales de AssetType
-      const updatedAssetType = await prisma.assetType.update({
-        where: { id: assetTypeId },
-        data: assetTypeUpdates,
-        include: { fieldDefinitions: true },
-      });
-
-      return updatedAssetType;
+    // 1. Encontrar los nombres de archivo de las imágenes que vamos a eliminar
+    const imagesToDelete = await prisma.assetTypeImage.findMany({
+      where: {
+        id: { in: idsToDeleteInt },
+        assetTypeId: assetTypeIdInt,
+      },
+      select: { filename: true },
     });
 
-    return {
-      success: true,
-      data: result,
-      message: "Tipo de Activo actualizado con éxito.",
-    };
+    // 2. Eliminar las imágenes del disco
+    for (const img of imagesToDelete) {
+      // 🔑 USANDO la ruta absoluta corregida para Asset Types
+      const imagePath = path.join(
+        UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
+        img.filename
+      );
+      try {
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
+      } catch (err) {
+        console.error(`Error deleting file ${imagePath}:`, err);
+      }
+    }
+
+    // 3. Eliminar las referencias de la base de datos
+    updateActions.push(
+      prisma.assetTypeImage.deleteMany({
+        where: {
+          id: { in: idsToDeleteInt },
+          assetTypeId: assetTypeIdInt,
+        },
+      })
+    );
+  }
+
+  // ===========================================
+  // PASO B: ACTUALIZAR EL TIPO DE ACTIVO PRINCIPAL Y SUS DEFINICIONES DE CAMPO
+  // ===========================================
+  updateActions.push(async (tx) => {
+    // Si hay nuevas definiciones de campo, borrar las antiguas y crear las nuevas
+    if (fieldDefinitions) {
+      // Borrar todas las definiciones de campo antiguas
+      await tx.customFieldDefinition.deleteMany({
+        where: { assetTypeId: assetTypeIdInt },
+      });
+
+      // Crear las nuevas definiciones
+      const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
+        name: def.name,
+        type: def.type,
+        isRequired: def.isRequired,
+        dataListId: def.dataListId || null,
+        assetTypeId: assetTypeIdInt,
+      }));
+
+      await tx.customFieldDefinition.createMany({
+        data: fieldDefinitionsForPrisma,
+      });
+    }
+
+    // Actualizar los campos principales de AssetType
+    return tx.assetType.update({
+      where: { id: assetTypeIdInt },
+      data: assetTypeUpdates,
+      include: { fieldDefinitions: true },
+    });
+  });
+
+  // ===========================================
+  // PASO C: AÑADIR NUEVAS IMÁGENES
+  // ===========================================
+  if (filesToUpload && filesToUpload.length > 0) {
+    // Encontrar el orden máximo actual para continuar la secuencia
+    const lastImage = await prisma.assetTypeImage.findFirst({
+      where: { assetTypeId: assetTypeIdInt },
+      orderBy: { order: "desc" },
+      select: { order: true },
+    });
+    const startOrder = lastImage ? lastImage.order + 1 : 0;
+
+    const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
+    const UPLOAD_WEB_PATH =
+      process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR; // asset-types
+
+    const newImagesData = filesToUpload.map((file, index) => {
+      // La URL resultante será: /images/asset-types/filename.jpg
+      const publicUrl = path
+        .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
+        .replace(/\\/g, "/");
+      return {
+        url: publicUrl,
+        filename: file.filename,
+        assetTypeId: assetTypeIdInt,
+        order: startOrder + index,
+      };
+    });
+
+    updateActions.push(
+      prisma.assetTypeImage.createMany({
+        data: newImagesData,
+      })
+    );
+  }
+
+  // ===========================================
+  // PASO D: EJECUTAR TRANSACCIÓN Y DEVOLVER EL RESULTADO FINAL
+  // ===========================================
+
+  let updatedAssetType;
+  try {
+    // Ejecutar todas las acciones en una sola transacción
+    await prisma.$transaction(
+      updateActions.map((action) =>
+        typeof action === "function" ? action(prisma) : action
+      )
+    );
+
+    // Obtener el resultado final con todas las relaciones actualizadas
+    updatedAssetType = await prisma.assetType.findUnique({
+      where: { id: assetTypeIdInt },
+      include: {
+        fieldDefinitions: true,
+        images: { orderBy: { order: "asc" } },
+      },
+    });
+
+    if (!updatedAssetType) {
+      throw new Error("Asset Type not found after update transaction.");
+    }
   } catch (error) {
     console.error("Prisma Error en updateAssetType:", error);
+    // Limpiar archivos subidos si la DB falla
+    if (filesToUpload && filesToUpload.length > 0) {
+      filesToUpload.forEach((file) => fs.unlinkSync(file.path));
+    }
     throw new Error(
       "Error al actualizar el Tipo de Activo en la base de datos."
     );
   }
+
+  return {
+    success: true,
+    data: updatedAssetType,
+    message: "Tipo de Activo actualizado con éxito.",
+  };
 }
 
 /**
- * Elimina todos los elementos asociados a un tipo de activo.
- * @param {number} assetTypeId ID del Tipo de Activo.
- * @param {number} userId ID del usuario para verificar la propiedad.
- */
-async function deleteAssetTypeItems(assetTypeId, userId) {
-  // 1. Verificar propiedad antes de eliminar
-  const verification = await getAssetTypeById(assetTypeId, userId);
-  if (!verification.success) {
-    return verification;
-  }
-
-  try {
-    const id = parseInt(assetTypeId);
-    if (isNaN(id)) {
-      return { success: false, message: "ID de tipo de activo inválido" };
-    }
-
-    // Eliminar todos los InventoryItems asociados al AssetType
-    await prisma.inventoryItem.deleteMany({
-      where: { 
-        assetTypeId: id,
-        container: {
-          userId: userId
-        }
-      }
-    });
-
-    return { success: true, message: "Elementos del tipo de activo eliminados con éxito." };
-  } catch (error) {
-    console.error("Error en deleteAssetTypeItems:", error);
-    throw new Error("Error al eliminar los elementos del tipo de activo.");
-  }
-}
-
-/**
- * Elimina un Tipo de Activo.
+ * Elimina un Tipo de Activo, sus elementos de inventario y sus imágenes asociadas.
  * @param {number} assetTypeId ID del Tipo de Activo.
  * @param {number} userId ID del usuario para verificar la propiedad.
  */
 async function deleteAssetType(assetTypeId, userId) {
-  // 1. Verificar propiedad antes de eliminar
-  const verification = await getAssetTypeById(assetTypeId, userId);
+  const assetTypeIdInt = parseInt(assetTypeId);
+  if (isNaN(assetTypeIdInt)) {
+    return { success: false, message: "ID de tipo de activo inválido" };
+  }
+
+  // 1. Verificar propiedad y obtener imágenes asociadas
+  const assetTypeToDelete = await prisma.assetType.findUnique({
+    where: { id: assetTypeIdInt },
+    include: {
+      container: true,
+      images: true, // Incluir imágenes para el borrado físico
+    },
+  });
+
+  if (!assetTypeToDelete || assetTypeToDelete.container.userId !== userId) {
+    return {
+      success: false,
+      message: "Tipo de Activo no encontrado o acceso denegado.",
+    };
+  }
+
+  // 2. BORRAR ARCHIVOS DEL DISCO (AssetType Images)
+  if (assetTypeToDelete.images && assetTypeToDelete.images.length > 0) {
+    for (const image of assetTypeToDelete.images) {
+      // 🔑 USANDO la ruta absoluta corregida para Asset Types
+      const absolutePath = path.join(
+        UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
+        image.filename
+      );
+
+      try {
+        if (fs.existsSync(absolutePath)) {
+          fs.unlinkSync(absolutePath); // ¡Borra el archivo físico!
+          console.log(`Successfully deleted file: ${absolutePath}`);
+        }
+      } catch (err) {
+        console.error(`Error deleting file ${absolutePath}:`, err);
+        // Si falla el borrado del archivo, no impedimos la eliminación de la DB.
+      }
+    }
+  }
+
+  // 3. BORRAR REGISTROS DE LA BASE DE DATOS (Transacción)
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Borrar todos los InventoryItems asociados (Esto activará el CASCADE en InventoryItemImage)
+      await tx.inventoryItem.deleteMany({
+        where: {
+          assetTypeId: assetTypeIdInt,
+          container: {
+            userId: userId,
+          },
+        },
+      });
+
+      // Eliminar el AssetType (Esto activará el CASCADE en AssetTypeImage y CustomFieldDefinition)
+      await tx.assetType.delete({
+        where: { id: assetTypeIdInt },
+      });
+    });
+
+    return {
+      success: true,
+      message: "Tipo de Activo, sus elementos y archivos eliminados con éxito.",
+    };
+  } catch (error) {
+    console.error("Error en deleteAssetType:", error);
+    throw new Error("Error al eliminar el tipo de activo y sus elementos.");
+  }
+}
+
+/**
+ * Elimina todos los elementos de inventario asociados a un tipo de activo (sin eliminar el AssetType).
+ * @param {number} assetTypeId ID del Tipo de Activo.
+ * @param {number} userId ID del usuario para verificar la propiedad.
+ */
+async function deleteAssetTypeItems(assetTypeId, userId) {
+  // 1. Convertir a Int y verificar la ID
+  const id = parseInt(assetTypeId);
+  if (isNaN(id)) {
+    return { success: false, message: "ID de tipo de activo inválido" };
+  }
+
+  // 2. Verificar propiedad antes de eliminar
+  const verification = await getAssetTypeById(id, userId);
   if (!verification.success) {
     return verification;
   }
 
+  // 3. Borrado de Items
   try {
-    const id = parseInt(assetTypeId);
-    if (isNaN(id)) {
-      return { success: false, message: "ID de tipo de activo inválido" };
-    }
-
-    // Realizamos todas las operaciones en una transacción
-    await prisma.$transaction(async (tx) => {
-      // 1. Primero eliminamos todos los InventoryItems asociados
-      await tx.inventoryItem.deleteMany({
-        where: { 
-          assetTypeId: id,
-          container: {
-            userId: userId
-          }
-        }
-      });
-
-      // 2. Luego eliminamos el AssetType y sus CustomFieldDefinitions (cascade)
-      await tx.assetType.delete({
-        where: { id }
-      });
+    // 3a. Obtener los ítems y sus imágenes ANTES de borrarlos de la DB
+    const itemsToDelete = await prisma.inventoryItem.findMany({
+      where: {
+        assetTypeId: id,
+        container: { userId: userId },
+      },
+      include: { images: true },
     });
 
-    return { success: true, message: "Tipo de Activo y sus elementos eliminados con éxito." };
+    // 3b. Borrar archivos del disco para cada ítem y sus imágenes
+    for (const item of itemsToDelete) {
+      for (const image of item.images) {
+        // Usamos el filename (asumimos que existe y fue guardado)
+        const filename = path.basename(image.url);
+        // 🔑 USANDO la ruta absoluta corregida para Inventory Items
+        const absolutePath = path.join(UPLOAD_DIR_INVENTORY_ABSOLUTE, filename);
+
+        try {
+          if (fs.existsSync(absolutePath)) {
+            fs.unlinkSync(absolutePath);
+            console.log(`Successfully deleted item file: ${absolutePath}`);
+          }
+        } catch (err) {
+          console.error(`Error deleting item file ${absolutePath}:`, err);
+        }
+      }
+    }
+
+    // 3c. Eliminar los registros de la base de datos (Inventario y sus imágenes por CASCADE)
+    await prisma.inventoryItem.deleteMany({
+      where: {
+        assetTypeId: id,
+        container: {
+          userId: userId,
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: "Elementos del tipo de activo eliminados con éxito.",
+    };
   } catch (error) {
-    console.error("Error en deleteAssetType:", error);
-    throw new Error("Error al eliminar el tipo de activo y sus elementos.");
+    console.error("Error en deleteAssetTypeItems:", error);
+    throw new Error("Error al eliminar los elementos del tipo de activo.");
   }
 }
 

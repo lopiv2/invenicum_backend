@@ -8,6 +8,7 @@ const CONTAINER_INCLUDE = {
     // Incluir las definiciones de campos para cada AssetType
     include: {
       fieldDefinitions: true,
+      images:true
     },
   },
   // Opcional: Si deseas que los items del inventario también se carguen

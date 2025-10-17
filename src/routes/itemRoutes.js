@@ -46,45 +46,70 @@ router.use((req, res, next) => {
 // RUTA DE LECTURA (READ - Filtrada)
 // GET /containers/:containerId/asset-types/:assetTypeId/items
 // ===============================================
-router.get("/containers/:containerId/asset-types/:assetTypeId/items", verifyToken, async (req, res) => {
-  try {
-    const containerId = parseInt(req.params.containerId);
-    const assetTypeId = parseInt(req.params.assetTypeId);
-    const userId = req.user.id;
+router.get(
+  "/containers/:containerId/asset-types/:assetTypeId/items",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const containerId = parseInt(req.params.containerId);
+      const assetTypeId = parseInt(req.params.assetTypeId);
+      const userId = req.user.id;
+      const aggFiltersString = req.query.aggFilters;
 
-    if (isNaN(containerId) || isNaN(assetTypeId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid containerId or assetTypeId.",
+      let aggregationFilters = {};
+      if (aggFiltersString && typeof aggFiltersString === "string") {
+        // Ejemplo: '10:Dañado,12:Rojo'
+        aggregationFilters = aggFiltersString.split(",").reduce((acc, part) => {
+          const [fieldId, value] = part.split(":");
+          if (fieldId && value) {
+            acc[fieldId.trim()] = value.trim();
+          }
+          return acc;
+        }, {});
+      }
+
+      if (isNaN(containerId) || isNaN(assetTypeId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid containerId or assetTypeId.",
+        });
+      }
+
+      // 1. Verificar la pertenencia del contenedor
+      const containerResult = await containerService.getContainerById(
+        containerId,
+        userId
+      );
+      if (!containerResult.success) {
+        return res.status(404).json({
+          success: false,
+          message: "Container not found or access denied.",
+        });
+      }
+
+      // 2. Llamar al servicio de inventario para obtener los ítems filtrados
+      const itemsResult = await inventoryItemService.getItems({
+        containerId,
+        assetTypeId,
+        userId,
+        aggregationFilters,
       });
-    }
 
-    // 1. Verificar la pertenencia del contenedor
-    const containerResult = await containerService.getContainerById(
-      containerId,
-      userId
-    );
-    if (!containerResult.success) {
-      return res.status(404).json({
-        success: false,
-        message: "Container not found or access denied.",
+      // El servicio debe devolver { success: true, data: [...] }
+      res.status(200).json({
+        // La lista de ítems debe ser 'items' en el InventoryResponse
+        items: itemsResult.data,
+        // Las definiciones de agregación
+        aggregationDefinitions: itemsResult.totals.definitions,
+        // Los resultados de agregación
+        aggregationResults: itemsResult.totals.aggregations,
       });
+    } catch (error) {
+      console.error("Error fetching inventory items:", error);
+      res.status(500).json({ success: false, error: error.message });
     }
-
-    // 2. Llamar al servicio de inventario para obtener los ítems filtrados
-    const itemsResult = await inventoryItemService.getItems({
-      containerId,
-      assetTypeId,
-      userId,
-    });
-
-    // El servicio debe devolver { success: true, data: [...] }
-    res.status(200).json(itemsResult);
-  } catch (error) {
-    console.error("Error fetching inventory items:", error);
-    res.status(500).json({ success: false, error: error.message });
   }
-});
+);
 
 // ===============================================
 // RUTA DE CREACIÓN (CREATE)

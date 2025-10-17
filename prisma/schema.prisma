@@ -37,7 +37,6 @@ model Container {
 model AssetType {
   id                Int                     @id @default(autoincrement())
   name              String
-  imageUrl          String?                 @map("image_url") // Mapeo para snake_case en la DB
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
   
@@ -49,6 +48,9 @@ model AssetType {
   fieldDefinitions  CustomFieldDefinition[]
   inventoryItems    InventoryItem[]
   
+  // Relación con las imágenes
+  images           AssetTypeImage[]
+  
   @@map("asset_type")
 }
 
@@ -59,12 +61,16 @@ model CustomFieldDefinition {
   // El tipo debe ser mapeado a una cadena o un enum de la DB (TEXT, INTEGER, etc.)
   type            String      
   isRequired      Boolean     @default(false) @map("is_required")
+  isSummable      Boolean     @default(false) @map("is_summable") // true si es un campo numérico que se debe sumar
+
   // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
   dataListId      Int?        @map("data_list_id") 
   
   // Relación con AssetType (Muchos a Uno)
   assetTypeId     Int         @map("asset_type_id")
   assetType       AssetType   @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  dataList        DataList?   @relation(fields: [dataListId], references: [id])
 
   @@map("custom_field_definition")
 }
@@ -125,5 +131,24 @@ model DataList {
   containerId Int      @map("container_id")
   container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
 
+  customFields CustomFieldDefinition[]
+
   @@map("data_list")
+}
+
+// Modelo para las imágenes de los tipos de activo
+model AssetTypeImage {
+  id          Int      @id @default(autoincrement())
+  url         String   // URL o ruta al archivo de la imagen
+  filename    String   // Nombre del archivo físico
+  altText     String?  @map("alt_text")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  // Relación con AssetType (Muchos a Uno)
+  assetTypeId Int      @map("asset_type_id")
+  assetType   AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  @@map("asset_type_image")
 }
