@@ -43,6 +43,77 @@ router.use((req, res, next) => {
 });
 
 // ===============================================
+// RUTA DE CREACIÓN POR LOTES (BATCH CREATE)
+// POST /containers/:containerId/asset-types/:assetTypeId/items/batch
+// ===============================================
+router.post(
+  "/containers/:containerId/asset-types/:assetTypeId/items/batch",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const containerId = parseInt(req.params.containerId);
+      const assetTypeId = parseInt(req.params.assetTypeId);
+      const userId = req.user.id;
+
+      // 🔑 Los datos de la importación vienen en req.body.items
+      const { items } = req.body;
+
+      if (isNaN(containerId) || isNaN(assetTypeId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid containerId or assetTypeId.",
+        });
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "No items provided for batch import.",
+        });
+      }
+
+      // 1. Verificar la pertenencia del contenedor (seguridad)
+      const containerResult = await containerService.getContainerById(
+        containerId,
+        userId
+      );
+      if (!containerResult.success) {
+        return res.status(404).json({
+          success: false,
+          message: "Container not found or access denied.",
+        });
+      }
+
+      // 2. Llamar al servicio para el procesamiento masivo
+      const result = await inventoryItemService.createBatchItems({
+        containerId,
+        assetTypeId,
+        itemsData: items,
+        userId, // Opcional: Puede ser útil para validaciones internas
+      });
+
+      // 201 Created. Devolvemos el resultado (que puede incluir errores de validación por fila)
+      // Aunque el frontend espera `void`, es útil devolver un 201 o 200 si es exitoso.
+      res.status(201).json({
+        success: true,
+        message: `${result.count} items created successfully.`,
+        details: result.details,
+      });
+    } catch (error) {
+      console.error("Error during batch item import:", error);
+      // Devuelve 400 Bad Request si el servicio lanza un error de validación de datos
+      if (
+        error.message.includes("Validation failed") ||
+        error.message.includes("Invalid")
+      ) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+// ===============================================
 // RUTA DE LECTURA (READ - Filtrada)
 // GET /containers/:containerId/asset-types/:assetTypeId/items
 // ===============================================

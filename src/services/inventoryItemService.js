@@ -454,6 +454,99 @@ class InventoryItemService {
     );
   }
 
+  async createBatchItems({
+    containerId,
+    assetTypeId,
+    itemsData,
+    // userId // Lo dejamos como comentario ya que la ruta ya verificó el acceso
+  }) {
+    const cId = parseInt(containerId);
+    const aTId = parseInt(assetTypeId);
+
+    if (isNaN(cId) || isNaN(aTId)) {
+      throw new Error("Invalid Container ID or Asset Type ID.");
+    }
+
+    // 1. Obtener las definiciones de campos personalizados UNA VEZ para validación.
+    const fieldDefinitions = await prisma.customFieldDefinition.findMany({
+      where: { assetTypeId: aTId },
+    });
+
+    // Lista para almacenar las inserciones exitosas.
+    const itemsToCreate = [];
+    const validationErrors = [];
+    let successCount = 0;
+
+    // 2. PRE-PROCESAMIENTO Y VALIDACIÓN DE CADA ÍTEM
+    for (let i = 0; i < itemsData.length; i++) {
+      const item = itemsData[i];
+
+      // El frontend ya envió 'name' y 'description', más los campos personalizados.
+      const name = item.name;
+      const description = item.description || null;
+
+      // Los campos personalizados vienen directos (no como JSON string escapado)
+      const customFieldValues = item.customFieldValues || {};
+
+      // Validar datos básicos
+      if (!name || name.trim() === "") {
+        validationErrors.push({ row: i + 2, message: "Name is required." });
+        continue;
+      }
+
+      try {
+        // 3. Validar los campos personalizados (usando la función existente)
+        await this.validateCustomFieldValues(
+          aTId,
+          customFieldValues,
+          fieldDefinitions
+        );
+
+        // 4. Si la validación pasa, preparar el objeto para Prisma
+        itemsToCreate.push({
+          containerId: cId,
+          assetTypeId: aTId,
+          name: name,
+          description: description,
+          // Almacena los customFieldValues como objeto JSON en la DB
+          customFieldValues: customFieldValues,
+        });
+        successCount++;
+      } catch (error) {
+        // Capturar errores de validación de campos personalizados (ej: tipo de dato incorrecto)
+        validationErrors.push({ row: i + 2, message: error.message });
+      }
+    }
+
+    // 5. INSERCIÓN MASIVA EN LA BASE DE DATOS
+    // Si no hay ítems válidos, lanzamos un error que el controlador captura.
+    if (itemsToCreate.length === 0 && validationErrors.length > 0) {
+      const errorSummary = validationErrors
+        .map((e) => `Row ${e.row}: ${e.message}`)
+        .join("; ");
+      throw new Error(
+        `Batch import failed. Validation errors: ${errorSummary}`
+      );
+    }
+
+    if (itemsToCreate.length > 0) {
+      // Usamos createMany para la inserción masiva.
+      // Esta es la forma más rápida y eficiente en Prisma/SQL.
+      await prisma.inventoryItem.createMany({
+        data: itemsToCreate,
+        // Omite registros duplicados si tienes una clave única. (No necesario aquí)
+        // skipDuplicates: true,
+      });
+    }
+
+    // 6. Devolver el resumen
+    return {
+      count: itemsToCreate.length,
+      totalRows: itemsData.length,
+      details: validationErrors, // Los errores que ocurrieron.
+    };
+  }
+
   // ----------------------------------------------------
   // 🔑 MÉTODO DE ELIMINACIÓN CON BORRADO DE ARCHIVOS
   // ----------------------------------------------------
