@@ -43,6 +43,55 @@ router.use((req, res, next) => {
 });
 
 // ===============================================
+// 🔑 NUEVA RUTA DE CLONACIÓN (CLONE)
+// POST /containers/:containerId/asset-types/:assetTypeId/items/clone
+// ===============================================
+router.post(
+  "/containers/:containerId/asset-types/:assetTypeId/items/clone",
+  verifyToken, // 💡 IMPORTANTE: SIN MULTER
+  async (req, res) => {
+    try {
+      const containerId = parseInt(req.params.containerId);
+      const assetTypeId = parseInt(req.params.assetTypeId);
+      const userId = req.user.id;
+
+      // ... (Verificaciones de containerId, assetTypeId, y acceso) ...
+
+      // 2. Preparar los datos para el servicio de clonación
+      const cloneData = {
+        ...req.body,
+        containerId: containerId,
+        assetTypeId: assetTypeId,
+      };
+
+      // 3. Llamar al nuevo servicio de clonación
+      // 🔑 El servicio ya devuelve el objeto Item de Prisma directamente:
+      //    const clonedItem = await inventoryItemService.cloneItem(cloneData);
+      const clonedItem = await inventoryItemService.cloneItem(cloneData); 
+
+      // 4. Devolver el ítem clonado (HTTP 201 Created)
+      //    El frontend de Flutter/Dart espera que el cuerpo de la respuesta
+      //    sea el objeto InventoryItem JSON plano para el fromJson.
+      // 🔑 CORRECCIÓN: Devolvemos SOLO el objeto creado directamente.
+      res.status(201).json(clonedItem); 
+      
+      
+    } catch (error) {
+      console.error("Error during item cloning:", error);
+
+      if (
+        error.message.includes("Invalid") ||
+        error.message.includes("Cloning operation") ||
+        error.message.includes("JSON format")
+      ) {
+        return res.status(400).json({ success: false, error: error.message });
+      }
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
+// ===============================================
 // RUTA DE CREACIÓN POR LOTES (BATCH CREATE)
 // POST /containers/:containerId/asset-types/:assetTypeId/items/batch
 // ===============================================

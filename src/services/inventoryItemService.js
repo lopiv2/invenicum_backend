@@ -119,6 +119,126 @@ class InventoryItemService {
     }
   }
 
+  // =================================================================
+  // 2. MÉTODO PARA COPIAR UN ÍTEM EXISTENTE (cloneItem)
+  // =================================================================
+  async cloneItem(data) {
+    // Validación: No debe haber archivos subidos
+    if (data.files && data.files.length > 0) {
+      throw new Error("Cloning operation cannot include new file uploads.");
+    }
+
+    const itemData = { ...data };
+    delete itemData.id;
+
+    const containerId = parseInt(itemData.containerId);
+    const assetTypeId = parseInt(itemData.assetTypeId);
+
+    delete itemData.containerId;
+    delete itemData.assetTypeId;
+
+    if (isNaN(containerId) || isNaN(assetTypeId)) {
+      throw new Error("Invalid Container ID or Asset Type ID.");
+    }
+
+    // --- Lógica de Imágenes Copiadas del body ---
+    let imagesToCopy = [];
+    if (itemData.images && Array.isArray(itemData.images)) {
+      imagesToCopy = itemData.images;
+      delete itemData.images; // Limpiamos para el spread de Prisma
+    }
+
+    // --- 1. COPIA DE ARCHIVOS FÍSICOS EN DISCO ---
+    const allImageRelations = [];
+    const newlyCopiedFilenames = []; // Para limpieza si falla la DB
+    const baseImageUrl = process.env.STATIC_URL_PREFIX;
+
+    const cleanBaseImageUrl = baseImageUrl.endsWith("/")
+      ? baseImageUrl
+      : `${baseImageUrl}/`;
+
+    for (const [index, img] of imagesToCopy.entries()) {
+      // 🔑 CORRECCIÓN CLAVE: Extracción robusta del nombre del archivo original
+      let originalFilename = img.url.replace(/\\/g, "/"); // Normalizar barras
+
+      // 1. Intentar remover el prefijo público del inicio (e.g., '/images/')
+      if (originalFilename.startsWith(cleanBaseImageUrl)) {
+        originalFilename = originalFilename.substring(cleanBaseImageUrl.length);
+      } else {
+        // 2. Fallback: Si no tiene el prefijo (o si es solo el nombre), usamos path.basename
+        originalFilename = path.basename(originalFilename);
+      }
+
+      // Reconstruir la ruta absoluta donde DEBE estar el archivo original
+      const originalPath = path.join(UPLOAD_DIR_ABSOLUTE, originalFilename);
+
+      // Verificar si el archivo original existe
+      if (fs.existsSync(originalPath)) {
+        // ... (Resto de la lógica de generación de nuevo nombre y copia de archivo) ...
+
+        const ext = path.extname(originalFilename);
+        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+        const newFilename = "item-" + uniqueSuffix + ext;
+        const newPath = path.join(UPLOAD_DIR_ABSOLUTE, newFilename);
+
+        try {
+          fs.copyFileSync(originalPath, newPath); // COPIA DEL ARCHIVO
+          newlyCopiedFilenames.push(newFilename);
+        } catch (copyError) {
+          console.error(`Error copying file ${originalPath}:`, copyError);
+          continue;
+        }
+
+        const newPublicUrl = path
+          .join(baseImageUrl, newFilename)
+          .replace(/\\/g, "/");
+
+        allImageRelations.push({
+          url: newPublicUrl,
+          altText: img.altText || null,
+          // 🔑 MEJORA: Preservar el 'order' original si existe, sino usar el índice
+          order: img.order || index + 1,
+        });
+      } else {
+        console.warn(
+          `Original image file not found: ${originalPath}. Skipping copy. Original URL was: ${img.url}`
+        );
+      }
+    }
+
+    // --- 2. CREACIÓN EN LA BASE DE DATOS (DB) ---
+    try {
+      // Crear el ítem con las referencias de imágenes copiadas
+
+      const newItem = await prisma.inventoryItem.create({
+        data: {
+          ...itemData,
+          container: { connect: { id: containerId } },
+          assetType: { connect: { id: assetTypeId } },
+          images: { create: allImageRelations }, // Crea filas de DB que apuntan a archivos copiados
+        },
+        include: { images: { orderBy: { order: "asc" } } },
+      });
+
+      return newItem;
+    } catch (error) {
+      console.error("Prisma error during item cloning:", error);
+
+      // 🚨 Limpieza: Si la transacción de DB falla, borrar los archivos que se copiaron
+      newlyCopiedFilenames.forEach((filename) => {
+        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
+        try {
+          fs.unlinkSync(absolutePath);
+          console.log(`Cleaned up copied file: ${filename}`);
+        } catch (err) {
+          console.error(`Error cleaning up copied file ${filename}:`, err);
+        }
+      });
+
+      throw new Error("Failed to clone inventory item and associate images.");
+    }
+  }
+
   // ----------------------------------------------------
   // 🔑 NUEVO MÉTODO DE VALIDACIÓN DE VALORES PERSONALIZADOS
   // ----------------------------------------------------
