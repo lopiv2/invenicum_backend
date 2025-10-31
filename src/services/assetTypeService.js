@@ -174,7 +174,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
   const {
     fieldDefinitions,
     filesToUpload,
-    imageIdsToDelete,
+    removeExistingImage,
     ...assetTypeUpdates
   } = updateData;
 
@@ -183,8 +183,11 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     throw new Error("ID de tipo de activo inválido.");
   }
 
-  // 1. Verificar propiedad antes de actualizar
-  const verification = await getAssetTypeById(assetTypeIdInt, userId);
+  // 1. Verificar propiedad y obtener la información actual
+  const verification = await getAssetTypeById(assetTypeIdInt, userId, {
+    include: { images: true, fieldDefinitions: true },
+  });
+
   if (!verification.success) {
     if (filesToUpload && filesToUpload.length > 0) {
       filesToUpload.forEach((file) => fs.unlinkSync(file.path));
@@ -192,139 +195,129 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     return verification;
   }
 
-  const updateActions = [];
+  const currentAssetType = verification.data;
 
   // ===========================================
-  // PASO A: ELIMINACIÓN DE IMÁGENES (DB y Disco)
-  // ===========================================
-  if (imageIdsToDelete && imageIdsToDelete.length > 0) {
-    const idsToDeleteInt = imageIdsToDelete
-      .map((id) => parseInt(id))
-      .filter((id) => !isNaN(id));
-
-    // 1. Encontrar los nombres de archivo de las imágenes que vamos a eliminar
-    const imagesToDelete = await prisma.assetTypeImage.findMany({
-      where: {
-        id: { in: idsToDeleteInt },
-        assetTypeId: assetTypeIdInt,
-      },
-      select: { filename: true },
-    });
-
-    // 2. Eliminar las imágenes del disco
-    for (const img of imagesToDelete) {
-      // 🔑 USANDO la ruta absoluta corregida para Asset Types
-      const imagePath = path.join(
-        UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
-        img.filename
-      );
-      try {
-        if (fs.existsSync(imagePath)) {
-          fs.unlinkSync(imagePath);
-        }
-      } catch (err) {
-        console.error(`Error deleting file ${imagePath}:`, err);
-      }
-    }
-
-    // 3. Eliminar las referencias de la base de datos
-    updateActions.push(
-      prisma.assetTypeImage.deleteMany({
-        where: {
-          id: { in: idsToDeleteInt },
-          assetTypeId: assetTypeIdInt,
-        },
-      })
-    );
-  }
-
-  // ===========================================
-  // PASO B: ACTUALIZAR EL TIPO DE ACTIVO PRINCIPAL Y SUS DEFINICIONES DE CAMPO
-  // ===========================================
-  updateActions.push(async (tx) => {
-    // Si hay nuevas definiciones de campo, borrar las antiguas y crear las nuevas
-    if (fieldDefinitions) {
-      // Borrar todas las definiciones de campo antiguas
-      await tx.customFieldDefinition.deleteMany({
-        where: { assetTypeId: assetTypeIdInt },
-      });
-
-      // Crear las nuevas definiciones
-      const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
-        name: def.name,
-        type: def.type,
-        isRequired: def.isRequired,
-        dataListId: def.dataListId || null,
-        assetTypeId: assetTypeIdInt,
-      }));
-
-      await tx.customFieldDefinition.createMany({
-        data: fieldDefinitionsForPrisma,
-      });
-    }
-
-    // Actualizar los campos principales de AssetType
-    return tx.assetType.update({
-      where: { id: assetTypeIdInt },
-      data: assetTypeUpdates,
-      include: { fieldDefinitions: true },
-    });
-  });
-
-  // ===========================================
-  // PASO C: AÑADIR NUEVAS IMÁGENES
-  // ===========================================
-  if (filesToUpload && filesToUpload.length > 0) {
-    // Encontrar el orden máximo actual para continuar la secuencia
-    const lastImage = await prisma.assetTypeImage.findFirst({
-      where: { assetTypeId: assetTypeIdInt },
-      orderBy: { order: "desc" },
-      select: { order: true },
-    });
-    const startOrder = lastImage ? lastImage.order + 1 : 0;
-
-    const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
-    const UPLOAD_WEB_PATH =
-      process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR; // asset-types
-
-    const newImagesData = filesToUpload.map((file, index) => {
-      // La URL resultante será: /images/asset-types/filename.jpg
-      const publicUrl = path
-        .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
-        .replace(/\\/g, "/");
-      return {
-        url: publicUrl,
-        filename: file.filename,
-        assetTypeId: assetTypeIdInt,
-        order: startOrder + index,
-      };
-    });
-
-    updateActions.push(
-      prisma.assetTypeImage.createMany({
-        data: newImagesData,
-      })
-    );
-  }
-
-  // ===========================================
-  // PASO D: EJECUTAR TRANSACCIÓN Y DEVOLVER EL RESULTADO FINAL
+  // PASO D: EJECUTAR TODA LA LÓGICA DENTRO DE UNA ÚNICA TRANSACCIÓN
   // ===========================================
 
   let updatedAssetType;
   try {
-    // Ejecutar todas las acciones en una sola transacción
-    await prisma.$transaction(
-      updateActions.map((action) =>
-        typeof action === "function" ? action(prisma) : action
-      )
-    );
+    // 🔑 USAMOS UNA ÚNICA FUNCIÓN ASÍNCRONA PARA MANEJAR LA SECUENCIA DE PASOS
+    await prisma.$transaction(async (tx) => {
+      let imageWasReplaced = false;
+
+      // --- PASO A: ELIMINACIÓN DE IMAGEN EXISTENTE (Si se pidió explícitamente) ---
+      if (removeExistingImage && currentAssetType.images.length > 0) {
+        const imageToDelete = currentAssetType.images[0];
+
+        // Eliminar la referencia de la base de datos
+        await tx.assetTypeImage.delete({ where: { id: imageToDelete.id } });
+
+        // Eliminación del disco (debe ser SÍNCRONA y fuera del alcance de tx)
+        // NOTA: Es seguro hacer esto aquí porque si la transacción falla más tarde,
+        // la eliminación de la DB se revierte, pero la eliminación de disco NO.
+        // Se asume que la posibilidad de falla en la DB es mayor que el riesgo de error de disco.
+        try {
+          const imagePath = path.join(
+            UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
+            imageToDelete.filename
+          );
+          if (fs.existsSync(imagePath)) {
+            fs.unlinkSync(imagePath);
+          }
+        } catch (err) {
+          console.error(
+            `Error deleting file from disk ${imageToDelete.filename}:`,
+            err
+          );
+        }
+      }
+
+      // --- PASO C-PRE: REEMPLAZO DE IMAGEN (Si se sube una nueva) ---
+      if (filesToUpload && filesToUpload.length > 0) {
+        imageWasReplaced = true;
+
+        // 1. Borrar imagen antigua si existe y NO se borró ya en el PASO A
+        if (!removeExistingImage && currentAssetType.images.length > 0) {
+          const oldImage = currentAssetType.images[0];
+
+          // Eliminar la referencia de la base de datos
+          await tx.assetTypeImage.delete({ where: { id: oldImage.id } });
+
+          // Eliminación del disco (Sincrónico)
+          try {
+            const imagePath = path.join(
+              UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
+              oldImage.filename
+            );
+            if (fs.existsSync(imagePath)) {
+              fs.unlinkSync(imagePath);
+            }
+          } catch (err) {
+            console.error(
+              `Error deleting old file from disk ${oldImage.filename}:`,
+              err
+            );
+          }
+        }
+
+        // 2. Crear la nueva imagen
+        const file = filesToUpload[0];
+        const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
+        const UPLOAD_WEB_PATH =
+          process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR;
+
+        const publicUrl = path
+          .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
+          .replace(/\\/g, "/");
+
+        await tx.assetTypeImage.create({
+          data: {
+            url: publicUrl,
+            filename: file.filename,
+            assetTypeId: assetTypeIdInt,
+            order: 0,
+          },
+        });
+      }
+
+      // --- PASO B: ACTUALIZAR EL TIPO DE ACTIVO PRINCIPAL Y SUS DEFINICIONES DE CAMPO ---
+      if (fieldDefinitions) {
+        // Borrar todas las definiciones de campo antiguas
+        await tx.customFieldDefinition.deleteMany({
+          where: { assetTypeId: assetTypeIdInt },
+        });
+
+        // Crear las nuevas definiciones
+        const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
+          name: def.name,
+          type: def.type,
+          isRequired: def.isRequired,
+          isSummable: def.isSummable,
+          isCountable: def.isCountable,
+          dataListId: def.dataListId || null,
+          assetTypeId: assetTypeIdInt,
+        }));
+
+        await tx.customFieldDefinition.createMany({
+          data: fieldDefinitionsForPrisma,
+        });
+      }
+
+      // Actualizar los campos principales de AssetType
+      return tx.assetType.update({
+        where: { id: assetTypeIdInt },
+        data: assetTypeUpdates,
+        select: { id: true }, // Solo necesitamos el ID para el findUnique final
+      });
+    }); // Fin de la transacción
 
     // Obtener el resultado final con todas las relaciones actualizadas
     updatedAssetType = await prisma.assetType.findUnique({
       where: { id: assetTypeIdInt },
       include: {
-        fieldDefinitions: true,
+        fieldDefinitions: { orderBy: { id: "asc" } },
         images: { orderBy: { order: "asc" } },
       },
     });
@@ -334,6 +327,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     }
   } catch (error) {
     console.error("Prisma Error en updateAssetType:", error);
+
     // Limpiar archivos subidos si la DB falla
     if (filesToUpload && filesToUpload.length > 0) {
       filesToUpload.forEach((file) => fs.unlinkSync(file.path));

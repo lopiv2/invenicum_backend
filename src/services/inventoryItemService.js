@@ -21,12 +21,14 @@ class InventoryItemService {
 
     const containerId = parseInt(itemData.containerId);
     const assetTypeId = parseInt(itemData.assetTypeId);
+    const locationId = parseInt(itemData.locationId);
 
     // 🛑 Limpiamos las IDs del objeto de datos para que Prisma no las rechace en el 'spread'.
     delete itemData.containerId;
     delete itemData.assetTypeId;
+    delete itemData.locationId;
 
-    if (isNaN(containerId) || isNaN(assetTypeId)) {
+    if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
       // Usamos file.path aquí, ya que Multer lo proporciona en el contexto de la ruta.
       files.forEach((file) => fs.unlinkSync(file.path));
       throw new Error("Invalid Container ID or Asset Type ID.");
@@ -88,6 +90,9 @@ class InventoryItemService {
           assetType: {
             connect: { id: assetTypeId },
           },
+          location: {
+            connect: { id: locationId },
+          },
 
           // Conexión anidada para crear las imágenes
           images: {
@@ -133,12 +138,14 @@ class InventoryItemService {
 
     const containerId = parseInt(itemData.containerId);
     const assetTypeId = parseInt(itemData.assetTypeId);
+    const locationId = parseInt(itemData.locationId);
 
     delete itemData.containerId;
     delete itemData.assetTypeId;
+    delete itemData.locationId;
 
-    if (isNaN(containerId) || isNaN(assetTypeId)) {
-      throw new Error("Invalid Container ID or Asset Type ID.");
+    if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
+      throw new Error("Invalid Container ID, Asset Type ID or Location ID.");
     }
 
     // --- Lógica de Imágenes Copiadas del body ---
@@ -216,6 +223,7 @@ class InventoryItemService {
           container: { connect: { id: containerId } },
           assetType: { connect: { id: assetTypeId } },
           images: { create: allImageRelations }, // Crea filas de DB que apuntan a archivos copiados
+          location: { connect: { id: locationId } },
         },
         include: { images: { orderBy: { order: "asc" } } },
       });
@@ -419,6 +427,7 @@ class InventoryItemService {
       filesToUpload,
       containerId: containerIdStr,
       assetTypeId: assetTypeIdStr,
+      locationId: locationIdStr,
       customFieldValues, // <-- Aquí viene como String JSON escapado
       ...updateData
     } = data;
@@ -427,8 +436,14 @@ class InventoryItemService {
     const itemIdInt = parseInt(id);
     const containerIdInt = parseInt(containerIdStr);
     const assetTypeIdInt = parseInt(assetTypeIdStr);
+    const locationIdInt = parseInt(locationIdStr);
 
-    if (isNaN(itemIdInt) || isNaN(containerIdInt) || isNaN(assetTypeIdInt)) {
+    if (
+      isNaN(itemIdInt) ||
+      isNaN(containerIdInt) ||
+      isNaN(assetTypeIdInt) ||
+      isNaN(locationIdInt)
+    ) {
       throw new Error(
         "Invalid ID format provided for item, container, or asset type."
       );
@@ -494,19 +509,29 @@ class InventoryItemService {
     // ===========================================
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
+    const itemUpdateData = {
+      // Campos directos (name, description, etc.)
+      ...updateData,
+
+      // IDs que cambian
+      containerId: containerIdInt, // Puede ser el mismo o nuevo
+      assetTypeId: assetTypeIdInt, // Puede ser el mismo o nuevo
+
+      // 🎯 CORRECCIÓN: Actualizar locationId solo si se ha proporcionado un nuevo valor
+      ...(isNaN(locationIdInt) ? {} : { locationId: locationIdInt }),
+
+      // Campos JSON
+      customFieldValues: parsedCustomFieldValues,
+    };
+
     updateActions.push(
       prisma.inventoryItem.update({
         where: {
           id: itemIdInt,
+          // Usamos containerIdInt para el filtro de seguridad (validar que el ítem pertenece a ese container)
           containerId: containerIdInt,
         },
-        data: {
-          ...updateData,
-          containerId: containerIdInt,
-          assetTypeId: assetTypeIdInt,
-          // 🚀 USAMOS EL OBJETO PARSEADO (Formato correcto para Prisma)
-          customFieldValues: parsedCustomFieldValues,
-        },
+        data: itemUpdateData, // 👈 Objeto de actualización construido
         include: {
           images: {
             orderBy: { order: "asc" },

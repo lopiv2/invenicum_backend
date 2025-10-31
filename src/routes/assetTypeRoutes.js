@@ -104,12 +104,10 @@ router.post(
       );
       if (!container) {
         uploadedFiles.forEach((file) => fs.unlinkSync(file.path)); // Limpiar si falla la verificación
-        return res
-          .status(404)
-          .json({
-            success: false,
-            message: "Contenedor no encontrado o acceso denegado.",
-          });
+        return res.status(404).json({
+          success: false,
+          message: "Contenedor no encontrado o acceso denegado.",
+        });
       }
 
       // 2. Preparar los datos
@@ -171,67 +169,53 @@ router.get("/asset-types/:id", verifyToken, async (req, res) => {
     }
   } catch (error) {
     console.error("Error al obtener Tipo de Activo:", error);
-    res
-      .status(500)
-      .json({
-        success: false,
-        message: "Error interno al obtener el Tipo de Activo",
-        error: error.message,
-      });
+    res.status(500).json({
+      success: false,
+      message: "Error interno al obtener el Tipo de Activo",
+      error: error.message,
+    });
   }
 });
 
 // --------------------------------------------------------------------
 // U (Update) - Actualizar un Tipo de Activo
 // --------------------------------------------------------------------
-router.put(
+router.patch(
   "/asset-types/:id",
   verifyToken,
-  upload.array("filesToUpload"),
+  // El nombre del campo debe coincidir con el que usa Dio en el frontend (files)
+  upload.array("files"),
   async (req, res) => {
+    // req.files contiene los archivos subidos por Multer (nueva imagen)
     const filesToUpload = req.files || [];
-    let imageIdsToDelete = [];
 
-    // Lógica para obtener las IDs a borrar
-    if (req.body.imageIdsToDelete) {
-      try {
-        // Manejar el campo que viene como string JSON o string simple
-        if (
-          typeof req.body.imageIdsToDelete === "string" &&
-          req.body.imageIdsToDelete.startsWith("[")
-        ) {
-          imageIdsToDelete = JSON.parse(req.body.imageIdsToDelete);
-        } else if (Array.isArray(req.body.imageIdsToDelete)) {
-          imageIdsToDelete = req.body.imageIdsToDelete;
-        } else if (typeof req.body.imageIdsToDelete === "string") {
-          imageIdsToDelete = [req.body.imageIdsToDelete];
-        } else {
-          imageIdsToDelete = [];
-        }
-      } catch (e) {
-        console.warn(
-          "Could not parse imageIdsToDelete, treating as empty array."
-        );
-        imageIdsToDelete = [];
-      }
-    }
+    // 🔑 1. Capturar el flag booleano 'removeExistingImage'.
+    // Viene como string 'true' o 'false' en FormData, por eso comparamos con 'true'.
+    const removeExistingImage = req.body.removeExistingImage === "true";
 
     try {
-      const assetTypeId = req.params.id; // Se maneja el parseo a Int en el servicio
+      const assetTypeId = req.params.id;
+      // Asegúrate de que req.user.id esté disponible por el middleware verifyToken
       const userId = req.user.id;
 
-      // 1. Preparar los datos
+      // 2. Preparar los datos
       const updateData = {
-        ...req.body,
-        // CORRECCIÓN: Usar los campos esperados por el servicio
+        // Incluir el nombre solo si está presente
+        ...(req.body.name && { name: req.body.name }),
+
+        // Parsear las definiciones de campo, que vienen como un string JSON
         fieldDefinitions: req.body.fieldDefinitions
           ? JSON.parse(req.body.fieldDefinitions)
           : undefined,
-        filesToUpload: filesToUpload, // Array de los nuevos archivos subidos
-        imageIdsToDelete: imageIdsToDelete, // Array de IDs de imágenes a borrar
+
+        // Nuevos archivos subidos (para reemplazo)
+        filesToUpload: filesToUpload,
+
+        // Flag para la eliminación
+        removeExistingImage: removeExistingImage,
       };
 
-      // 2. Delegar la actualización al servicio
+      // 3. Delegar la actualización al servicio de AssetType
       const result = await assetTypeService.updateAssetType(
         assetTypeId,
         userId,
@@ -239,14 +223,15 @@ router.put(
       );
 
       if (result.success) {
-        res.json(result);
+        // Devolver el AssetType actualizado
+        res.json({ success: true, data: result.data });
       } else {
-        // Si el servicio falla, limpia los archivos subidos
+        // Si el servicio falla, limpiar los archivos subidos temporalmente
         filesToUpload.forEach((file) => fs.unlinkSync(file.path));
-        res.status(404).json(result);
+        res.status(400).json(result);
       }
     } catch (error) {
-      // Limpiar archivos subidos en caso de error
+      // Limpiar archivos subidos en caso de error del servidor o servicio
       filesToUpload.forEach((file) => {
         try {
           fs.unlinkSync(file.path);
@@ -256,13 +241,11 @@ router.put(
       });
 
       console.error("Error al actualizar Tipo de Activo:", error);
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Error interno al actualizar el Tipo de Activo",
-          error: error.message,
-        });
+      res.status(500).json({
+        success: false,
+        message: "Error interno al actualizar el Tipo de Activo",
+        error: error.message,
+      });
     }
   }
 );

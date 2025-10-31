@@ -16,6 +16,7 @@ model User {
   password    String
   name        String?
   containers  Container[]
+  assignedItems InventoryItem[] @relation("UserAssignedItems")
 }
 
 model Container {
@@ -31,6 +32,30 @@ model Container {
   assetTypes    AssetType[]
   // RELACIÓN AÑADIDA: Un contenedor puede tener muchas listas de datos
   dataLists     DataList[]
+  locations     Location[]
+}
+
+// ============================================
+// NUEVO MODELO: Location (Define lugares físicos/lógicos) 📍
+// ============================================
+model Location {
+  id            Int     @id @default(autoincrement())
+  name          String
+  description   String?
+  
+  // Jerarquía (opcional): Permite crear ubicaciones anidadas (Edificio > Piso > Sala)
+  parentId      Int?    @map("parent_id")
+  parent        Location?       @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children      Location[]      @relation("LocationHierarchy")
+  
+  // Relación con Container (Muchos a Uno)
+  containerId   Int
+  container     Container       @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  
+  // Relación con InventoryItem (Una ubicación puede contener muchos ítems)
+  inventoryItems InventoryItem[]
+  
+  @@map("location")
 }
 
 // NUEVO MODELO: Define la plantilla para un tipo de activo (Ej: "Ordenador")
@@ -80,19 +105,26 @@ model InventoryItem {
   id                Int                     @id @default(autoincrement())
   name              String
   description       String?
+
+  // ============================================
+  // CAMPOS DE UBICACIÓN Y ASIGNACIÓN (USUARIO) 🎯
+  // ============================================
+  
+  // RELACIÓN 1: Ubicación Física/Lógica (REQUERIDO)
+  locationId        Int                     @map("location_id")
+  location          Location                @relation(fields: [locationId], references: [id])
+
+  // RELACIÓN 2: Usuario Asignado (OPCIONAL)
+  assignedToUserId  Int?                    @map("assigned_to_user_id")
+  assignedToUser    User?                   @relation("UserAssignedItems", fields: [assignedToUserId], references: [id])
   
   assetTypeId       Int                     @map("asset_type_id")
   assetType         AssetType               @relation(fields: [assetTypeId], references: [id])
-  
   customFieldValues Json?                   @map("custom_field_values")
-  
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
-  
   containerId       Int
   container         Container               @relation(fields: [containerId], references: [id])
-
-  // NUEVA RELACIÓN: Un ítem de inventario puede tener múltiples imágenes
   images            InventoryItemImage[]
   
   @@map("inventory_item") 
