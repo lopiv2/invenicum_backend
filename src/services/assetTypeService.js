@@ -5,6 +5,7 @@ const prisma = new PrismaClient();
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
+const BOOLEAN_TYPE_DB = "sí/no (booleano)";
 
 // 💡 CONFIGURACIÓN DE RUTAS FÍSICAS BASADAS EN .env
 const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
@@ -30,10 +31,10 @@ const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
  * Crea un nuevo Tipo de Activo y sus definiciones de campo con múltiples imágenes.
  * @param {number} containerId ID del contenedor padre.
  * @param {number} userId ID del usuario (para la capa de seguridad).
- * @param {object} data Datos del AssetType (name, fieldDefinitions, files).
+ * @param {object} data Datos del AssetType (name, fieldDefinitions, files, possessionFieldId, desiredFieldId).
  */
 async function createAssetType(containerId, userId, data) {
-  const { name, fieldDefinitions } = data;
+  const { name, fieldDefinitions, possessionFieldId, desiredFieldId } = data;
   const files = data.files || [];
 
   if (!name || !fieldDefinitions) {
@@ -86,6 +87,8 @@ async function createAssetType(containerId, userId, data) {
       data: {
         name,
         containerId,
+        possessionFieldId: possessionFieldId ? parseInt(possessionFieldId) : null, // 🎯 NUEVO
+        desiredFieldId: desiredFieldId ? parseInt(desiredFieldId) : null, // 🎯 NUEVO
         fieldDefinitions: {
           create: fieldDefinitionsForPrisma,
         },
@@ -103,8 +106,8 @@ async function createAssetType(containerId, userId, data) {
 
     return {
       success: true,
-      data: newAssetType,
       message: "Tipo de Activo creado con éxito.",
+      data: newAssetType,
     };
   } catch (error) {
     console.error("Prisma Error en createAssetType:", error);
@@ -489,10 +492,144 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
   }
 }
 
+/**
+ * Actualiza solo los campos de colección (possessionFieldId, desiredFieldId) de un AssetType.
+ * @param {number} assetTypeId ID del AssetType.
+ * @param {number} userId ID del usuario para verificar la propiedad.
+ * @param {object} updateData Datos a actualizar ({possessionFieldId, desiredFieldId}).
+ */
+async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) {
+  const { possessionFieldId, desiredFieldId } = updateData;
+
+  const id = parseInt(assetTypeId);
+  if (isNaN(id)) {
+    return {
+      success: false,
+      message: "ID de tipo de activo inválido.",
+    };
+  }
+
+  // Función auxiliar para parsear y validar un ID de campo
+  function validateAndParseField(fieldIdInput, assetType, fieldName) {
+    // Convertir a string, usar .trim() y asegurar que null/undefined se maneje
+    const idString = fieldIdInput?.toString().trim();
+
+    // 1. Si es null o cadena vacía, retorna null (para desvincular en DB)
+    if (!idString || idString.length === 0) {
+      return { success: true, parsedId: null };
+    }
+
+    // 2. Intentar parsear a entero
+    const parsedId = parseInt(idString);
+
+    // 3. Validar que sea un número
+    if (isNaN(parsedId)) {
+      return {
+        success: false,
+        message: `ID de campo de ${fieldName} inválido.`,
+      };
+    }
+
+    // 4. Validar que el campo exista en este AssetType
+    const fieldDefinition = assetType.fieldDefinitions.find(
+      (f) => f.id === parsedId
+    );
+    if (!fieldDefinition) {
+      return {
+        success: false,
+        message: `El campo de ${fieldName} (ID: ${parsedId}) no existe en este Tipo de Activo.`,
+      };
+    }
+
+    // 5. Validar que sea booleano
+    if (fieldDefinition.type !== BOOLEAN_TYPE_DB) {
+      return {
+        success: false,
+        message: `El campo de ${fieldName} debe ser de tipo booleano (actualmente es ${fieldDefinition.type}).`,
+      };
+    }
+    
+    return { success: true, parsedId: parsedId };
+  }
+
+  try {
+    // 1. Verificar propiedad del AssetType y obtener datos relacionados
+    const assetType = await prisma.assetType.findUnique({
+      where: { id },
+      include: { 
+        container: true,
+        fieldDefinitions: true, // Crucial para la validación
+      },
+    });
+
+    if (!assetType) {
+      return { success: false, message: "Tipo de Activo no encontrado." };
+    }
+
+    if (assetType.container.userId !== userId) {
+      return { success: false, message: "Acceso denegado: El Tipo de Activo no es de su propiedad." };
+    }
+    
+    // 2. Validar y Parsear IDs de Campos
+    
+    // Campo de Posesión
+    const possessionValidation = validateAndParseField(
+      possessionFieldId, 
+      assetType, 
+      "posesión"
+    );
+    if (!possessionValidation.success) {
+      return { success: false, message: possessionValidation.message };
+    }
+    const possessionFieldIdParsed = possessionValidation.parsedId;
+
+    // Campo de Deseados
+    const desiredValidation = validateAndParseField(
+      desiredFieldId, 
+      assetType, 
+      "deseado"
+    );
+    if (!desiredValidation.success) {
+      return { success: false, message: desiredValidation.message };
+    }
+    const desiredFieldIdParsed = desiredValidation.parsedId;
+
+
+    // 3. Actualizar los campos de colección
+    const updatedAssetType = await prisma.assetType.update({
+      where: { id },
+      data: {
+        // 🔑 PRISMA: Usa 'null' para desvincular. 
+        // possessionFieldIdParsed será null o un entero.
+        possessionFieldId: possessionFieldIdParsed,
+        desiredFieldId: desiredFieldIdParsed,
+      },
+      include: {
+        fieldDefinitions: true,
+        images: {
+          orderBy: { order: "asc" },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: "Campos de colección actualizados con éxito.",
+      data: updatedAssetType,
+    };
+
+  } catch (error) {
+    console.error("Error en updateAssetTypeCollectionFields:", error);
+    // Lanza un error genérico para evitar exponer detalles internos
+    throw new Error("Error al actualizar los campos de colección del AssetType."); 
+  }
+}
+
 module.exports = {
   createAssetType,
   getAssetTypeById,
   updateAssetType,
   deleteAssetType,
   deleteAssetTypeItems,
+  updateAssetTypeCollectionFields,
 };

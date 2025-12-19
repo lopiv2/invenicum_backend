@@ -23,6 +23,7 @@ model Container {
   id            Int             @id @default(autoincrement())
   name          String
   description   String?
+  isCollection  Boolean         @default(false) @map("is_collection")
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   userId        Int
@@ -32,7 +33,7 @@ model Container {
   assetTypes    AssetType[]
   // RELACIÓN AÑADIDA: Un contenedor puede tener muchas listas de datos
   dataLists     DataList[]
-  locations     Location[]
+  locations     Location[]
 }
 
 // ============================================
@@ -75,6 +76,10 @@ model AssetType {
   
   // Relación con las imágenes
   images           AssetTypeImage[]
+  
+  // 🎯 Campos para colecciones: IDs de los campos booleanos
+  possessionFieldId Int?                    @map("possession_field_id")
+  desiredFieldId    Int?                    @map("desired_field_id")
   
   @@map("asset_type")
 }

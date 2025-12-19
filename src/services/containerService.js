@@ -21,7 +21,7 @@ class ContainerService {
   /**
    * Crea un nuevo contenedor para un usuario.
    * @param {number} userId - ID del usuario propietario.
-   * @param {object} data - Datos del contenedor ({name, description}).
+   * @param {object} data - Datos del contenedor ({name, description, isCollection}).
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async createContainer(userId, data) {
@@ -36,8 +36,11 @@ class ContainerService {
         data: {
           name: data.name,
           description: data.description || "",
+          isCollection: data.isCollection || false,
           userId: parseInt(userId),
         },
+        // Incluir relaciones para devolver datos completos
+        include: CONTAINER_INCLUDE,
       });
 
       return {

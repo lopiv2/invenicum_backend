@@ -105,7 +105,8 @@ router.post("/containers", verifyToken, async (req, res) => {
 
     const containerData = {
       name: req.body.name,
-      description: req.body.description,
+      description: req.body.description || null,
+      isCollection: req.body.isCollection || false,
     };
 
     const result = await containerService.createContainer(

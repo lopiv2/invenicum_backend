@@ -250,6 +250,51 @@ router.patch(
   }
 );
 
+// 🎯 NUEVA RUTA: Actualizar solo los campos de colección de un AssetType
+// PATCH /asset-types/:id/collection-fields
+// Esto permite actualizar possessionFieldId y desiredFieldId sin necesidad de multipart/form-data
+router.patch("/asset-types/:id/collection-fields", verifyToken, async (req, res) => {
+  try {
+    const assetTypeId = req.params.id;
+    const userId = req.user.id;
+    const { possessionFieldId, desiredFieldId } = req.body;
+
+    if (!assetTypeId) {
+      return res.status(400).json({
+        success: false,
+        message: "Se requiere el ID del tipo de activo.",
+      });
+    }
+
+    const result = await assetTypeService.updateAssetTypeCollectionFields(
+      assetTypeId,
+      userId,
+      { possessionFieldId, desiredFieldId }
+    );
+
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.data,
+      });
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    console.error(
+      "Error al actualizar campos de colección del Tipo de Activo:",
+      error
+    );
+    res.status(500).json({
+      success: false,
+      message:
+        "Error interno al actualizar los campos de colección del Tipo de Activo",
+      error: error.message,
+    });
+  }
+});
+
 // --------------------------------------------------------------------
 // D (Delete) - Eliminar todos los ítems asociados a un Tipo de Activo
 // --------------------------------------------------------------------

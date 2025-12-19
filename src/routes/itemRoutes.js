@@ -215,14 +215,15 @@ router.get(
         aggregationFilters,
       });
 
-      // El servicio debe devolver { success: true, data: [...] }
+      // El servicio debe devolver { success: true, data: {...} }
       res.status(200).json({
-        // La lista de ítems debe ser 'items' en el InventoryResponse
-        items: itemsResult.data,
-        // Las definiciones de agregación
-        aggregationDefinitions: itemsResult.totals.definitions,
-        // Los resultados de agregación
-        aggregationResults: itemsResult.totals.aggregations,
+        success: true,
+        message: "Items retrieved successfully",
+        data: {
+          items: itemsResult.data,
+          aggregationDefinitions: itemsResult.totals.definitions,
+          aggregationResults: itemsResult.totals.aggregations,
+        },
       });
     } catch (error) {
       console.error("Error fetching inventory items:", error);
@@ -279,7 +280,11 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
     const itemResult = await inventoryItemService.createItem(itemData);
 
     // 201 Created. Devolvemos el objeto creado con su ID.
-    res.status(201).json(itemResult);
+    res.status(201).json({
+      success: true,
+      message: "Elemento de inventario creado exitosamente",
+      data: itemResult,
+    });
   } catch (error) {
     // 💡 MANEJO DE ERRORES: Si ocurre un error en el servicio, borra los archivos.
     // Hay que asegurarse de que `req.files` esté disponible aquí.
@@ -294,7 +299,11 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
     }
 
     console.error("Error creating item:", error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Error al crear el elemento de inventario",
+      error: error.message,
+    });
   }
 });
 
@@ -349,7 +358,11 @@ router.patch(
           .json({ success: false, message: "Item not found." });
       }
 
-      res.status(200).json(updatedItem);
+      res.status(200).json({
+        success: true,
+        message: "Elemento de inventario actualizado exitosamente",
+        data: updatedItem,
+      });
     } catch (error) {
       // Manejo de errores y limpieza de archivos
       uploadedFiles.forEach((file) => {
@@ -360,7 +373,11 @@ router.patch(
         }
       });
       console.error(`Error updating item ${itemId ? itemId : "N/A"}:`, error);
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({
+        success: false,
+        message: "Error al actualizar el elemento de inventario",
+        error: error.message,
+      });
     }
   }
 );
