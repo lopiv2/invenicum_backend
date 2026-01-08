@@ -34,6 +34,7 @@ model Container {
   // RELACIÓN AÑADIDA: Un contenedor puede tener muchas listas de datos
   dataLists     DataList[]
   locations     Location[]
+  loans         Loan[]
 }
 
 // ============================================
@@ -63,6 +64,7 @@ model Location {
 model AssetType {
   id                Int                     @id @default(autoincrement())
   name              String
+  isSerialized      Boolean                 @default(true) @map("is_serialized")
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
   
@@ -110,6 +112,11 @@ model InventoryItem {
   id                Int                     @id @default(autoincrement())
   name              String
   description       String?
+  // Si AssetType.isSerialized es true, este valor siempre será 1.
+  // Si es false, aquí guardamos cuántas unidades hay en esta ubicación.
+  quantity          Int                     @default(1)
+  // 🔑 NUEVO: Stock mínimo - para alertas de reorden
+  minStock          Int                     @default(0) @map("min_stock")
 
   // ============================================
   // CAMPOS DE UBICACIÓN Y ASIGNACIÓN (USUARIO) 🎯
@@ -131,6 +138,7 @@ model InventoryItem {
   containerId       Int
   container         Container               @relation(fields: [containerId], references: [id])
   images            InventoryItemImage[]
+  loans             Loan[]
   
   @@map("inventory_item") 
 }
@@ -188,4 +196,34 @@ model AssetTypeImage {
   assetType   AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
 
   @@map("asset_type_image")
+}
+
+// Modelo para los préstamos de artículos
+model Loan {
+  id                  Int       @id @default(autoincrement())
+  
+  // Relación con Container (Muchos a Uno)
+  containerId         Int       @map("container_id")
+  container           Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  
+  // Relación con InventoryItem (Muchos a Uno)
+  inventoryItemId     Int       @map("inventory_item_id")
+  inventoryItem       InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  // Permite prestar 5 cables de un stock de 100.
+  quantity            Int       @default(1)
+  
+  itemName            String    // Nombre del artículo (copia para referencia histórica)
+  borrowerName        String?
+  borrowerEmail       String?
+  borrowerPhone       String?
+  loanDate            DateTime  @default(now()) @map("loan_date")
+  expectedReturnDate  DateTime? @map("expected_return_date")
+  actualReturnDate    DateTime? @map("actual_return_date")
+  notes               String?
+  status              String    @default("active") // 'active', 'returned', 'overdue'
+  
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  
+  @@map("loan")
 }

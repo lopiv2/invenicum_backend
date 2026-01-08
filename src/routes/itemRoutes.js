@@ -241,6 +241,12 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // 🔍 LOG: Ver qué se recibe exactamente en req.body
+    console.log("[DEBUG POST /items] req.body keys:", Object.keys(req.body));
+    console.log("[DEBUG POST /items] req.body.quantity:", req.body.quantity, "Type:", typeof req.body.quantity);
+    console.log("[DEBUG POST /items] req.body.minStock:", req.body.minStock, "Type:", typeof req.body.minStock);
+    console.log("[DEBUG POST /items] Full req.body:", req.body);
+
     // Los campos de texto están en req.body; los archivos están en req.files
     const { containerId, name } = req.body;
     const uploadedFiles = req.files || []; // Array de objetos de archivo de Multer
@@ -412,5 +418,57 @@ router.delete("/items/:id", verifyToken, async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// ===============================================
+// VERIFICACIÓN DE CANTIDAD
+// GET /verify-quantity/:assetTypeId/:quantity
+// ===============================================
+router.get(
+  "/verify-quantity/:assetTypeId/:quantity",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const { assetTypeId, quantity } = req.params;
+      const assetTypeIdInt = parseInt(assetTypeId);
+      const quantityInt = parseInt(quantity);
+
+      // Obtener el AssetType
+      const assetType = await require("@prisma/client").PrismaClient()
+        .$queryRaw`SELECT id, name, is_serialized FROM asset_type WHERE id = ${assetTypeIdInt}`;
+
+      if (!assetType || assetType.length === 0) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Asset Type not found" });
+      }
+
+      const { is_serialized } = assetType[0];
+      let finalQuantity;
+
+      if (is_serialized) {
+        finalQuantity = 1;
+      } else {
+        finalQuantity = isNaN(quantityInt) || quantityInt < 1 ? 1 : quantityInt;
+      }
+
+      res.status(200).json({
+        success: true,
+        assetTypeId: assetTypeIdInt,
+        isSerialized: is_serialized,
+        inputQuantity: quantityInt,
+        finalQuantity: finalQuantity,
+        message:
+          is_serialized
+            ? "This asset type is serialized. Quantity will be stored as 1."
+            : `This asset type is not serialized. Quantity will be stored as ${finalQuantity}.`,
+      });
+    } catch (error) {
+      console.error("Error verifying quantity:", error);
+      res
+        .status(500)
+        .json({ success: false, error: error.message });
+    }
+  }
+);
 
 module.exports = router;

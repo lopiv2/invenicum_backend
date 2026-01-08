@@ -14,6 +14,7 @@ const itemRoutes = require("./routes/itemRoutes");
 const dataListRoutes = require("./routes/dataListRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const locationRoutes = require("./routes/locationRoutes");
+const loanRoutes = require("./routes/loanRoutes");
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -89,6 +90,7 @@ app.use(API_BASE_PATH + "/", itemRoutes);
 app.use(API_BASE_PATH + "/", dataListRoutes);
 app.use(API_BASE_PATH + "/dashboard", dashboardRoutes);
 app.use(API_BASE_PATH + "/", locationRoutes);
+app.use(API_BASE_PATH + "/", loanRoutes);
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR

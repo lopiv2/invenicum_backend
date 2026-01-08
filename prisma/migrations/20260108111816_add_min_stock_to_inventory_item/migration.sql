@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `inventory_item` ADD COLUMN `min_stock` INTEGER NOT NULL DEFAULT 0;

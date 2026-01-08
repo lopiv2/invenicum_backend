@@ -109,10 +109,12 @@ router.post(
           message: "Contenedor no encontrado o acceso denegado.",
         });
       }
+      const isSerialized = req.body.isSerialized === "true";
 
       // 2. Preparar los datos
       const assetTypeData = {
         ...req.body,
+        isSerialized: isSerialized,
         // CORRECCIÓN: fieldDefinitions se parsea y se incluyen los archivos
         fieldDefinitions: JSON.parse(req.body.fieldDefinitions || "[]"),
         files: uploadedFiles,
@@ -202,6 +204,17 @@ router.patch(
       const updateData = {
         // Incluir el nombre solo si está presente
         ...(req.body.name && { name: req.body.name }),
+
+        // 🔑 NUEVO: Incluir isSerialized y quantity si están definidos
+        // isSerialized se convierte a booleano. Viene como string 'true'/'false'
+        ...(req.body.isSerialized !== undefined && {
+          isSerialized: req.body.isSerialized === "true",
+        }),
+
+        // quantity se parsea a entero si existe
+        ...(req.body.quantity !== undefined && {
+          quantity: parseInt(req.body.quantity, 10),
+        }),
 
         // Parsear las definiciones de campo, que vienen como un string JSON
         fieldDefinitions: req.body.fieldDefinitions

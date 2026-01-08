@@ -28,6 +28,69 @@ class InventoryItemService {
     delete itemData.assetTypeId;
     delete itemData.locationId;
 
+    // 🔍 DEBUG: Loguear todos los campos recibidos
+    console.log("[DEBUG] Raw itemData received:", {
+      name: itemData.name,
+      quantity: itemData.quantity,
+      minStock: itemData.minStock,
+      description: itemData.description,
+      customFieldValues: itemData.customFieldValues ? "JSON present" : "undefined",
+    });
+
+    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    const assetType = await prisma.assetType.findUnique({
+      where: { id: assetTypeId },
+    });
+
+    if (!assetType) {
+      files.forEach((file) => fs.unlinkSync(file.path));
+      throw new Error("Asset Type not found.");
+    }
+
+    // 2. LÓGICA DE CANTIDAD (QUANTITY) - MEJORADA
+    let quantity = 1; // Default fallback
+    let quantityFromInput = itemData.quantity;
+
+    // Si viene como string (de FormData), parsearlo
+    if (typeof quantityFromInput === "string") {
+      quantityFromInput = parseInt(quantityFromInput, 10);
+    }
+
+    // Si es un número válido, usarlo; si no, undefined
+    const parsedQuantity = !isNaN(quantityFromInput) ? quantityFromInput : undefined;
+
+    console.log(`[DEBUG QUANTITY] Raw input: "${itemData.quantity}", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`);
+
+    if (assetType.isSerialized) {
+      // Si es seriado, la cantidad es siempre 1.
+      quantity = 1;
+      console.log(`[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`);
+    } else {
+      // Si no es seriado, usamos el input o default a 1.
+      quantity = parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1;
+      console.log(
+        `[DEBUG] AssetType ${assetTypeId} is NOT Serialized. Input: "${itemData.quantity}", Parsed: ${parsedQuantity}, Final: ${quantity}`
+      );
+    }
+
+    // Asignamos la cantidad correcta al objeto de datos
+    itemData.quantity = quantity;
+
+    // 3. LÓGICA DE MIN_STOCK
+    let minStock = 0; // Default value
+    const minStockFromInput = itemData.minStock;
+
+    // Si viene como string (de FormData), parsearlo
+    if (typeof minStockFromInput === "string") {
+      const parsedMinStock = parseInt(minStockFromInput, 10);
+      minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+    } else if (typeof minStockFromInput === "number") {
+      minStock = minStockFromInput >= 0 ? minStockFromInput : 0;
+    }
+
+    console.log(`[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`);
+    itemData.minStock = minStock;
+
     if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
       // Usamos file.path aquí, ya que Multer lo proporciona en el contexto de la ruta.
       files.forEach((file) => fs.unlinkSync(file.path));
@@ -78,27 +141,28 @@ class InventoryItemService {
 
     try {
       // 2. Crear el ítem y las imágenes dentro de una sola transacción de Prisma
-      const newItem = await prisma.inventoryItem.create({
-        data: {
-          // 🔑 Usamos el spread solo para los campos directos que quedan (name, description, customFieldValues)
-          ...itemData,
-
-          // Corregido: Usar 'connect' para las relaciones de Muchos a Uno (Container, AssetType)
-          container: {
-            connect: { id: containerId },
-          },
-          assetType: {
-            connect: { id: assetTypeId },
-          },
-          location: {
-            connect: { id: locationId },
-          },
-
-          // Conexión anidada para crear las imágenes
-          images: {
-            create: imageRelations,
-          },
+      const dataForPrisma = {
+        name: itemData.name,
+        description: itemData.description,
+        quantity: itemData.quantity,
+        minStock: itemData.minStock,
+        customFieldValues: itemData.customFieldValues,
+        container: {
+          connect: { id: containerId },
         },
+        assetType: {
+          connect: { id: assetTypeId },
+        },
+        location: {
+          connect: { id: locationId },
+        },
+        images: {
+          create: imageRelations,
+        },
+      };
+
+      const newItem = await prisma.inventoryItem.create({
+        data: dataForPrisma,
         include: {
           images: {
             orderBy: { order: "asc" },
@@ -147,6 +211,28 @@ class InventoryItemService {
     if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
       throw new Error("Invalid Container ID, Asset Type ID or Location ID.");
     }
+
+    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    const assetType = await prisma.assetType.findUnique({
+      where: { id: assetTypeId },
+    });
+
+    if (!assetType) {
+      throw new Error("Asset Type not found.");
+    }
+
+    // 2. LÓGICA DE CANTIDAD (QUANTITY)
+    let quantity;
+    if (assetType.isSerialized) {
+      // Si es seriado, la cantidad es siempre 1.
+      quantity = 1;
+    } else {
+      // Si no es seriado, tomamos la cantidad del input o default a 1.
+      const inputQuantity = parseInt(itemData.quantity, 10);
+      quantity = isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
+    }
+    // Asignamos la cantidad correcta al objeto de datos y borramos la original si existe
+    itemData.quantity = quantity;
 
     // --- Lógica de Imágenes Copiadas del body ---
     let imagesToCopy = [];
@@ -216,15 +302,20 @@ class InventoryItemService {
     // --- 2. CREACIÓN EN LA BASE DE DATOS (DB) ---
     try {
       // Crear el ítem con las referencias de imágenes copiadas
+      const dataForPrisma = {
+        name: itemData.name,
+        description: itemData.description,
+        quantity: itemData.quantity,
+        minStock: itemData.minStock || 0,
+        customFieldValues: itemData.customFieldValues,
+        container: { connect: { id: containerId } },
+        assetType: { connect: { id: assetTypeId } },
+        images: { create: allImageRelations }, // Crea filas de DB que apuntan a archivos copiados
+        location: { connect: { id: locationId } },
+      };
 
       const newItem = await prisma.inventoryItem.create({
-        data: {
-          ...itemData,
-          container: { connect: { id: containerId } },
-          assetType: { connect: { id: assetTypeId } },
-          images: { create: allImageRelations }, // Crea filas de DB que apuntan a archivos copiados
-          location: { connect: { id: locationId } },
-        },
+        data: dataForPrisma,
         include: { images: { orderBy: { order: "asc" } } },
       });
 
@@ -449,6 +540,33 @@ class InventoryItemService {
       );
     }
 
+    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    const assetType = await prisma.assetType.findUnique({
+      where: { id: assetTypeIdInt },
+    });
+
+    if (!assetType) {
+      throw new Error("Asset Type not found.");
+    }
+
+    // 2. LÓGICA DE CANTIDAD (QUANTITY)
+    let quantity;
+    if (assetType.isSerialized) {
+      // Si es seriado, la cantidad es siempre 1.
+      quantity = 1;
+    } else {
+      // Si no es seriado, tomamos la cantidad del input o default a la existente.
+      const inputQuantity = parseInt(updateData.quantity, 10);
+      quantity = isNaN(inputQuantity) || inputQuantity < 1 ? undefined : inputQuantity;
+    }
+
+    // Asignamos la cantidad correcta al objeto de datos y borramos la original si existe
+    if (quantity !== undefined) {
+      updateData.quantity = quantity;
+    } else {
+      delete updateData.quantity;
+    }
+
     // 🚀 SOLUCIÓN CLAVE: Parsear customFieldValues
     let parsedCustomFieldValues = {};
     if (customFieldValues && typeof customFieldValues === "string") {
@@ -510,19 +628,28 @@ class InventoryItemService {
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
     const itemUpdateData = {
-      // Campos directos (name, description, etc.)
-      ...updateData,
-
-      // IDs que cambian
-      containerId: containerIdInt, // Puede ser el mismo o nuevo
-      assetTypeId: assetTypeIdInt, // Puede ser el mismo o nuevo
-
-      // 🎯 CORRECCIÓN: Actualizar locationId solo si se ha proporcionado un nuevo valor
-      ...(isNaN(locationIdInt) ? {} : { locationId: locationIdInt }),
-
-      // Campos JSON
+      name: updateData.name,
+      description: updateData.description,
+      containerId: containerIdInt,
+      assetTypeId: assetTypeIdInt,
       customFieldValues: parsedCustomFieldValues,
     };
+
+    if (quantity !== undefined) {
+      itemUpdateData.quantity = quantity;
+    }
+
+    // Handle minStock
+    if (updateData.minStock !== undefined) {
+      const parsedMinStock = typeof updateData.minStock === "string" 
+        ? parseInt(updateData.minStock, 10) 
+        : updateData.minStock;
+      itemUpdateData.minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+    }
+    
+    if (!isNaN(locationIdInt)) {
+      itemUpdateData.locationId = locationIdInt;
+    }
 
     updateActions.push(
       prisma.inventoryItem.update({
@@ -612,7 +739,16 @@ class InventoryItemService {
       throw new Error("Invalid Container ID or Asset Type ID.");
     }
 
-    // 1. Obtener las definiciones de campos personalizados UNA VEZ para validación.
+    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    const assetType = await prisma.assetType.findUnique({
+      where: { id: aTId },
+    });
+
+    if (!assetType) {
+      throw new Error("Asset Type not found.");
+    }
+
+    // 2. Obtener las definiciones de campos personalizados UNA VEZ para validación.
     const fieldDefinitions = await prisma.customFieldDefinition.findMany({
       where: { assetTypeId: aTId },
     });
@@ -622,13 +758,29 @@ class InventoryItemService {
     const validationErrors = [];
     let successCount = 0;
 
-    // 2. PRE-PROCESAMIENTO Y VALIDACIÓN DE CADA ÍTEM
+    // 3. PRE-PROCESAMIENTO Y VALIDACIÓN DE CADA ÍTEM
     for (let i = 0; i < itemsData.length; i++) {
       const item = itemsData[i];
 
       // El frontend ya envió 'name' y 'description', más los campos personalizados.
       const name = item.name;
       const description = item.description || null;
+      
+      // LÓGICA DE CANTIDAD (QUANTITY)
+      let quantity;
+      if (assetType.isSerialized) {
+        quantity = 1;
+      } else {
+        const inputQuantity = parseInt(item.quantity, 10);
+        quantity = isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
+      }
+
+      // LÓGICA DE MIN_STOCK
+      let minStock = 0;
+      if (item.minStock) {
+        const parsedMinStock = parseInt(item.minStock, 10);
+        minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+      }
 
       // Los campos personalizados vienen directos (no como JSON string escapado)
       const customFieldValues = item.customFieldValues || {};
@@ -640,19 +792,21 @@ class InventoryItemService {
       }
 
       try {
-        // 3. Validar los campos personalizados (usando la función existente)
+        // Validar los campos personalizados (usando la función existente)
         await this.validateCustomFieldValues(
           aTId,
           customFieldValues,
           fieldDefinitions
         );
 
-        // 4. Si la validación pasa, preparar el objeto para Prisma
+        // Si la validación pasa, preparar el objeto para Prisma
         itemsToCreate.push({
           containerId: cId,
           assetTypeId: aTId,
           name: name,
           description: description,
+          quantity: quantity,
+          minStock: minStock,
           // Almacena los customFieldValues como objeto JSON en la DB
           customFieldValues: customFieldValues,
         });

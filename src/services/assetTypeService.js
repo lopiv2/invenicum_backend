@@ -34,7 +34,7 @@ const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
  * @param {object} data Datos del AssetType (name, fieldDefinitions, files, possessionFieldId, desiredFieldId).
  */
 async function createAssetType(containerId, userId, data) {
-  const { name, fieldDefinitions, possessionFieldId, desiredFieldId } = data;
+  const { name, fieldDefinitions, possessionFieldId, desiredFieldId, isSerialized } = data;
   const files = data.files || [];
 
   if (!name || !fieldDefinitions) {
@@ -87,6 +87,7 @@ async function createAssetType(containerId, userId, data) {
       data: {
         name,
         containerId,
+        isSerialized: !!isSerialized,
         possessionFieldId: possessionFieldId ? parseInt(possessionFieldId) : null, // 🎯 NUEVO
         desiredFieldId: desiredFieldId ? parseInt(desiredFieldId) : null, // 🎯 NUEVO
         fieldDefinitions: {
@@ -178,12 +179,18 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     fieldDefinitions,
     filesToUpload,
     removeExistingImage,
-    ...assetTypeUpdates
+    ...assetTypeUpdates // Contiene name, isSerialized, quantity, etc.
   } = updateData;
 
   const assetTypeIdInt = parseInt(assetTypeId);
   if (isNaN(assetTypeIdInt)) {
     throw new Error("ID de tipo de activo inválido.");
+  }
+
+  // 💡 VALIDACIÓN DE LÓGICA DE NEGOCIO
+  // Si un tipo de activo se marca como NO seriado, la cantidad debe ser 1.
+  if (assetTypeUpdates.isSerialized === false) {
+    assetTypeUpdates.quantity = 1;
   }
 
   // 1. Verificar propiedad y obtener la información actual
@@ -568,6 +575,14 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
 
     if (assetType.container.userId !== userId) {
       return { success: false, message: "Acceso denegado: El Tipo de Activo no es de su propiedad." };
+    }
+
+    // 💡 VALIDACIÓN: Los campos de colección solo aplican a tipos de activo NO seriados.
+    if (assetType.isSerialized) {
+      return {
+        success: false,
+        message: "Los campos de colección solo pueden asignarse a tipos de activo no seriados.",
+      };
     }
     
     // 2. Validar y Parsear IDs de Campos
