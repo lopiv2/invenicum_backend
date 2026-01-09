@@ -227,3 +227,12 @@ model Loan {
   
   @@map("loan")
 }
+
+model VoucherConfig {
+  id           Int      @id @default(autoincrement())
+  template     String   @db.Text
+  logoPath     String?  // Ruta del archivo en el servidor
+  updatedAt    DateTime @updatedAt
+
+  @@map("voucher_config")
+}
