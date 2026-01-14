@@ -17,6 +17,7 @@ model User {
   name        String?
   containers  Container[]
   assignedItems InventoryItem[] @relation("UserAssignedItems")
+  alerts      Alert[]
 }
 
 model Container {
@@ -235,4 +236,19 @@ model VoucherConfig {
   updatedAt    DateTime @updatedAt
 
   @@map("voucher_config")
+}
+
+model Alert {
+  id        Int      @id @default(autoincrement())
+  title     String
+  message   String   @db.Text
+  type      String   @default("info") // 'info', 'warning', 'critical', 'stock_low'
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  // Relación con el usuario para que cada uno vea solo sus alertas
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("alert")
 }

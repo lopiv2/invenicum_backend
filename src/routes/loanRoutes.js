@@ -80,27 +80,6 @@ router.post("/containers/:containerId/loans", async (req, res) => {
 });
 
 /**
- * PUT /api/v1/containers/:containerId/loans/:loanId
- * Actualiza un préstamo existente
- */
-router.put("/containers/:containerId/loans/:loanId", async (req, res) => {
-  try {
-    const { containerId, loanId } = req.params;
-    const loanData = req.body;
-
-    const updatedLoan = await loanService.updateLoan(
-      containerId,
-      loanId,
-      loanData
-    );
-    res.status(200).json(formatLoanResponse(updatedLoan));
-  } catch (error) {
-    console.error("Error updating loan:", error);
-    res.status(400).json({ error: error.message });
-  }
-});
-
-/**
  * PUT /api/v1/containers/:containerId/loans/:loanId/return
  * Marca un préstamo como devuelto
  */

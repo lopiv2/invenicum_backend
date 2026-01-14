@@ -1,5 +1,6 @@
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
+const alertService = require("./alertService");
 
 /**
  * Convierte una fecha string ISO8601 a un objeto Date
@@ -7,20 +8,20 @@ const prisma = new PrismaClient();
  */
 function parseDate(dateString) {
   if (!dateString) return null;
-  
+
   // Si ya es un objeto Date, devolverlo
   if (dateString instanceof Date) {
     return dateString;
   }
-  
+
   // Convertir string a Date
   const date = new Date(dateString);
-  
+
   // Validar que es una fecha válida
   if (isNaN(date.getTime())) {
     throw new Error(`Formato de fecha inválido: ${dateString}`);
   }
-  
+
   return date;
 }
 
@@ -116,97 +117,96 @@ class LoanService {
         loanDate,
         expectedReturnDate,
         notes,
+        quantity, // 👈 Ahora recibimos la cantidad desde el frontend
+        userId, // 👈 Necesitamos el userId para crear la alerta
       } = loanData;
 
       const containerId_int = parseInt(containerId);
       const inventoryItemId_int = parseInt(inventoryItemId);
+      const quantityToLoan = parseInt(quantity || 1); // Por defecto 1 si no viene
 
-      // Verificar que el artículo existe y pertenece al contenedor
+      // 1. Buscamos el artículo para validar stock y pertenencia
       const inventoryItem = await prisma.inventoryItem.findUnique({
-        where: {
-          id: inventoryItemId_int,
-        },
+        where: { id: inventoryItemId_int },
         include: {
           assetType: {
-            select: {
-              id: true,
-              isSerialized: true,
-            },
+            select: { id: true, isSerialized: true },
           },
         },
       });
 
-      if (!inventoryItem) {
+      if (!inventoryItem)
         throw new Error("Artículo de inventario no encontrado");
-      }
-
       if (inventoryItem.containerId !== containerId_int) {
         throw new Error("El artículo no pertenece a este contenedor");
       }
 
-      // 🔑 LÓGICA DE CANTIDAD: Si el artículo es NO seriado, restar 1 de la cantidad
-      let quantityUpdate = {};
-      if (!inventoryItem.assetType.isSerialized) {
-        // Si es NO seriado y la cantidad es mayor a 1, restar 1
-        if (inventoryItem.quantity > 1) {
-          quantityUpdate = {
-            quantity: inventoryItem.quantity - 1,
-          };
-          console.log(`[DEBUG] Préstamo creado: Restando 1 de cantidad. Antes: ${inventoryItem.quantity}, Después: ${inventoryItem.quantity - 1}`);
-        } else if (inventoryItem.quantity === 1) {
-          // Si es 1, dejaría en 0, pero podríamos validar esto
-          quantityUpdate = {
-            quantity: 0,
-          };
-          console.log(`[DEBUG] Préstamo creado: Cantidad reducida a 0`);
-        }
+      // 2. Validar si hay stock suficiente
+      if (inventoryItem.quantity < quantityToLoan) {
+        throw new Error(
+          `Stock insuficiente. Disponible: ${inventoryItem.quantity}`
+        );
       }
 
-      // Crear el préstamo y actualizar la cantidad en una transacción
-      const loan = await prisma.loan.create({
-        data: {
-          containerId: containerId_int,
-          inventoryItemId: inventoryItemId_int,
-          itemName: itemName || inventoryItem.name,
-          borrowerName: borrowerName || null,
-          borrowerEmail: borrowerEmail || null,
-          borrowerPhone: borrowerPhone || null,
-          loanDate: parseDate(loanDate) || new Date(),
-          expectedReturnDate: expectedReturnDate ? parseDate(expectedReturnDate) : null,
-          notes: notes || null,
-          status: "active",
-        },
-        include: {
-          inventoryItem: {
-            select: {
-              id: true,
-              name: true,
-            },
+      // 3. Ejecutar todo en una Transacción Atómica
+      return await prisma.$transaction(async (tx) => {
+        // A. Crear el registro del Préstamo
+        const loan = await tx.loan.create({
+          data: {
+            containerId: containerId_int,
+            inventoryItemId: inventoryItemId_int,
+            quantity: quantityToLoan, // 👈 Guardamos la cantidad prestada
+            itemName: itemName || inventoryItem.name,
+            borrowerName: borrowerName || null,
+            borrowerEmail: borrowerEmail || null,
+            borrowerPhone: borrowerPhone || null,
+            loanDate: parseDate(loanDate) || new Date(),
+            expectedReturnDate: expectedReturnDate
+              ? parseDate(expectedReturnDate)
+              : null,
+            notes: notes || null,
+            status: "active",
           },
-          container: {
-            select: {
-              id: true,
-              name: true,
-            },
+          include: {
+            inventoryItem: { select: { id: true, name: true } },
+            container: { select: { id: true, name: true } },
           },
-        },
-      });
-
-      // 🔑 Actualizar cantidad del inventoryItem si es necesario
-      if (Object.keys(quantityUpdate).length > 0) {
-        await prisma.inventoryItem.update({
-          where: {
-            id: inventoryItemId_int,
-          },
-          data: quantityUpdate,
         });
-        console.log(`[DEBUG] InventoryItem ${inventoryItemId_int} actualizado: cantidad modificada`);
-      }
 
-      return loan;
+        // B. Actualizar stock en el inventario
+        const updatedItem = await tx.inventoryItem.update({
+          where: { id: inventoryItemId_int },
+          data: {
+            quantity: {
+              decrement: quantityToLoan, // 👈 Resta automáticamente la cantidad
+            },
+          },
+        });
+
+        // C. 🚨 Lógica de Alerta de Stock Bajo
+        // Comparamos el nuevo stock con el mínimo definido en el artículo
+        const minAllowed = updatedItem.minStock || 1; // Por defecto 1 si no tiene definido
+
+        if (updatedItem.quantity <= minAllowed && userId) {
+          await alertService.createAlert(parseInt(userId), {
+            title: "⚠️ Stock Bajo Detectado",
+            message: `El artículo "${updatedItem.name}" ha bajado a ${updatedItem.quantity} unidades tras el último préstamo.`,
+            type: "warning",
+          });
+          console.log(
+            `[ALERT] Generada alerta de stock bajo para Item ID: ${updatedItem.id}`
+          );
+        }
+
+        console.log(
+          `[DEBUG] Préstamo ID ${loan.id} creado. Cantidad prestada: ${quantityToLoan}. Stock restante: ${updatedItem.quantity}`
+        );
+
+        return loan;
+      });
     } catch (error) {
       console.error("Error in createLoan:", error);
-      throw new Error(`Error al crear préstamo: ${error.message}`);
+      throw new Error(error.message);
     }
   }
 
@@ -255,20 +255,22 @@ class LoanService {
 
       // Preparar datos para actualizar
       const updateData = { ...loanData };
-      
+
       // Procesar fechas correctamente
       if (loanData.loanDate !== undefined && loanData.loanDate !== null) {
         updateData.loanDate = parseDate(loanData.loanDate);
       }
-      
+
       if (loanData.expectedReturnDate !== undefined) {
         if (loanData.expectedReturnDate === null) {
           updateData.expectedReturnDate = null;
         } else {
-          updateData.expectedReturnDate = parseDate(loanData.expectedReturnDate);
+          updateData.expectedReturnDate = parseDate(
+            loanData.expectedReturnDate
+          );
         }
       }
-      
+
       if (loanData.actualReturnDate !== undefined) {
         if (loanData.actualReturnDate === null) {
           updateData.actualReturnDate = null;
@@ -327,80 +329,59 @@ class LoanService {
       const loanId_int = parseInt(loanId);
       const containerId_int = parseInt(containerId);
 
-      // Verificar que el préstamo existe y pertenece al contenedor
+      // 1. Buscar el préstamo y su ítem asociado
       const existingLoan = await prisma.loan.findUnique({
-        where: {
-          id: loanId_int,
-        },
+        where: { id: loanId_int },
         include: {
-          inventoryItem: {
-            select: {
-              id: true,
-              quantity: true,
-              assetType: {
-                select: {
-                  isSerialized: true,
-                },
-              },
-            },
-          },
+          inventoryItem: true,
         },
       });
 
-      if (!existingLoan) {
-        throw new Error("Préstamo no encontrado");
-      }
-
+      if (!existingLoan) throw new Error("Préstamo no encontrado");
       if (existingLoan.containerId !== containerId_int) {
         throw new Error("El préstamo no pertenece a este contenedor");
       }
-
-      // 🔑 LÓGICA DE CANTIDAD: Si el artículo es NO seriado, sumar 1 a la cantidad
-      let quantityUpdate = {};
-      if (!existingLoan.inventoryItem.assetType.isSerialized) {
-        const newQuantity = existingLoan.inventoryItem.quantity + 1;
-        quantityUpdate = {
-          quantity: newQuantity,
-        };
-        console.log(`[DEBUG] Préstamo devuelto: Sumando 1 de cantidad. Antes: ${existingLoan.inventoryItem.quantity}, Después: ${newQuantity}`);
+      if (existingLoan.status === "returned") {
+        throw new Error("Este préstamo ya fue devuelto anteriormente");
       }
 
-      const returnedLoan = await prisma.loan.update({
-        where: {
-          id: loanId_int,
-        },
-        data: {
-          status: "returned",
-          actualReturnDate: new Date(),
-        },
-        include: {
-          inventoryItem: {
-            select: {
-              id: true,
-              name: true,
+      // 2. Ejecutar actualización en una transacción para asegurar integridad
+      const result = await prisma.$transaction(async (tx) => {
+        // A. Actualizar el stock del ítem: Sumamos la cantidad exacta que se prestó
+        const updatedItem = await tx.inventoryItem.update({
+          where: { id: existingLoan.inventoryItemId },
+          data: {
+            quantity: {
+              increment: existingLoan.quantity, // 🔑 Incremento automático atómico
             },
           },
-          container: {
-            select: {
-              id: true,
-              name: true,
+        });
+
+        // B. Marcar el préstamo como devuelto
+        const returnedLoan = await tx.loan.update({
+          where: { id: loanId_int },
+          data: {
+            status: "returned",
+            actualReturnDate: new Date(),
+          },
+          include: {
+            inventoryItem: {
+              select: { id: true, name: true },
+            },
+            container: {
+              select: { id: true, name: true },
             },
           },
-        },
+        });
+
+        console.log(
+          `[STOCK] Item ${existingLoan.inventoryItemId} incrementado en ${existingLoan.quantity}. Nuevo stock: ${updatedItem.quantity}`
+        );
+
+        return returnedLoan;
       });
 
-      // 🔑 Actualizar cantidad del inventoryItem si es necesario
-      if (Object.keys(quantityUpdate).length > 0) {
-        await prisma.inventoryItem.update({
-          where: {
-            id: existingLoan.inventoryItem.id,
-          },
-          data: quantityUpdate,
-        });
-        console.log(`[DEBUG] InventoryItem ${existingLoan.inventoryItem.id} actualizado: cantidad incrementada`);
-      }
-
-      return returnedLoan;
+      return result;
     } catch (error) {
       console.error("Error in returnLoan:", error);
       throw new Error(`Error al devolver préstamo: ${error.message}`);

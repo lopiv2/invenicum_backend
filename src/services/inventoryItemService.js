@@ -34,7 +34,9 @@ class InventoryItemService {
       quantity: itemData.quantity,
       minStock: itemData.minStock,
       description: itemData.description,
-      customFieldValues: itemData.customFieldValues ? "JSON present" : "undefined",
+      customFieldValues: itemData.customFieldValues
+        ? "JSON present"
+        : "undefined",
     });
 
     // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
@@ -57,14 +59,22 @@ class InventoryItemService {
     }
 
     // Si es un número válido, usarlo; si no, undefined
-    const parsedQuantity = !isNaN(quantityFromInput) ? quantityFromInput : undefined;
+    const parsedQuantity = !isNaN(quantityFromInput)
+      ? quantityFromInput
+      : undefined;
 
-    console.log(`[DEBUG QUANTITY] Raw input: "${itemData.quantity}", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`);
+    console.log(
+      `[DEBUG QUANTITY] Raw input: "${
+        itemData.quantity
+      }", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`
+    );
 
     if (assetType.isSerialized) {
       // Si es seriado, la cantidad es siempre 1.
       quantity = 1;
-      console.log(`[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`);
+      console.log(
+        `[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`
+      );
     } else {
       // Si no es seriado, usamos el input o default a 1.
       quantity = parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1;
@@ -83,12 +93,15 @@ class InventoryItemService {
     // Si viene como string (de FormData), parsearlo
     if (typeof minStockFromInput === "string") {
       const parsedMinStock = parseInt(minStockFromInput, 10);
-      minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+      minStock =
+        !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
     } else if (typeof minStockFromInput === "number") {
       minStock = minStockFromInput >= 0 ? minStockFromInput : 0;
     }
 
-    console.log(`[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`);
+    console.log(
+      `[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`
+    );
     itemData.minStock = minStock;
 
     if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
@@ -417,6 +430,8 @@ class InventoryItemService {
     const allItems = await prisma.inventoryItem.findMany({
       where: baseWhereClause,
       include: {
+        location: true,
+        assetType: true, 
         images: {
           orderBy: { order: "asc" },
         },
@@ -557,7 +572,8 @@ class InventoryItemService {
     } else {
       // Si no es seriado, tomamos la cantidad del input o default a la existente.
       const inputQuantity = parseInt(updateData.quantity, 10);
-      quantity = isNaN(inputQuantity) || inputQuantity < 1 ? undefined : inputQuantity;
+      quantity =
+        isNaN(inputQuantity) || inputQuantity < 1 ? undefined : inputQuantity;
     }
 
     // Asignamos la cantidad correcta al objeto de datos y borramos la original si existe
@@ -641,12 +657,14 @@ class InventoryItemService {
 
     // Handle minStock
     if (updateData.minStock !== undefined) {
-      const parsedMinStock = typeof updateData.minStock === "string" 
-        ? parseInt(updateData.minStock, 10) 
-        : updateData.minStock;
-      itemUpdateData.minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+      const parsedMinStock =
+        typeof updateData.minStock === "string"
+          ? parseInt(updateData.minStock, 10)
+          : updateData.minStock;
+      itemUpdateData.minStock =
+        !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
     }
-    
+
     if (!isNaN(locationIdInt)) {
       itemUpdateData.locationId = locationIdInt;
     }
@@ -726,6 +744,38 @@ class InventoryItemService {
     );
   }
 
+  async getAllItemsForUser(userId) {
+    try {
+      // 🔑 Consultamos todos los ítems que pertenecen a contenedores del usuario
+      const items = await prisma.inventoryItem.findMany({
+        where: {
+          container: {
+            userId: userId, // Filtramos por el dueño del contenedor
+          },
+        },
+        include: {
+          images: true, // Incluimos imágenes por si las necesitas en el dashboard
+          location: true,
+          assetType: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+      });
+
+      // El frontend (Flutter) espera un objeto con la lista y definiciones
+      // Para el Dashboard, las definiciones de agregación pueden ir vacías
+      return {
+        items: items,
+        aggregationDefinitions: [],
+        aggregationResults: {},
+      };
+    } catch (error) {
+      console.error("Error en getAllItemsForUser:", error);
+      throw new Error("Error al obtener los ítems globales del usuario.");
+    }
+  }
+
   async createBatchItems({
     containerId,
     assetTypeId,
@@ -765,21 +815,23 @@ class InventoryItemService {
       // El frontend ya envió 'name' y 'description', más los campos personalizados.
       const name = item.name;
       const description = item.description || null;
-      
+
       // LÓGICA DE CANTIDAD (QUANTITY)
       let quantity;
       if (assetType.isSerialized) {
         quantity = 1;
       } else {
         const inputQuantity = parseInt(item.quantity, 10);
-        quantity = isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
+        quantity =
+          isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
       }
 
       // LÓGICA DE MIN_STOCK
       let minStock = 0;
       if (item.minStock) {
         const parsedMinStock = parseInt(item.minStock, 10);
-        minStock = !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
+        minStock =
+          !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
       }
 
       // Los campos personalizados vienen directos (no como JSON string escapado)

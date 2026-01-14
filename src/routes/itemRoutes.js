@@ -67,15 +67,13 @@ router.post(
       // 3. Llamar al nuevo servicio de clonación
       // 🔑 El servicio ya devuelve el objeto Item de Prisma directamente:
       //    const clonedItem = await inventoryItemService.cloneItem(cloneData);
-      const clonedItem = await inventoryItemService.cloneItem(cloneData); 
+      const clonedItem = await inventoryItemService.cloneItem(cloneData);
 
       // 4. Devolver el ítem clonado (HTTP 201 Created)
       //    El frontend de Flutter/Dart espera que el cuerpo de la respuesta
       //    sea el objeto InventoryItem JSON plano para el fromJson.
       // 🔑 CORRECCIÓN: Devolvemos SOLO el objeto creado directamente.
-      res.status(201).json(clonedItem); 
-      
-      
+      res.status(201).json(clonedItem);
     } catch (error) {
       console.error("Error during item cloning:", error);
 
@@ -162,6 +160,25 @@ router.post(
   }
 );
 
+// --- NUEVA RUTA GLOBAL PARA EL DASHBOARD ---
+router.get("/items", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id; // Obtenido del token por verifyToken
+
+    // 💡 Aquí llamamos a un nuevo método en tu servicio que traiga todo
+    // sin filtrar por contenedor o tipo.
+    const result = await inventoryItemService.getAllItemsForUser(userId);
+
+    res.status(200).json({
+      success: true,
+      data: result, // El formato que espera tu InventoryResponse.fromJson
+    });
+  } catch (error) {
+    console.error("Error en ruta global de items:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ===============================================
 // RUTA DE LECTURA (READ - Filtrada)
 // GET /containers/:containerId/asset-types/:assetTypeId/items
@@ -243,8 +260,18 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
 
     // 🔍 LOG: Ver qué se recibe exactamente en req.body
     console.log("[DEBUG POST /items] req.body keys:", Object.keys(req.body));
-    console.log("[DEBUG POST /items] req.body.quantity:", req.body.quantity, "Type:", typeof req.body.quantity);
-    console.log("[DEBUG POST /items] req.body.minStock:", req.body.minStock, "Type:", typeof req.body.minStock);
+    console.log(
+      "[DEBUG POST /items] req.body.quantity:",
+      req.body.quantity,
+      "Type:",
+      typeof req.body.quantity
+    );
+    console.log(
+      "[DEBUG POST /items] req.body.minStock:",
+      req.body.minStock,
+      "Type:",
+      typeof req.body.minStock
+    );
     console.log("[DEBUG POST /items] Full req.body:", req.body);
 
     // Los campos de texto están en req.body; los archivos están en req.files
@@ -457,16 +484,13 @@ router.get(
         isSerialized: is_serialized,
         inputQuantity: quantityInt,
         finalQuantity: finalQuantity,
-        message:
-          is_serialized
-            ? "This asset type is serialized. Quantity will be stored as 1."
-            : `This asset type is not serialized. Quantity will be stored as ${finalQuantity}.`,
+        message: is_serialized
+          ? "This asset type is serialized. Quantity will be stored as 1."
+          : `This asset type is not serialized. Quantity will be stored as ${finalQuantity}.`,
       });
     } catch (error) {
       console.error("Error verifying quantity:", error);
-      res
-        .status(500)
-        .json({ success: false, error: error.message });
+      res.status(500).json({ success: false, error: error.message });
     }
   }
 );

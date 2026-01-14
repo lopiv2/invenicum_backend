@@ -16,6 +16,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const loanRoutes = require("./routes/loanRoutes");
 const voucherRoutes = require("./routes/voucherRoutes");
+const alertRoutes = require("./routes/alertRoutes");
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -93,6 +94,7 @@ app.use(API_BASE_PATH + "/dashboard", dashboardRoutes);
 app.use(API_BASE_PATH + "/", locationRoutes);
 app.use(API_BASE_PATH + "/", loanRoutes);
 app.use(API_BASE_PATH + "/", voucherRoutes);
+app.use(API_BASE_PATH + "/", alertRoutes);
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR
