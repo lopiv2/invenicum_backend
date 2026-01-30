@@ -78,15 +78,11 @@ class UserService {
       }
 
       // Generar token JWT
+      // Generar token solo con lo esencial
       const token = jwt.sign(
-        {
-          userId: parseInt(user.id),
-          email: user.email,
-          name: user.name,
-          themeConfig: user.themeConfig,
-        },
-        process.env.JWT_SECRET || "tu-secret-key-temporal",
-        { expiresIn: "24h" }
+        { userId: parseInt(user.id), email: user.email },
+        process.env.JWT_SECRET || "tu-secret-key",
+        { expiresIn: "24h" },
       );
 
       return {

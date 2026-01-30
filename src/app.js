@@ -31,7 +31,7 @@ app.use(
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 app.use(express.json());
@@ -87,6 +87,13 @@ app.get("/", (req, res) => {
 
 // Usar las rutas con la versión de API
 const API_BASE_PATH = "/api/" + API_VERSION;
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(
+    `Auth Header: ${req.headers.authorization ? "Presente" : "AUSENTE"}`,
+  );
+  next();
+});
 app.use(API_BASE_PATH + "/auth", authRoutes);
 app.use(API_BASE_PATH + "/", containerRoutes);
 app.use(API_BASE_PATH + "/", assetTypeRoutes);
@@ -109,6 +116,6 @@ app.listen(port, () => {
   console.log(`La aplicación está corriendo en http://localhost:${port}`);
   console.log(`API Base Path: http://localhost:${port}${API_BASE_PATH}`);
   console.log(
-    `Imágenes Estáticas en: http://localhost:${port}${STATIC_URL_PREFIX}`
+    `Imágenes Estáticas en: http://localhost:${port}${STATIC_URL_PREFIX}`,
   );
 });
