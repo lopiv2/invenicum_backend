@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/app.js",
+    "test:ai": "node tests/ai/test-gemini.js",
     "dev": "nodemon src/app.js",
     "db:seed": "node prisma/seeders/seed.js",
     "db:reset": "prisma migrate reset && npm run db:seed"
@@ -14,8 +15,11 @@
   "license": "ISC",
   "keywords": [],
   "dependencies": {
+    "@google/genai": "^1.38.0",
     "@prisma/client": "^6.17.1",
+    "axios": "^1.13.4",
     "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",

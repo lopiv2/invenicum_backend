@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const userService = require("../services/userService");
-const verifyToken = require('../middleware/authMiddleware');
+const verifyToken = require("../middleware/authMiddleware");
 
 // Middleware para logging
 router.use((req, res, next) => {
@@ -77,17 +77,21 @@ router.post("/register", async (req, res) => {
 
 router.get("/me", verifyToken, async (req, res) => {
   try {
-    // req.user viene del middleware verifyToken
-    // Aquí podrías buscar los datos completos en la base de datos si fuera necesario
-    // Por ahora, devolvemos la información básica que ya tenemos en el token
+    // 🚩 EL CAMBIO ESTÁ AQUÍ:
+    // En lugar de devolver req.user (que solo tiene datos viejos del token),
+    // consultamos al servicio los datos frescos de la DB incluyendo el tema.
+    const result = await userService.getUserById(
+      req.user.userId || req.user.id
+    );
 
+    if (!result.success) {
+      return res.status(404).json(result);
+    }
+
+    // El result.user ya contiene el themeConfig gracias al include que pusimos en el service
     return res.status(200).json({
       success: true,
-      user: {
-        id: req.user.id,
-        email: req.user.email,
-        // name: req.user.name (si lo guardas en el token)
-      },
+      user: result.user,
     });
   } catch (error) {
     console.error(

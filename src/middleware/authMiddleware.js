@@ -22,7 +22,8 @@ const verifyToken = (req, res, next) => {
         // Guardar la información del usuario en req.user
         req.user = {
             id: decoded.userId, // Usamos userId que es como lo guardamos en userService.js
-            email: decoded.email
+            email: decoded.email,
+            name: decoded.name
         };
 
         next();

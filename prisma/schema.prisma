@@ -11,13 +11,40 @@ datasource db {
 }
 
 model User {
-  id          Int         @id @default(autoincrement())
-  email       String      @unique
-  password    String
-  name        String?
-  containers  Container[]
-  assignedItems InventoryItem[] @relation("UserAssignedItems")
-  alerts      Alert[]
+  id              Int              @id @default(autoincrement())
+  email           String           @unique
+  password        String
+  name            String?
+  // Relaciones añadidas
+  themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
+  savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
+  
+  containers      Container[]
+  assignedItems   InventoryItem[]  @relation("UserAssignedItems")
+  alerts          Alert[]
+}
+
+// Configuración del tema que el usuario tiene aplicado actualmente
+model UserThemeConfig {
+  id              Int      @id @default(autoincrement())
+  themeColor      String   @default("#1A237E") // Hexadecimal
+  themeBrightness String   @default("light")   // "light" o "dark"
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_theme_config")
+}
+
+// Biblioteca de temas creados por el usuario
+model CustomTheme {
+  id              String   @id @default(uuid())
+  name            String
+  primaryColor    String
+  brightness      String   @default("light")
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("custom_theme")
 }
 
 model Container {
@@ -95,6 +122,7 @@ model CustomFieldDefinition {
   type            String      
   isRequired      Boolean     @default(false) @map("is_required")
   isSummable      Boolean     @default(false) @map("is_summable") // true si es un campo numérico que se debe sumar
+  isCountable     Boolean     @default(false) @map("is_countable")
 
   // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
   dataListId      Int?        @map("data_list_id") 

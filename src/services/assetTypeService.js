@@ -34,7 +34,13 @@ const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
  * @param {object} data Datos del AssetType (name, fieldDefinitions, files, possessionFieldId, desiredFieldId).
  */
 async function createAssetType(containerId, userId, data) {
-  const { name, fieldDefinitions, possessionFieldId, desiredFieldId, isSerialized } = data;
+  const {
+    name,
+    fieldDefinitions,
+    possessionFieldId,
+    desiredFieldId,
+    isSerialized,
+  } = data;
   const files = data.files || [];
 
   if (!name || !fieldDefinitions) {
@@ -88,7 +94,9 @@ async function createAssetType(containerId, userId, data) {
         name,
         containerId,
         isSerialized: !!isSerialized,
-        possessionFieldId: possessionFieldId ? parseInt(possessionFieldId) : null, // 🎯 NUEVO
+        possessionFieldId: possessionFieldId
+          ? parseInt(possessionFieldId)
+          : null, // 🎯 NUEVO
         desiredFieldId: desiredFieldId ? parseInt(desiredFieldId) : null, // 🎯 NUEVO
         fieldDefinitions: {
           create: fieldDefinitionsForPrisma,
@@ -293,25 +301,55 @@ async function updateAssetType(assetTypeId, userId, updateData) {
       }
 
       // --- PASO B: ACTUALIZAR EL TIPO DE ACTIVO PRINCIPAL Y SUS DEFINICIONES DE CAMPO ---
-      if (fieldDefinitions) {
-        // Borrar todas las definiciones de campo antiguas
+      // 3. ACTUALIZAR LAS DEFINICIONES DE CAMPO (SIN BORRAR TODO)
+      if (fieldDefinitions && fieldDefinitions.length > 0) {
+        // Obtenemos los IDs que vienen del frontend para saber qué NO borrar
+        const incomingIds = fieldDefinitions
+          .filter((fd) => fd.id && fd.id > 0)
+          .map((fd) => parseInt(fd.id));
+
+        // Borramos SOLO los campos que el usuario eliminó realmente en la UI
         await tx.customFieldDefinition.deleteMany({
-          where: { assetTypeId: assetTypeIdInt },
+          where: {
+            assetTypeId: parseInt(assetTypeId),
+            id: { notIn: incomingIds },
+          },
         });
 
-        // Crear las nuevas definiciones
-        const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => ({
-          name: def.name,
-          type: def.type,
-          isRequired: def.isRequired,
-          isSummable: def.isSummable,
-          isCountable: def.isCountable,
-          dataListId: def.dataListId || null,
-          assetTypeId: assetTypeIdInt,
-        }));
-
-        await tx.customFieldDefinition.createMany({
-          data: fieldDefinitionsForPrisma,
+        // Procesamos cada campo uno por uno
+        for (const fd of fieldDefinitions) {
+          if (fd.id && fd.id > 0) {
+            // 🔑 ACTUALIZAR: Si tiene ID, mantenemos el registro (ID 2 sigue siendo 2)
+            await tx.customFieldDefinition.update({
+              where: { id: parseInt(fd.id) },
+              data: {
+                name: fd.name,
+                type: fd.type,
+                isRequired: fd.isRequired || false,
+                isSummable: fd.isSummable || false,
+                isCountable: fd.isCountable || false,
+                dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
+              },
+            });
+          } else {
+            // 🆕 CREAR: Si no tiene ID, es un campo nuevo
+            await tx.customFieldDefinition.create({
+              data: {
+                name: fd.name,
+                type: fd.type,
+                isRequired: fd.isRequired || false,
+                isSummable: fd.isSummable || false,
+                isCountable: fd.isCountable || false,
+                assetTypeId: parseInt(assetTypeId),
+                dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
+              },
+            });
+          }
+        }
+      } else {
+        // Si no vienen campos, borramos todos
+        await tx.customFieldDefinition.deleteMany({
+          where: { asset_type_id: parseInt(assetTypeId) },
         });
       }
 
@@ -505,7 +543,11 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
  * @param {number} userId ID del usuario para verificar la propiedad.
  * @param {object} updateData Datos a actualizar ({possessionFieldId, desiredFieldId}).
  */
-async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) {
+async function updateAssetTypeCollectionFields(
+  assetTypeId,
+  userId,
+  updateData
+) {
   const { possessionFieldId, desiredFieldId } = updateData;
 
   const id = parseInt(assetTypeId);
@@ -555,7 +597,7 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
         message: `El campo de ${fieldName} debe ser de tipo booleano (actualmente es ${fieldDefinition.type}).`,
       };
     }
-    
+
     return { success: true, parsedId: parsedId };
   }
 
@@ -563,7 +605,7 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
     // 1. Verificar propiedad del AssetType y obtener datos relacionados
     const assetType = await prisma.assetType.findUnique({
       where: { id },
-      include: { 
+      include: {
         container: true,
         fieldDefinitions: true, // Crucial para la validación
       },
@@ -574,23 +616,27 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
     }
 
     if (assetType.container.userId !== userId) {
-      return { success: false, message: "Acceso denegado: El Tipo de Activo no es de su propiedad." };
+      return {
+        success: false,
+        message: "Acceso denegado: El Tipo de Activo no es de su propiedad.",
+      };
     }
 
     // 💡 VALIDACIÓN: Los campos de colección solo aplican a tipos de activo NO seriados.
     if (assetType.isSerialized) {
       return {
         success: false,
-        message: "Los campos de colección solo pueden asignarse a tipos de activo no seriados.",
+        message:
+          "Los campos de colección solo pueden asignarse a tipos de activo no seriados.",
       };
     }
-    
+
     // 2. Validar y Parsear IDs de Campos
-    
+
     // Campo de Posesión
     const possessionValidation = validateAndParseField(
-      possessionFieldId, 
-      assetType, 
+      possessionFieldId,
+      assetType,
       "posesión"
     );
     if (!possessionValidation.success) {
@@ -600,8 +646,8 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
 
     // Campo de Deseados
     const desiredValidation = validateAndParseField(
-      desiredFieldId, 
-      assetType, 
+      desiredFieldId,
+      assetType,
       "deseado"
     );
     if (!desiredValidation.success) {
@@ -609,12 +655,11 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
     }
     const desiredFieldIdParsed = desiredValidation.parsedId;
 
-
     // 3. Actualizar los campos de colección
     const updatedAssetType = await prisma.assetType.update({
       where: { id },
       data: {
-        // 🔑 PRISMA: Usa 'null' para desvincular. 
+        // 🔑 PRISMA: Usa 'null' para desvincular.
         // possessionFieldIdParsed será null o un entero.
         possessionFieldId: possessionFieldIdParsed,
         desiredFieldId: desiredFieldIdParsed,
@@ -632,11 +677,12 @@ async function updateAssetTypeCollectionFields(assetTypeId, userId, updateData) 
       message: "Campos de colección actualizados con éxito.",
       data: updatedAssetType,
     };
-
   } catch (error) {
     console.error("Error en updateAssetTypeCollectionFields:", error);
     // Lanza un error genérico para evitar exponer detalles internos
-    throw new Error("Error al actualizar los campos de colección del AssetType."); 
+    throw new Error(
+      "Error al actualizar los campos de colección del AssetType."
+    );
   }
 }
 
