@@ -108,7 +108,10 @@ class UserService {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { themeConfig: true },
+        include: { 
+          themeConfig: true,
+          preferences: true,
+        },
       });
 
       if (!user) {
@@ -125,6 +128,7 @@ class UserService {
           email: user.email,
           name: user.name,
           themeConfig: user.themeConfig,
+          preferences: user.preferences,
         },
       };
     } catch (error) {
@@ -197,6 +201,38 @@ class UserService {
       return { success: true, message: "Tema eliminado correctamente" };
     } catch (error) {
       throw new Error("Error al eliminar tema: " + error.message);
+    }
+  }
+
+  // ====== MÉTODOS DE PREFERENCIAS ======
+
+  async getPreferences(userId) {
+    try {
+      const preferences = await prisma.userPreferences.findUnique({
+        where: { userId: userId },
+      });
+
+      return preferences || { userId: userId, language: "es" };
+    } catch (error) {
+      throw new Error("Error al obtener preferencias: " + error.message);
+    }
+  }
+
+  async updateLanguage(userId, languageCode) {
+    try {
+      // Usa upsert para crear el registro si no existe o actualizarlo si ya existe
+      const preferences = await prisma.userPreferences.upsert({
+        where: { userId: userId },
+        update: { language: languageCode },
+        create: { userId, language: languageCode },
+      });
+
+      return {
+        success: true,
+        data: preferences,
+      };
+    } catch (error) {
+      throw new Error("Error al actualizar idioma: " + error.message);
     }
   }
 }

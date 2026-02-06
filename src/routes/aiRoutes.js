@@ -7,9 +7,39 @@ const verifyToken = require("../middleware/authMiddleware");
 // Middleware de logging igual al que tienes en otros archivos
 router.use((req, res, next) => {
   console.log(
-    `[AI-LOG] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`
+    `[AI-LOG] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`,
   );
   next();
+});
+
+// POST /api/ai/chat/veni
+router.post("/chat/veni", verifyToken, async (req, res) => {
+  try {
+    const { message, context } = req.body;
+    const userId = req.user.id;
+
+    // 1. GUARDAR MENSAJE DEL USUARIO (Lo que tú escribes)
+    // Esto es lo que te faltaba o estaba fallando
+    await aiService.saveMessage(userId, message, true);
+
+    const updatedContext = { ...context, userId: userId };
+
+    // 2. PROCESAR CON LA IA
+    const result = await aiService.processChatConversation(
+      message,
+      updatedContext,
+    );
+
+    // 3. GUARDAR RESPUESTA DE LA IA (Lo que dice Veni)
+    if (result && result.answer) {
+      await aiService.saveMessage(userId, result.answer, false);
+    }
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("❌ Error en el chat:", error);
+    res.status(500).json({ error: "Error en el chat" });
+  }
 });
 
 // POST /api/ai/extract
@@ -55,6 +85,16 @@ router.post("/extract", verifyToken, async (req, res) => {
       message: "No se pudo extraer la información",
       error: error.message,
     });
+  }
+});
+
+// 1. Obtener historial (Solo últimas 24h)
+router.get("/chat/history", verifyToken, async (req, res) => {
+  try {
+    const history = await aiService.getRecentHistory(req.user.id);
+    res.json(history);
+  } catch (error) {
+    res.status(500).json({ error: "Error al obtener historial" });
   }
 });
 

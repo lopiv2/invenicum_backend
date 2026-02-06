@@ -18,10 +18,21 @@ model User {
   // Relaciones añadidas
   themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
   savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
+  preferences     UserPreferences? // Relación 1:1 con preferencias del usuario
   
   containers      Container[]
   assignedItems   InventoryItem[]  @relation("UserAssignedItems")
   alerts          Alert[]
+}
+
+model ChatMessage {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  text      String   @db.Text
+  isUser    Boolean
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt]) // Para que las consultas sean rápidas
 }
 
 // Configuración del tema que el usuario tiene aplicado actualmente
@@ -45,6 +56,19 @@ model CustomTheme {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("custom_theme")
+}
+
+// Preferencias generales del usuario (idioma, tema, etc.)
+model UserPreferences {
+  id              Int      @id @default(autoincrement())
+  language        String   @default("es")   // Código de idioma (es, en, etc.)
+  createdAt       DateTime @default(now())  @map("created_at")
+  updatedAt       DateTime @updatedAt       @map("updated_at")
+  
+  userId          Int      @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
 }
 
 model Container {

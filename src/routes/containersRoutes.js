@@ -64,7 +64,7 @@ router.patch("/containers/:id", verifyToken, async (req, res) => {
     const result = await containerService.updateContainer(
       containerId,
       userId,
-      updateData
+      updateData,
     );
 
     // Asumimos que el service devuelve { success: true, data: container }
@@ -82,6 +82,28 @@ router.patch("/containers/:id", verifyToken, async (req, res) => {
       message: "Error al renombrar el contenedor",
       error: error.message,
     });
+  }
+});
+
+// Búsqueda global de activos
+router.get("/search/assets", verifyToken, async (req, res) => {
+  try {
+    const query = req.query.q;
+    if (!query) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Query parameter 'q' is required" });
+    }
+
+    const result = await containerService.searchAssets(req.user.id, query);
+
+    if (result.success) {
+      res.json(result); // El helper _extractData en Flutter buscará result.data
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -111,7 +133,7 @@ router.post("/containers", verifyToken, async (req, res) => {
 
     const result = await containerService.createContainer(
       req.user.id,
-      containerData
+      containerData,
     );
 
     if (result.success) {
@@ -133,7 +155,7 @@ router.get("/containers/:id", verifyToken, async (req, res) => {
   try {
     const result = await containerService.getContainerById(
       parseInt(req.params.id),
-      req.user.id
+      req.user.id,
     );
 
     if (result.success) {
@@ -153,7 +175,7 @@ router.delete("/containers/:id", verifyToken, async (req, res) => {
   try {
     await containerService.deleteContainer(
       parseInt(req.params.id),
-      req.user.id
+      req.user.id,
     );
     res.status(204).send();
   } catch (error) {
@@ -167,14 +189,14 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
     // Verificar que el contenedor pertenece al usuario
     const container = await containerService.getContainerById(
       parseInt(req.params.containerId),
-      req.user.id
+      req.user.id,
     );
     if (!container) {
       return res.status(404).json({ error: "Container not found" });
     }
 
     const items = await inventoryItemService.getItems(
-      parseInt(req.params.containerId)
+      parseInt(req.params.containerId),
     );
     res.json(items);
   } catch (error) {
@@ -187,14 +209,14 @@ router.post("/containers/:containerId/items", verifyToken, async (req, res) => {
     // Verificar que el contenedor pertenece al usuario
     const container = await containerService.getContainerById(
       parseInt(req.params.containerId),
-      req.user.id
+      req.user.id,
     );
     if (!container) {
       return res.status(404).json({ error: "Container not found" });
     }
     const item = await inventoryItemService.createItem(
       parseInt(req.params.containerId),
-      req.body
+      req.body,
     );
     res.status(201).json(item);
   } catch (error) {
@@ -210,7 +232,7 @@ router.put(
       // Verificar que el contenedor pertenece al usuario
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
-        req.user.id
+        req.user.id,
       );
       if (!container) {
         return res.status(404).json({ error: "Container not found" });
@@ -219,13 +241,13 @@ router.put(
       const item = await inventoryItemService.updateItem(
         parseInt(req.params.id),
         parseInt(req.params.containerId),
-        req.body
+        req.body,
       );
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 router.delete(
@@ -236,7 +258,7 @@ router.delete(
       // Verificar que el contenedor pertenece al usuario
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
-        req.user.id
+        req.user.id,
       );
       if (!container) {
         return res.status(404).json({ error: "Container not found" });
@@ -244,13 +266,13 @@ router.delete(
 
       await inventoryItemService.deleteItem(
         parseInt(req.params.id),
-        parseInt(req.params.containerId)
+        parseInt(req.params.containerId),
       );
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 router.patch(
@@ -261,7 +283,7 @@ router.patch(
       // Verificar que el contenedor pertenece al usuario
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
-        req.user.id
+        req.user.id,
       );
       if (!container) {
         return res.status(404).json({ error: "Container not found" });
@@ -270,13 +292,13 @@ router.patch(
       const item = await inventoryItemService.updateItemOptions(
         parseInt(req.params.id),
         parseInt(req.params.containerId),
-        req.body
+        req.body,
       );
       res.json(item);
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
-  }
+  },
 );
 
 module.exports = router;

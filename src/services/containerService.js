@@ -8,13 +8,13 @@ const CONTAINER_INCLUDE = {
     // Incluir las definiciones de campos para cada AssetType
     include: {
       fieldDefinitions: true,
-      images:true
+      images: true,
     },
   },
   // Opcional: Si deseas que los items del inventario también se carguen
   // NOTA: Para GET /containers, cargar TODOS los ítems puede ser muy pesado.
   // Es mejor cargarlos solo en getContainerById si es estrictamente necesario, o excluirlos aquí.
-  items: false, 
+  items: false,
 };
 
 class ContainerService {
@@ -28,7 +28,7 @@ class ContainerService {
     try {
       if (!userId || !data.name) {
         throw new Error(
-          "Se requiere el ID de usuario y el nombre del contenedor"
+          "Se requiere el ID de usuario y el nombre del contenedor",
         );
       }
 
@@ -66,7 +66,7 @@ class ContainerService {
     try {
       console.log(
         "Buscando contenedores y tipos de activo para usuario:",
-        userId
+        userId,
       );
 
       const containers = await prisma.container.findMany({
@@ -206,7 +206,7 @@ class ContainerService {
       };
     } catch (error) {
       console.error("Error al eliminar contenedor:", error);
-      
+
       if (error.code === "P2025") {
         return {
           success: false,
@@ -217,6 +217,51 @@ class ContainerService {
         success: false,
         message: error.message || "Error al eliminar el contenedor",
       };
+    }
+  }
+
+  /**
+   * Realiza una búsqueda global de activos para un usuario específico.
+   * @param {number} userId - ID del usuario.
+   * @param {string} query - Texto a buscar.
+   */
+  async searchAssets(userId, query) {
+    try {
+      const assets = await prisma.inventoryItem.findMany({
+        where: {
+          container: {
+            userId: parseInt(userId),
+          },
+          OR: [
+            { name: { contains: query } }, // MySQL ya es insensitive por defecto
+          ],
+        },
+        include: {
+          container: {
+            select: { name: true, id: true },
+          },
+          assetType: {
+            select: { id: true },
+          },
+        },
+        take: 10,
+      });
+
+      const formattedAssets = assets.map((item) => ({
+        id: item.id,
+        name: item.name,
+        container_id: item.containerId,
+        container_name: item.container.name,
+        asset_type_id: item.assetTypeId,
+      }));
+
+      return {
+        success: true,
+        data: formattedAssets,
+      };
+    } catch (error) {
+      console.error("Error en searchAssets:", error);
+      return { success: false, message: error.message };
     }
   }
 }
