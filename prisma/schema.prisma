@@ -23,6 +23,9 @@ model User {
   containers      Container[]
   assignedItems   InventoryItem[]  @relation("UserAssignedItems")
   alerts          Alert[]
+  // Plugins creados por este usuario
+  createdPlugins  Plugin[] @relation("PluginAuthor")
+  plugins         UserPlugin[]
 }
 
 model ChatMessage {
@@ -69,6 +72,47 @@ model UserPreferences {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")
+}
+
+// ============================================
+// SISTEMA DE PLUGINS DINÁMICOS (Server-Driven UI) 🔌
+// ============================================
+
+model Plugin {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  slot        String   // Ej: "dashboard_top", "dashboard_bottom", "asset_detail"
+  ui          Json     // Estructura JSON que procesa el SDK de Stac en Flutter
+  isPublic    Boolean  @default(true) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // --- NUEVA RELACIÓN DE AUTORÍA ---
+  authorId    Int      @map("author_id")
+  author      User     @relation("PluginAuthor", fields: [authorId], references: [id])
+  // ---------------------------------
+
+  // Relación con los usuarios que lo han instalado
+  installedBy UserPlugin[]
+
+  @@map("plugin")
+}
+
+model UserPlugin {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relación con User
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive  Boolean  @default(true) @map("is_active")
+  // Relación con Plugin
+  pluginId  String   @map("plugin_id")
+  plugin    Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pluginId]) // Un usuario no puede instalar el mismo plugin dos veces
+  @@map("user_plugin")
 }
 
 model Container {

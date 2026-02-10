@@ -104,6 +104,34 @@ class LoanService {
   }
 
   /**
+   * Obtiene todos los préstamos de forma global para un usuario
+   * Útil para el Dashboard
+   */
+  async getAllLoans(userId) {
+    try {
+      const loans = await prisma.loan.findMany({
+        where: {
+          // Filtramos para que solo vea préstamos de sus contenedores
+          container: {
+            userId: parseInt(userId),
+          },
+        },
+        include: {
+          inventoryItem: { select: { id: true, name: true } },
+          container: { select: { id: true, name: true } },
+        },
+        orderBy: {
+          loanDate: "desc",
+        },
+      });
+      return loans;
+    } catch (error) {
+      console.error("Error in getAllLoans:", error);
+      throw new Error(`Error al obtener préstamos globales: ${error.message}`);
+    }
+  }
+
+  /**
    * Crea un nuevo préstamo
    */
   async createLoan(containerId, loanData) {
@@ -144,7 +172,7 @@ class LoanService {
       // 2. Validar si hay stock suficiente
       if (inventoryItem.quantity < quantityToLoan) {
         throw new Error(
-          `Stock insuficiente. Disponible: ${inventoryItem.quantity}`
+          `Stock insuficiente. Disponible: ${inventoryItem.quantity}`,
         );
       }
 
@@ -194,12 +222,12 @@ class LoanService {
             type: "warning",
           });
           console.log(
-            `[ALERT] Generada alerta de stock bajo para Item ID: ${updatedItem.id}`
+            `[ALERT] Generada alerta de stock bajo para Item ID: ${updatedItem.id}`,
           );
         }
 
         console.log(
-          `[DEBUG] Préstamo ID ${loan.id} creado. Cantidad prestada: ${quantityToLoan}. Stock restante: ${updatedItem.quantity}`
+          `[DEBUG] Préstamo ID ${loan.id} creado. Cantidad prestada: ${quantityToLoan}. Stock restante: ${updatedItem.quantity}`,
         );
 
         return loan;
@@ -266,7 +294,7 @@ class LoanService {
           updateData.expectedReturnDate = null;
         } else {
           updateData.expectedReturnDate = parseDate(
-            loanData.expectedReturnDate
+            loanData.expectedReturnDate,
           );
         }
       }
@@ -375,7 +403,7 @@ class LoanService {
         });
 
         console.log(
-          `[STOCK] Item ${existingLoan.inventoryItemId} incrementado en ${existingLoan.quantity}. Nuevo stock: ${updatedItem.quantity}`
+          `[STOCK] Item ${existingLoan.inventoryItemId} incrementado en ${existingLoan.quantity}. Nuevo stock: ${updatedItem.quantity}`,
         );
 
         return returnedLoan;

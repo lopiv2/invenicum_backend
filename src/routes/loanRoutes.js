@@ -14,12 +14,16 @@ router.use(authMiddleware);
  */
 function formatLoanResponse(loan) {
   if (!loan) return null;
-  
+
   return {
     ...loan,
     loanDate: loan.loanDate ? loan.loanDate.toISOString() : null,
-    expectedReturnDate: loan.expectedReturnDate ? loan.expectedReturnDate.toISOString() : null,
-    actualReturnDate: loan.actualReturnDate ? loan.actualReturnDate.toISOString() : null,
+    expectedReturnDate: loan.expectedReturnDate
+      ? loan.expectedReturnDate.toISOString()
+      : null,
+    actualReturnDate: loan.actualReturnDate
+      ? loan.actualReturnDate.toISOString()
+      : null,
     createdAt: loan.createdAt ? loan.createdAt.toISOString() : null,
     updatedAt: loan.updatedAt ? loan.updatedAt.toISOString() : null,
   };
@@ -29,8 +33,26 @@ function formatLoanResponse(loan) {
  * Formatea una lista de préstamos
  */
 function formatLoansResponse(loans) {
-  return loans.map(loan => formatLoanResponse(loan));
+  return loans.map((loan) => formatLoanResponse(loan));
 }
+
+/**
+ * GET /api/v1/loans
+ * Obtiene TODOS los préstamos del usuario (Global)
+ * Esta es la ruta que usará el Dashboard
+ */
+router.get("/loans", async (req, res) => {
+  try {
+    // Asumiendo que tu loanService tiene un método getAllLoans
+    // o que puedes filtrar por el ID del usuario autenticado
+    const userId = req.user.id;
+    const loans = await loanService.getAllLoans(userId);
+    res.status(200).json(formatLoansResponse(loans));
+  } catch (error) {
+    console.error("Error fetching global loans:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /**
  * GET /api/v1/containers/:containerId/loans
@@ -94,7 +116,7 @@ router.put(
       console.error("Error returning loan:", error);
       res.status(400).json({ error: error.message });
     }
-  }
+  },
 );
 
 /**

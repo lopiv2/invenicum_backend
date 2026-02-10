@@ -9,7 +9,7 @@ require("dotenv").config();
 const UPLOAD_DIR_ABSOLUTE = path.join(
   __dirname,
   "..",
-  process.env.UPLOAD_FOLDER
+  process.env.UPLOAD_FOLDER,
 );
 
 class InventoryItemService {
@@ -66,20 +66,20 @@ class InventoryItemService {
     console.log(
       `[DEBUG QUANTITY] Raw input: "${
         itemData.quantity
-      }", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`
+      }", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`,
     );
 
     if (assetType.isSerialized) {
       // Si es seriado, la cantidad es siempre 1.
       quantity = 1;
       console.log(
-        `[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`
+        `[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`,
       );
     } else {
       // Si no es seriado, usamos el input o default a 1.
       quantity = parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1;
       console.log(
-        `[DEBUG] AssetType ${assetTypeId} is NOT Serialized. Input: "${itemData.quantity}", Parsed: ${parsedQuantity}, Final: ${quantity}`
+        `[DEBUG] AssetType ${assetTypeId} is NOT Serialized. Input: "${itemData.quantity}", Parsed: ${parsedQuantity}, Final: ${quantity}`,
       );
     }
 
@@ -100,7 +100,7 @@ class InventoryItemService {
     }
 
     console.log(
-      `[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`
+      `[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`,
     );
     itemData.minStock = minStock;
 
@@ -307,7 +307,7 @@ class InventoryItemService {
         });
       } else {
         console.warn(
-          `Original image file not found: ${originalPath}. Skipping copy. Original URL was: ${img.url}`
+          `Original image file not found: ${originalPath}. Skipping copy. Original URL was: ${img.url}`,
         );
       }
     }
@@ -392,6 +392,23 @@ class InventoryItemService {
     }
   }
 
+  async getItemsByAssetType(containerId, assetTypeId) {
+    try {
+      return await prisma.inventoryItem.findMany({
+        where: {
+          containerId: parseInt(containerId),
+          assetTypeId: parseInt(assetTypeId), // 🚩 FILTRO CRUCIAL
+        },
+        include: {
+          images: true,
+          location: true,
+        },
+      });
+    } catch (error) {
+      throw new Error("Error al obtener items filtrados: " + error.message);
+    }
+  }
+
   async getItems({
     containerId,
     assetTypeId,
@@ -403,7 +420,7 @@ class InventoryItemService {
     const aTId = parseInt(assetTypeId);
     if (isNaN(cId) || isNaN(aTId)) {
       throw new Error(
-        "Invalid ID format provided for container or asset type."
+        "Invalid ID format provided for container or asset type.",
       );
     }
 
@@ -413,7 +430,7 @@ class InventoryItemService {
       select: { id: true, name: true, type: true, isSummable: true },
     });
     const summableFieldDefinitions = allFieldDefinitions.filter(
-      (def) => def.isSummable
+      (def) => def.isSummable,
     );
 
     // 3. Inicializar resultados
@@ -431,7 +448,7 @@ class InventoryItemService {
       where: baseWhereClause,
       include: {
         location: true,
-        assetType: true, 
+        assetType: true,
         images: {
           orderBy: { order: "asc" },
         },
@@ -551,7 +568,7 @@ class InventoryItemService {
       isNaN(locationIdInt)
     ) {
       throw new Error(
-        "Invalid ID format provided for item, container, or asset type."
+        "Invalid ID format provided for item, container, or asset type.",
       );
     }
 
@@ -636,7 +653,7 @@ class InventoryItemService {
             id: { in: idsToDeleteInt },
             inventoryItemId: itemIdInt,
           },
-        })
+        }),
       );
     }
 
@@ -682,7 +699,7 @@ class InventoryItemService {
             orderBy: { order: "asc" },
           },
         },
-      })
+      }),
     );
 
     // ===========================================
@@ -716,7 +733,7 @@ class InventoryItemService {
       updateActions.push(
         prisma.inventoryItemImage.createMany({
           data: newImagesData,
-        })
+        }),
       );
     }
 
@@ -728,7 +745,7 @@ class InventoryItemService {
 
     // Encuentra el resultado de la actualización del ítem principal para devolverlo
     const updatedItemResult = results.find(
-      (res) => typeof res === "object" && res.id === itemIdInt
+      (res) => typeof res === "object" && res.id === itemIdInt,
     );
 
     if (updatedItemResult) {
@@ -740,7 +757,7 @@ class InventoryItemService {
     }
 
     throw new Error(
-      "Update failed or the item could not be retrieved after update."
+      "Update failed or the item could not be retrieved after update.",
     );
   }
 
@@ -848,7 +865,7 @@ class InventoryItemService {
         await this.validateCustomFieldValues(
           aTId,
           customFieldValues,
-          fieldDefinitions
+          fieldDefinitions,
         );
 
         // Si la validación pasa, preparar el objeto para Prisma
@@ -876,7 +893,7 @@ class InventoryItemService {
         .map((e) => `Row ${e.row}: ${e.message}`)
         .join("; ");
       throw new Error(
-        `Batch import failed. Validation errors: ${errorSummary}`
+        `Batch import failed. Validation errors: ${errorSummary}`,
       );
     }
 
