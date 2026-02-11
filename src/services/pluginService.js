@@ -32,6 +32,30 @@ class PluginService {
   }
 
   /**
+   * Obtiene el contenido de un plugin (STAC) desde una URL externa
+   * Actúa como proxy para evitar problemas de CORS en el frontend
+   */
+  async getPluginPreview(url) {
+    try {
+      console.log("🌐 Proxy de Preview para: %s", url);
+
+      // Validamos que sea una URL de confianza (opcional pero recomendado)
+      if (!url.startsWith("https://raw.githubusercontent.com")) {
+        throw new Error("URL no permitida");
+      }
+
+      const response = await axios.get(url);
+
+      // Devolvemos la data. Si el JSON de GitHub tiene una estructura
+      // específica (como el campo 'content'), aquí podrías normalizarlo.
+      return response.data;
+    } catch (error) {
+      console.error("❌ Error en getPluginPreview:", error.message);
+      throw new Error("No se pudo obtener la previsualización del plugin.");
+    }
+  }
+
+  /**
    * Obtiene la mezcla de plugins locales y de GitHub para la tienda
    */
   async getAllCommunityPlugins(userId) {

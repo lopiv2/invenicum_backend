@@ -77,6 +77,23 @@ router.delete("/:id", verifyToken, async (req, res) => {
   }
 });
 
+router.get("/preview-stac", async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json({ message: "La URL es requerida" });
+    }
+
+    // LLAMADA AL SERVICIO
+    const previewData = await pluginService.getPluginPreview(url);
+
+    res.json(previewData);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // GET: Plugins disponibles en la comunidad
 router.get("/community", verifyToken, async (req, res) => {
   try {
@@ -91,11 +108,15 @@ router.get("/community", verifyToken, async (req, res) => {
 // POST: Instalar un plugin
 router.post("/install", verifyToken, async (req, res) => {
   try {
-    const { id } = req.body;
     const userId = req.user.id;
-    await pluginService.installPlugin(userId, id);
+    const pluginData = req.body; // <--- Tomamos TODO el objeto (incluyendo download_url e isOfficial)
+
+    // Pasamos el objeto completo al servicio
+    await pluginService.installPlugin(userId, pluginData);
+
     res.json({ success: true, message: "Plugin instalado correctamente" });
   } catch (error) {
+    console.error("Error en instalación:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });
