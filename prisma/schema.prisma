@@ -15,6 +15,10 @@ model User {
   email           String           @unique
   password        String
   name            String?
+  username        String?          @unique @db.VarChar(30)
+  githubHandle    String?          @unique @map("github_handle")
+  githubId        String?          @unique
+  avatarUrl       String?  @db.Text
   // Relaciones añadidas
   themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
   savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
@@ -81,6 +85,7 @@ model UserPreferences {
 model Plugin {
   id          String   @id @default(uuid())
   name        String
+  version     String?  @default("1.0.0")
   description String?  @db.Text
   slot        String   // Ej: "dashboard_top", "dashboard_bottom", "asset_detail"
   ui          Json     // Estructura JSON que procesa el SDK de Stac en Flutter
@@ -89,8 +94,8 @@ model Plugin {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   // --- NUEVA RELACIÓN DE AUTORÍA ---
-  authorId    Int      @map("author_id")
-  author      User     @relation("PluginAuthor", fields: [authorId], references: [id])
+  authorId    Int?     @map("author_id")
+  author      User?    @relation("PluginAuthor", fields: [authorId], references: [id])
   // ---------------------------------
 
   // Relación con los usuarios que lo han instalado

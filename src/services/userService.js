@@ -1,7 +1,7 @@
 const { PrismaClient } = require("@prisma/client");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-
+const axios = require("axios");
 const prisma = new PrismaClient();
 
 class UserService {
@@ -50,6 +50,77 @@ class UserService {
     }
   }
 
+  async updateProfile(userId, data) {
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { id: parseInt(userId) },
+        data: {
+          ...(data.name && { name: data.name }),
+          ...(data.username && {
+            username: data.username.toLowerCase().trim(),
+          }),
+          ...(data.githubHandle && { githubHandle: data.githubHandle.trim() }),
+          ...(data.avatarUrl && { avatarUrl: data.avatarUrl }),
+          ...(data.githubId && { githubId: data.githubId }),
+        },
+        include: {
+          themeConfig: true, // Para que el frontend no pierda la configuración de tema
+        },
+      });
+
+      return { success: true, user: updatedUser };
+    } catch (error) {
+      // Error P2002 es "Unique constraint failed" en Prisma
+      if (error.code === "P2002") {
+        return {
+          success: false,
+          message: "El username ya está en uso por otro usuario",
+        };
+      }
+      throw error;
+    }
+  }
+
+  async verifyGitHubAccount(handle) {
+    try {
+      // 1. Limpieza extrema: quitamos @, espacios y pasamos a minúsculas
+      const cleanHandle = handle.trim().replace(/^@/, "").toLowerCase();
+
+      if (!cleanHandle) {
+        return { success: false, message: "Username inválido" };
+      }
+
+      // 2. Petición con Headers obligatorios
+      const response = await axios.get(
+        `https://api.github.com/users/${cleanHandle}`,
+        {
+          headers: {
+            Accept: "application/vnd.github.v3+json",
+            "User-Agent": "Invenicum-App-Server", // GitHub exige esto
+          },
+        },
+      );
+
+      // Si llega aquí, es un 200 OK
+      return {
+        success: true,
+        data: {
+          githubHandle: response.data.login,
+          avatarUrl: response.data.avatar_url, // Esta es la URL de tipo 'https://avatars.githubusercontent.com/u/...'
+          name: response.data.name || response.data.login,
+        },
+      };
+    } catch (error) {
+      // Si la API de GitHub devuelve 404, el usuario no existe
+      if (error.response && error.response.status === 404) {
+        return { success: false, message: "El usuario de GitHub no existe" };
+      }
+      // Otros errores (Rate limit, conexión, etc)
+      console.error("Error en GitHub Service:", error.message);
+      return { success: false, message: "Error al conectar con GitHub" };
+    }
+  }
+
   async login(credentials) {
     const { username, password } = credentials;
 
@@ -94,6 +165,8 @@ class UserService {
           email: user.email,
           name: user.name,
           themeConfig: user.themeConfig,
+          username: user.username,
+          githubHandle: user.githubHandle,
         },
       };
     } catch (error) {
@@ -108,7 +181,7 @@ class UserService {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        include: { 
+        include: {
           themeConfig: true,
           preferences: true,
         },
@@ -233,6 +306,45 @@ class UserService {
       };
     } catch (error) {
       throw new Error("Error al actualizar idioma: " + error.message);
+    }
+  }
+  async updateGitHubIdentity(userId, githubData) {
+    try {
+      // Verificar si ese GitHub ID ya está en uso por otro usuario
+      const existingLink = await prisma.user.findUnique({
+        where: { githubId: githubData.githubId },
+      });
+
+      if (existingLink && existingLink.id !== userId) {
+        return {
+          success: false,
+          message: "Esta cuenta de GitHub ya está vinculada a otro perfil.",
+        };
+      }
+
+      // Actualizar el usuario
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          githubHandle: githubData.githubHandle,
+          githubId: githubData.githubId,
+          avatarUrl: githubData.avatarUrl,
+          username: githubData.username,
+        },
+      });
+
+      return {
+        success: true,
+        message: "Identidad de GitHub vinculada",
+        data: {
+          githubHandle: updatedUser.githubHandle,
+          avatarUrl: updatedUser.avatarUrl,
+          name: updatedUser.name,
+        },
+      };
+    } catch (error) {
+      console.error("Error en service updateGitHub:", error.message);
+      return { success: false, message: "Error en base de datos" };
     }
   }
 }

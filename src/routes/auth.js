@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const userService = require("../services/userService");
 const verifyToken = require("../middleware/authMiddleware");
+const axios = require("axios");
 
 // Middleware para logging
 router.use((req, res, next) => {
@@ -9,6 +10,77 @@ router.use((req, res, next) => {
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
   console.log("Body:", req.body);
   next();
+});
+
+// Ruta para verificar el token y obtener datos del usuario
+router.get("/github/config", (req, res) => {
+  res.json({
+    success: true,
+    clientId: process.env.GITHUB_CLIENT_ID,
+    // No envíes el Client Secret nunca
+  });
+});
+
+// --- RUTA GITHUB OAUTH ---
+router.post("/github/complete", verifyToken, async (req, res) => {
+  const { code } = req.body;
+  const userId = req.user.userId || req.user.id; // Obtenido del token
+
+  if (!code) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Código no proporcionado" });
+  }
+
+  try {
+    // 1. Intercambiar código por Access Token
+    const tokenResponse = await axios.post(
+      "https://github.com/login/oauth/access_token",
+      {
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        code: code,
+      },
+      { headers: { Accept: "application/json" } },
+    );
+
+    const accessToken = tokenResponse.data.access_token;
+    if (!accessToken) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Token de GitHub inválido" });
+    }
+
+    // 2. Obtener datos del perfil de GitHub
+    const userRes = await axios.get("https://api.github.com/user", {
+      headers: {
+        Authorization: `token ${accessToken}`,
+        "User-Agent": "Invenicum-App",
+      },
+    });
+
+    // 3. Llamar al servicio para actualizar la DB con Prisma
+    const result = await userService.updateGitHubIdentity(userId, {
+      githubHandle: userRes.data.login,
+      githubId: userRes.data.id.toString(),
+      avatarUrl: userRes.data.avatar_url,
+      username: userRes.data.login,
+    });
+
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: result.data, // Asegúrate de que esto incluya githubHandle
+    });
+  } catch (error) {
+    console.error("[GITHUB ERROR]:", error.message);
+    return res
+      .status(500)
+      .json({ success: false, message: "Error al vincular con GitHub" });
+  }
 });
 
 // Ruta para iniciar sesión
@@ -28,7 +100,7 @@ router.post("/login", async (req, res) => {
       console.log(`[LOGIN FAILED]: ${result.message}`); // Aquí sí lo verás en tu consola de Node
       return res.status(401).json({
         success: false,
-        message: result.message // Aquí enviamos "Usuario no encontrado"
+        message: result.message, // Aquí enviamos "Usuario no encontrado"
       });
     }
 
@@ -38,7 +110,7 @@ router.post("/login", async (req, res) => {
     return res.status(200).json({
       success: true,
       token: result.token,
-      user: result.user
+      user: result.user,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: "Error interno" });

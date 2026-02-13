@@ -10,6 +10,7 @@ router.get("/installed", verifyToken, async (req, res) => {
     const userId = req.user.id;
     // Pasamos el userId para que el servicio calcule el campo 'isMine'
     const plugins = await pluginService.getUserPlugins(userId);
+    console.log(`Plugins instalados para el usuario ${userId}:`, plugins);
     res.json(plugins);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
