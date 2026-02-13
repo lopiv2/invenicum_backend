@@ -1,8 +1,10 @@
-const { PrismaClient } = require("@prisma/client");
+
+const prisma = require("../middleware/prisma");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
-const prisma = new PrismaClient();
+const UserDTO = require("../models/UserModel");
+const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 
 class UserService {
   async register(userData) {
@@ -121,55 +123,74 @@ class UserService {
     }
   }
 
+  async disconnectGitHub(userId) {
+    try {
+      const updatedUser = await prisma.user.update({
+        where: { id: parseInt(userId) },
+        data: {
+          username: null,
+          githubHandle: null,
+          githubId: null,
+          githubToken: null,
+          githubLinkedAt: null,
+          avatarUrl: null, // Si quieres que el avatar vuelva a ser el generado por defecto, puedes decidir si poner avatarUrl a null o dejarlo.
+          // Si quieres que el avatar vuelva a ser el generado por defecto
+          // puedes decidir si poner avatarUrl a null o dejarlo.
+        },
+      });
+
+      return {
+        success: true,
+        message: "GitHub identity disconnected",
+        user: updatedUser,
+      };
+    } catch (error) {
+      console.error("Error in service disconnectGitHub:", error.message);
+      return {
+        success: false,
+        message: "Error in database during disconnection",
+      };
+    }
+  }
+
   async login(credentials) {
     const { username, password } = credentials;
 
     try {
-      // Buscar el usuario por email (username en el frontend)
+      // 1. Buscamos el usuario incluyendo sus relaciones
       const user = await prisma.user.findUnique({
         where: { email: username },
-        include: { themeConfig: true },
+        include: {
+          themeConfig: true,
+          preferences: true, // Añadido para que el DTO tenga toda la info
+        },
       });
 
-      if (!user) {
+      // 2. Validación única de seguridad (evita fugas de información sobre si el email existe o no)
+      if (!user || !(await bcrypt.compare(password, user.password))) {
         return {
           success: false,
-          message: "Usuario no encontrado",
+          message: "Credenciales incorrectas",
         };
       }
 
-      // Verificar la contraseña
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-
-      if (!isPasswordValid) {
-        return {
-          success: false,
-          message: "Contraseña incorrecta",
-        };
-      }
-
-      // Generar token JWT
-      // Generar token solo con lo esencial
+      // 3. Generar token JWT
       const token = jwt.sign(
         { userId: parseInt(user.id), email: user.email },
         process.env.JWT_SECRET || "tu-secret-key",
         { expiresIn: "24h" },
       );
 
+      // 4. Retornamos usando el UserDTO para garantizar la estructura
+      // No necesitamos mapear campos a mano aquí, el DTO se encarga
       return {
         success: true,
         message: "Login exitoso",
         token: token,
-        user: {
-          id: parseInt(user.id),
-          email: user.email,
-          name: user.name,
-          themeConfig: user.themeConfig,
-          username: user.username,
-          githubHandle: user.githubHandle,
-        },
+        user: new UserDTO(user).toJSON(),
       };
     } catch (error) {
+      console.error("[LOGIN ERROR]:", error.message);
       return {
         success: false,
         message: error.message || "Error en el servidor",
@@ -177,6 +198,7 @@ class UserService {
     }
   }
 
+  // Método centralizado para buscar y transformar
   async getUserById(userId) {
     try {
       const user = await prisma.user.findUnique({
@@ -187,28 +209,15 @@ class UserService {
         },
       });
 
-      if (!user) {
-        return {
-          success: false,
-          message: "Usuario no encontrado",
-        };
-      }
+      if (!user) return { success: false, message: "Usuario no encontrado" };
 
+      // 🚩 Retornamos la instancia del modelo
       return {
         success: true,
-        user: {
-          id: parseInt(user.id),
-          email: user.email,
-          name: user.name,
-          themeConfig: user.themeConfig,
-          preferences: user.preferences,
-        },
+        user: new UserDTO(user).toJSON(),
       };
     } catch (error) {
-      return {
-        success: false,
-        message: error.message || "Error al obtener usuario",
-      };
+      return { success: false, message: error.message };
     }
   }
   async updateThemePreference(userId, themeData) {
@@ -309,10 +318,15 @@ class UserService {
     }
   }
   async updateGitHubIdentity(userId, githubData) {
+    const linkedAt = new Date();
+    
     try {
-      // Verificar si ese GitHub ID ya está en uso por otro usuario
+      // 1. Validar que el ID de GitHub sea un String (la API de GitHub suele enviar números)
+      const githubIdStr = githubData.githubId.toString();
+
+      // 2. Verificar si ese GitHub ID ya está en uso por otro usuario
       const existingLink = await prisma.user.findUnique({
-        where: { githubId: githubData.githubId },
+        where: { githubId: githubIdStr },
       });
 
       if (existingLink && existingLink.id !== userId) {
@@ -322,29 +336,43 @@ class UserService {
         };
       }
 
-      // Actualizar el usuario
+      // 3. Actualizar el usuario
+      // El "githubToken" se cifrará automáticamente gracias a la Extension/Middleware de Prisma
       const updatedUser = await prisma.user.update({
-        where: { id: userId },
+        where: { id: parseInt(userId) }, // Aseguramos que el ID sea numérico para Prisma
         data: {
           githubHandle: githubData.githubHandle,
-          githubId: githubData.githubId,
+          githubId: githubIdStr,
           avatarUrl: githubData.avatarUrl,
-          username: githubData.username,
+          githubToken: githubData.githubToken, 
+          githubLinkedAt: linkedAt,
+          username: githubData.githubHandle,
         },
+        include: {
+          themeConfig: true,
+          preferences: true,
+        }
       });
 
+      // 4. Retornar los datos transformados por el DTO
       return {
         success: true,
-        message: "Identidad de GitHub vinculada",
-        data: {
-          githubHandle: updatedUser.githubHandle,
-          avatarUrl: updatedUser.avatarUrl,
-          name: updatedUser.name,
-        },
+        message: "Identidad de GitHub vinculada correctamente",
+        data: new UserDTO(updatedUser).toJSON(),
       };
+
     } catch (error) {
-      console.error("Error en service updateGitHub:", error.message);
-      return { success: false, message: "Error en base de datos" };
+      console.error("[SERVICE ERROR - GitHub Identity]:", error.message);
+      
+      // Manejo específico para errores de restricción única
+      if (error.code === 'P2002') {
+        return { success: false, message: "El ID de GitHub ya existe en el sistema." };
+      }
+
+      return { 
+        success: false, 
+        message: "Error interno al procesar la vinculación con GitHub" 
+      };
     }
   }
 }

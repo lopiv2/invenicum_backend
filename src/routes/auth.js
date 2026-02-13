@@ -24,7 +24,7 @@ router.get("/github/config", (req, res) => {
 // --- RUTA GITHUB OAUTH ---
 router.post("/github/complete", verifyToken, async (req, res) => {
   const { code } = req.body;
-  const userId = req.user.userId || req.user.id; // Obtenido del token
+  const userId = req.user.userId || req.user.id;
 
   if (!code) {
     return res
@@ -59,27 +59,36 @@ router.post("/github/complete", verifyToken, async (req, res) => {
       },
     });
 
+    // 🚩 CORRECCIÓN AQUÍ: Extraemos los datos de userRes.data
+    const githubData = userRes.data;
+
     // 3. Llamar al servicio para actualizar la DB con Prisma
+    // Usamos githubData.login, githubData.id, etc.
     const result = await userService.updateGitHubIdentity(userId, {
-      githubHandle: userRes.data.login,
-      githubId: userRes.data.id.toString(),
-      avatarUrl: userRes.data.avatar_url,
-      username: userRes.data.login,
+      githubHandle: githubData.login,
+      githubId: githubData.id.toString(),
+      avatarUrl: githubData.avatar_url,
+      githubToken: accessToken,
+      // Opcional: solo actualiza el username si el usuario no tiene uno
+      username: githubData.login,
     });
 
     if (!result.success) {
       return res.status(400).json(result);
     }
 
+    // 4. IMPORTANTE: Enviar la respuesta exitosa
     return res.status(200).json({
       success: true,
-      data: result.data, // Asegúrate de que esto incluya githubHandle
+      message: "GitHub vinculado correctamente",
+      data: result.data,
     });
   } catch (error) {
-    console.error("[GITHUB ERROR]:", error.message);
-    return res
-      .status(500)
-      .json({ success: false, message: "Error al vincular con GitHub" });
+    console.error("[GITHUB ERROR]:", error.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error al vincular con GitHub",
+    });
   }
 });
 
@@ -150,11 +159,33 @@ router.post("/register", async (req, res) => {
   }
 });
 
+/*
+ * RUTA PARA DESCONECTAR GITHUB
+ * POST /api/v1/auth/github/disconnect
+ * Body: {} (no se necesita enviar nada, el userId viene del token)
+ */
+router.post("/github/disconnect", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+
+    // Llamamos al servicio
+    const result = await userService.disconnectGitHub(userId);
+
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error during GitHub disconnection",
+    });
+  }
+});
+
 router.get("/me", verifyToken, async (req, res) => {
   try {
-    // 🚩 EL CAMBIO ESTÁ AQUÍ:
-    // En lugar de devolver req.user (que solo tiene datos viejos del token),
-    // consultamos al servicio los datos frescos de la DB incluyendo el tema.
     const result = await userService.getUserById(
       req.user.userId || req.user.id,
     );

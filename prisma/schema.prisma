@@ -18,6 +18,8 @@ model User {
   username        String?          @unique @db.VarChar(30)
   githubHandle    String?          @unique @map("github_handle")
   githubId        String?          @unique
+  githubToken     String?          @db.Text // Guardaremos el token cifrado
+  githubLinkedAt  DateTime?        @map("github_linked_at")
   avatarUrl       String?  @db.Text
   // Relaciones añadidas
   themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
