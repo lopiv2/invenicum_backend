@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../middleware/prisma");
 
 // Inclusión base: Opcionalmente puedes cargar los hijos si el frontend lo requiere para la vista de árbol.
 const LOCATION_INCLUDE = {

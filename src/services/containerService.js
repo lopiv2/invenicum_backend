@@ -1,5 +1,4 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const prisma = require("../middleware/prisma");
 
 // Objeto de inclusión (Prisma Eager Loading)
 // Define qué relaciones cargar automáticamente con el contenedor

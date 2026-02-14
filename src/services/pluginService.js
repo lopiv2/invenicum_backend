@@ -1,6 +1,5 @@
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../middleware/prisma");
 const axios = require("axios");
-const prisma = new PrismaClient();
 
 // Nota: dotenv.config() suele ir en el index.js principal,
 // pero dejarlo aquí no rompe nada si prefieres seguridad.

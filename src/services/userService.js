@@ -4,7 +4,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const UserDTO = require("../models/UserModel");
-const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 
 class UserService {
   async register(userData) {

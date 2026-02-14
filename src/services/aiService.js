@@ -1,8 +1,7 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const { GoogleGenAI } = require("@google/genai");
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient(); // Usamos Prisma como en tu AlertService
+const prisma = require("../middleware/prisma");
 
 class AIService {
   constructor() {
