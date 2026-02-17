@@ -1,36 +1,26 @@
+require("dotenv").config();
 const { PrismaClient } = require("@prisma/client");
-const { encrypt, decrypt } = require('../middleware/cryptoUtils');
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 
-const basePrisma = new PrismaClient();
-
-// 🚩 Centralizamos la lógica de cifrado aquí UNA SOLA VEZ
-const prisma = basePrisma.$extends({
-  query: {
-    user: {
-      async $allOperations({ operation, args, query }) {
-        // CIFRAR AL GUARDAR
-        if (['create', 'update', 'upsert'].includes(operation)) {
-          if (args.data && args.data.githubToken) {
-            args.data.githubToken = encrypt(args.data.githubToken);
-          }
-        }
-
-        const result = await query(args);
-
-        // DESCIFRAR AL LEER
-        if (result) {
-          if (Array.isArray(result)) {
-            result.forEach(user => {
-              if (user.githubToken) user.githubToken = decrypt(user.githubToken);
-            });
-          } else if (result.githubToken) {
-            result.githubToken = decrypt(result.githubToken);
-          }
-        }
-        return result;
-      },
-    },
+const adapter = new PrismaMariaDb(
+  {
+    host: process.env.DB_HOST,
+    port: 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    connectionLimit: 10,
+    connectTimeout: 5000,
   },
+  {
+    schema: "invenicum",
+  },
+);
+
+// Cliente base limpio sin extensiones de cifrado
+const prisma = new PrismaClient({
+  adapter,
+  log: ["error"],
 });
 
 module.exports = prisma;

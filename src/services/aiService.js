@@ -1,22 +1,51 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const { GoogleGenAI } = require("@google/genai");
+const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const prisma = require("../middleware/prisma");
 
 class AIService {
-  constructor() {
-    this.client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  }
-
   async processChatConversation(userInput, context = {}) {
     const userId = parseInt(context.userId);
-    if (isNaN(userId)) {
-      throw new Error(
-        "Se requiere userId para obtener contexto de la base de datos",
-      );
-    }
+    if (isNaN(userId)) throw new Error("userId requerido");
     try {
-      // 1. OBTENER CONTEXTO DE LA BBDD CON PRISMA
+      // 1. BUSCAR LA INTEGRACIÓN OBLIGATORIA
+      const userIntegration = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId, type: "gemini" } },
+      });
+      // 2. VALIDAR QUE ESTÉ ACTIVA Y TENGA DATOS
+      if (
+        !userIntegration ||
+        !userIntegration.isActive ||
+        !userIntegration.config?.data
+      ) {
+        return {
+          answer:
+            "⚠️ Para hablar conmigo, primero debes configurar tu API Key de Gemini en el apartado de Integraciones.",
+          action: "NAVIGATE", // Sugerimos ir a configurarlo
+          data: { path: "/integrations" },
+        };
+      }
+      // 3. DESCIFRAR LA CLAVE DEL USUARIO
+      let apiKeyToUse;
+      let defaultModel = "gemini-3-flash-preview";
+      try {
+        const decryptedConfig = JSON.parse(
+          decrypt(userIntegration.config.data),
+        );
+        apiKeyToUse = decryptedConfig.apiKey;
+        if (decryptedConfig.model) defaultModel = decryptedConfig.model;
+      } catch (e) {
+        throw new Error(
+          "No se pudo descifrar la configuración de la integración",
+        );
+      }
+      if (!apiKeyToUse)
+        throw new Error("API Key no encontrada en la configuración");
+
+      // 4. INICIALIZAR EL CLIENTE CON LA CLAVE DEL USUARIO
+      const dynamicClient = new GoogleGenAI({ apiKey: apiKeyToUse });
+
       // Buscamos los contenedores para que Veni conozca los IDs reales
       const containers = await prisma.container.findMany({
         where: { userId: userId }, // <--- AHORA SÍ ESTÁ FILTRADO
@@ -30,7 +59,6 @@ class AIService {
 
       const currentContainerId = context.containerId || "default";
 
-      // 2. CONFIGURAR EL PROMPT CON LA INFORMACIÓN DE PRISMA
       const systemPrompt = `Eres Veni, el asistente de Invenicum.
       
       INFORMACIÓN REAL DE LA BASE DE DATOS:
@@ -52,9 +80,9 @@ class AIService {
         "data": {}
       }`;
 
-      // 3. LLAMADA A GEMINI (Sintaxis que ya te funciona)
-      const response = await this.client.models.generateContent({
-        model: process.env.GEMINI_AI_MODEL || "gemini-3-flash-preview",
+      // 5. LLAMADA A GEMINI (Sintaxis que ya te funciona)
+      const response = await dynamicClient.models.generateContent({
+        model: defaultModel || "gemini-3-flash-preview",
         contents: [
           {
             role: "user",
@@ -70,21 +98,21 @@ class AIService {
       const rawText = response.candidates[0].content.parts[0].text;
       const result = JSON.parse(rawText.replace(/```json|```/g, "").trim());
 
-      // 4. LÓGICA DE EXTRACCIÓN (Tu función de scraping)
+      // 6. LÓGICA DE EXTRACCIÓN (Tu función de scraping)
+      // 6. EXTRAER INFO (Pasando la misma clave)
       if (result.action === "PRODUCT_EXTRACT" && result.data.url) {
-        const extractedData = await this.extractInfoFromUrl(result.data.url, [
-          "Nombre",
-          "Precio",
-          "Descripción",
-        ]);
-        result.data = extractedData;
+        result.data = await this.extractInfoFromUrl(
+          result.data.url,
+          ["Nombre", "Precio", "Descripción"],
+          apiKeyToUse,
+        );
         result.answer =
-          "He analizado el enlace y extraído los datos. ¿Quieres guardarlos?";
+          "He analizado el enlace con tu propia clave de Gemini. ¿Quieres guardar los datos?";
       }
 
       return result;
     } catch (error) {
-      console.error("❌ Error en AIService (Prisma/Gemini):", error.message);
+      console.error("❌ Error en AIService:", error.message);
       return {
         answer:
           "Lo siento, tuve un problema al consultar tus datos. Inténtalo de nuevo.",
@@ -94,8 +122,18 @@ class AIService {
     }
   }
 
-  async extractInfoFromUrl(url, fields) {
+  async extractInfoFromUrl(url, fields, apiKey) {
+    // 1. Verificación de seguridad: si no hay clave de usuario, no hay servicio.
+    if (!apiKey) {
+      throw new Error(
+        "Se requiere una API Key de usuario para realizar la extracción.",
+      );
+    }
+
     try {
+      // 2. Inicializamos el cliente específico para esta petición
+      const dynamicClient = new GoogleGenAI({ apiKey });
+
       const { data: html } = await axios.get(url, {
         headers: {
           "User-Agent":
@@ -112,32 +150,52 @@ class AIService {
         .trim()
         .substring(0, 25000);
 
-      const response = await this.client.models.generateContent({
-        model: process.env.GEMINI_AI_MODEL || "gemini-3-flash-preview",
+      // 3. Usamos el cliente dinámico y un modelo optimizado (Gemini 1.5 Flash es ideal aquí)
+      const model = dynamicClient.models.get("gemini-1.5-flash");
+
+      const response = await model.generateContent({
         contents: [
           {
             role: "user",
             parts: [
               {
-                text: `Analiza: "${cleanText}". 
-        Extrae exactamente estos campos: ${fields.join(", ")}.
-        IMPORTANTE: Usa los nombres de los campos exactamente como se te proporcionan (case-sensitive).
-        Responde solo JSON.`,
+                text: `Analiza este contenido extraído de una web: "${cleanText}". 
+              Extrae exactamente estos campos en formato JSON: ${fields.join(", ")}.
+              IMPORTANTE: Si no encuentras algún campo, devuélvelo como null. 
+              Usa los nombres de los campos exactamente como se te proporcionan (case-sensitive).
+              Responde únicamente el objeto JSON.`,
               },
             ],
           },
         ],
-        config: { generationConfig: { responseMimeType: "application/json" } },
+        // Forzamos respuesta JSON si el modelo lo soporta (en los SDKs de GoogleGenAI)
+        generationConfig: { responseMimeType: "application/json" },
       });
 
+      // 4. Limpieza y parseo de la respuesta
       const rawText = response.candidates[0].content.parts[0].text;
       const cleanJson = rawText
         .replace(/```json/g, "")
         .replace(/```/g, "")
         .trim();
+
       return JSON.parse(cleanJson);
     } catch (error) {
-      console.error("❌ Error en extractInfoFromUrl:", error.message);
+      console.error(
+        "❌ Error en extractInfoFromUrl (con clave de usuario):",
+        error.message,
+      );
+
+      // Mapeo de errores de cuota/clave para el usuario
+      if (error.message.includes("429")) {
+        throw new Error(
+          "Tu cuota de Gemini se ha agotado. Revisa tu panel de Google AI Studio.",
+        );
+      }
+      if (error.message.includes("API_KEY_INVALID")) {
+        throw new Error("Tu API Key de Gemini parece no ser válida.");
+      }
+
       throw error;
     }
   }

@@ -1,9 +1,9 @@
-
 const prisma = require("../middleware/prisma");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const UserDTO = require("../models/UserModel");
+const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 
 class UserService {
   async register(userData) {
@@ -219,111 +219,21 @@ class UserService {
       return { success: false, message: error.message };
     }
   }
-  async updateThemePreference(userId, themeData) {
-    const { themeColor, themeBrightness } = themeData;
-    // Usa upsert para crear el registro si no existe o actualizarlo si ya existe
-    return await prisma.userThemeConfig.upsert({
-      where: { userId: userId },
-      update: { themeColor, themeBrightness },
-      create: { userId, themeColor, themeBrightness },
-    });
-  }
 
-  async getCustomThemes(userId) {
-    return await prisma.customTheme.findMany({
-      where: {
-        userId: userId,
-      },
-      orderBy: {
-        id: "desc", // Los más nuevos primero
-      },
-    });
-  }
 
-  async getThemePreference(userId) {
-    return await prisma.userThemeConfig.findUnique({
-      where: { userId: userId },
-    });
-  }
 
-  async saveCustomTheme(userId, themeData) {
-    return await prisma.customTheme.create({
-      data: {
-        name: themeData.name,
-        primaryColor: themeData.primaryColor,
-        brightness: themeData.brightness || "light",
-        userId: userId,
-      },
-    });
-  }
+
+
   // userService.js
 
-  async deleteCustomTheme(userId, themeId) {
-    try {
-      // Buscamos el tema asegurándonos de que pertenezca al usuario
-      const theme = await prisma.customTheme.findFirst({
-        where: {
-          id: themeId,
-          userId: userId,
-        },
-      });
 
-      if (!theme) {
-        return {
-          success: false,
-          message: "Tema no encontrado o no autorizado",
-        };
-      }
-
-      await prisma.customTheme.delete({
-        where: { id: themeId },
-      });
-
-      return { success: true, message: "Tema eliminado correctamente" };
-    } catch (error) {
-      throw new Error("Error al eliminar tema: " + error.message);
-    }
-  }
-
-  // ====== MÉTODOS DE PREFERENCIAS ======
-
-  async getPreferences(userId) {
-    try {
-      const preferences = await prisma.userPreferences.findUnique({
-        where: { userId: userId },
-      });
-
-      return preferences || { userId: userId, language: "es" };
-    } catch (error) {
-      throw new Error("Error al obtener preferencias: " + error.message);
-    }
-  }
-
-  async updateLanguage(userId, languageCode) {
-    try {
-      // Usa upsert para crear el registro si no existe o actualizarlo si ya existe
-      const preferences = await prisma.userPreferences.upsert({
-        where: { userId: userId },
-        update: { language: languageCode },
-        create: { userId, language: languageCode },
-      });
-
-      return {
-        success: true,
-        data: preferences,
-      };
-    } catch (error) {
-      throw new Error("Error al actualizar idioma: " + error.message);
-    }
-  }
   async updateGitHubIdentity(userId, githubData) {
     const linkedAt = new Date();
-    
+
     try {
-      // 1. Validar que el ID de GitHub sea un String (la API de GitHub suele enviar números)
       const githubIdStr = githubData.githubId.toString();
 
-      // 2. Verificar si ese GitHub ID ya está en uso por otro usuario
+      // 1. Verificar si ese GitHub ID ya está en uso
       const existingLink = await prisma.user.findUnique({
         where: { githubId: githubIdStr },
       });
@@ -335,42 +245,45 @@ class UserService {
         };
       }
 
+      // 🚩 2. CIFRADO MANUAL DEL TOKEN
+      // Ciframos el token antes de guardarlo en la DB
+      const encryptedToken = githubData.githubToken
+        ? encrypt(githubData.githubToken)
+        : null;
+
       // 3. Actualizar el usuario
-      // El "githubToken" se cifrará automáticamente gracias a la Extension/Middleware de Prisma
       const updatedUser = await prisma.user.update({
-        where: { id: parseInt(userId) }, // Aseguramos que el ID sea numérico para Prisma
+        where: { id: parseInt(userId) },
         data: {
           githubHandle: githubData.githubHandle,
           githubId: githubIdStr,
           avatarUrl: githubData.avatarUrl,
-          githubToken: githubData.githubToken, 
+          githubToken: encryptedToken, // 🚩 Usamos el token cifrado
           githubLinkedAt: linkedAt,
           username: githubData.githubHandle,
         },
         include: {
           themeConfig: true,
           preferences: true,
-        }
+        },
       });
 
-      // 4. Retornar los datos transformados por el DTO
       return {
         success: true,
         message: "Identidad de GitHub vinculada correctamente",
         data: new UserDTO(updatedUser).toJSON(),
       };
-
     } catch (error) {
       console.error("[SERVICE ERROR - GitHub Identity]:", error.message);
-      
-      // Manejo específico para errores de restricción única
-      if (error.code === 'P2002') {
-        return { success: false, message: "El ID de GitHub ya existe en el sistema." };
+      if (error.code === "P2002") {
+        return {
+          success: false,
+          message: "El ID de GitHub ya existe en el sistema.",
+        };
       }
-
-      return { 
-        success: false, 
-        message: "Error interno al procesar la vinculación con GitHub" 
+      return {
+        success: false,
+        message: "Error interno al procesar la vinculación con GitHub",
       };
     }
   }

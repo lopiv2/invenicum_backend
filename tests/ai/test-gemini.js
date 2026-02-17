@@ -6,7 +6,7 @@ const { GoogleGenAI } = require('@google/genai');
 // 1. CARGAR VARIABLES DE ENTORNO (Debe ir antes de usar process.env)
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-async function runStandaloneTest() {
+async function runIATest() {
     const apiKey = process.env.GEMINI_API_KEY;
 
     // VALIDACIÓN INICIAL
@@ -82,4 +82,4 @@ async function runStandaloneTest() {
 }
 
 // Ejecutar el test
-runStandaloneTest();
+runIATest();

@@ -1,51 +1,69 @@
 const prisma = require("../middleware/prisma");
 const axios = require("axios");
-
-// Nota: dotenv.config() suele ir en el index.js principal,
-// pero dejarlo aquí no rompe nada si prefieres seguridad.
+const { Octokit } = require("@octokit/rest");
+const { decrypt } = require("../middleware/cryptoUtils");
 require("dotenv").config();
 
 class PluginService {
+  // Centralizamos la configuración de GitHub para no repetir código
+  get _githubConfig() {
+    return {
+      auth: process.env.GITHUB_ADMIN_TOKEN,
+      owner: process.env.GITHUB_REPO_OWNER,
+      repo: process.env.GITHUB_REPO_NAME,
+    };
+  }
   /**
    * Privado: Obtiene plugins desde el repositorio externo (GitHub)
    */
   async _getGitHubPlugins() {
     try {
-      const repoUrl = process.env.GITHUB_PLUGIN_REPO;
-      console.log("🔍 Obteniendo plugins de GitHub desde: %s", repoUrl);
-      if (!repoUrl) return [];
+      const { owner, repo } = this._githubConfig;
+      const repoUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/repository.json`;
+
+      console.log("🔍 Intentando leer catálogo desde:", repoUrl);
 
       const response = await axios.get(repoUrl);
-      const systemAuthorId = process.env.SYSTEM_AUTHOR_ID || "github-system";
 
-      return response.data.plugins.map((p) => ({
-        ...p,
-        isOfficial: true,
-        isPublic: true,
-        authorId: systemAuthorId,
-      }));
+      // Verificación de seguridad:
+      // Si response.data existe y tiene la propiedad plugins, mapeamos.
+      // Si no, devolvemos un array vacío.
+      if (
+        response.data &&
+        Array.from(response.data.plugins || []).length >= 0
+      ) {
+        const pluginsArray = response.data.plugins || [];
+        return pluginsArray.map((p) => ({
+          ...p,
+          isOfficial: true,
+          isPublic: true,
+          authorId: "system",
+        }));
+      }
+
+      return [];
     } catch (error) {
-      console.error("❌ Error GitHub:", error.message);
+      // Si el archivo no existe (404), devolvemos array vacío en lugar de error
+      if (error.response?.status === 404) {
+        console.warn(
+          "⚠️ El archivo repository.json no existe todavía en GitHub.",
+        );
+        return [];
+      }
+      console.error("❌ Error cargando catálogo de GitHub:", error.message);
       return [];
     }
   }
 
   async createPlugin(pluginData, userId) {
     const uId = parseInt(userId);
-
-    // 0. Buscar el usuario para obtener su identidad 'online' (username)
-    const user = await prisma.user.findUnique({
-      where: { id: uId },
-      select: { username: true, name: true },
-    });
+    const user = await prisma.user.findUnique({ where: { id: uId } });
 
     if (!user) throw new Error("User not found");
-
     if (pluginData.isPublic && !user.username) {
-      throw new Error(" You must have a username to publish public plugins");
+      throw new Error("You must have a username to publish public plugins");
     }
 
-    // 1. Guardar en la base de datos local (Prisma)
     const newPlugin = await prisma.$transaction(async (tx) => {
       const p = await tx.plugin.create({
         data: {
@@ -65,94 +83,73 @@ class PluginService {
       return p;
     });
 
-    // 2. Si es público, sincronizar con GitHub
     if (newPlugin.isPublic) {
       try {
-        // A. Subimos el contenido real
-        const rawUrl = await this.uploadPluginJson(
-          newPlugin.id,
-          newPlugin.ui,
-          newPlugin.name,
-        );
+        // Subimos el JSON individual
+        await this.uploadPluginJson(newPlugin.id, newPlugin.ui, newPlugin.name);
 
-        // B. Preparamos el objeto para el catálogo (repository.json)
-        // Usamos el username como autor para que sea visible en la comunidad
+        // Actualizamos el índice global
         const pluginForRepo = {
           ...newPlugin,
-          author: user.username, // <-- Aquí inyectamos la identidad online
-          download_url: rawUrl,
+          author: user.username,
         };
-
-        // B. Actualizamos el repository.json con esa URL
         await this.pushPluginToGitHub(pluginForRepo);
-
-        console.log("🚀 Plugin publicado globalmente con éxito");
+        console.log("🚀 Publicado en GitHub con Token Maestro");
       } catch (e) {
-        console.error(
-          "⚠️ Error en la publicación de GitHub, pero el plugin se creó localmente.",
-        );
+        console.error("⚠️ Error sincronizando con GitHub:", e.message);
       }
     }
-
     return newPlugin;
   }
 
   async pushPluginToGitHub(pluginData) {
-    const { GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME } = process.env;
+    const { auth, owner, repo } = this._githubConfig;
+    const octokit = new Octokit({ auth });
     const path = "repository.json";
-    const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/${path}`;
-    const headers = { Authorization: `token ${GITHUB_TOKEN}` };
 
     try {
-      // 1. Obtener el archivo actual
-      const { data: fileData } = await axios.get(url, { headers });
-      const repoContent = JSON.parse(
-        Buffer.from(fileData.content, "base64").toString(),
-      );
+      const { data: fileData } = await octokit.repos.getContent({
+        owner,
+        repo,
+        path,
+      });
 
-      // 2. Preparar el nuevo objeto del plugin
-      // Usamos el ID del plugin para ver si ya existe en la lista
-      const pluginIndex = repoContent.plugins.findIndex(
-        (p) => p.id === pluginData.id,
-      );
+      // 1. Convertimos el contenido de base64 a string
+      const rawContent = Buffer.from(fileData.content, "base64").toString();
+
+      // 2. 🌟 LA LÍNEA MÁGICA: Limpia comas sobrantes antes de ] o }
+      const cleanContent = rawContent.replace(/,[ \t\r\n]*([\]}])/g, "$1");
+
+      // 3. Parseamos el contenido ya limpio
+      const repoContent = JSON.parse(cleanContent);
 
       const newEntry = {
         id: pluginData.id,
         name: pluginData.name,
         version: pluginData.version || "1.0.0",
-        description:
-          pluginData.description || "Plugin created by the community",
-        author: pluginData.authorName || "Community User", // Creator friendly name
-        isOfficial: false, // Updated to false since it's a community plugin
-        download_url: `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/plugins/${pluginData.id}.json`,
+        author: pluginData.author || "Community",
+        isOfficial: false,
+        download_url: `https://raw.githubusercontent.com/${owner}/${repo}/main/plugins/${pluginData.id}.json`,
       };
 
-      // 3. Actualizar o Añadir
-      if (pluginIndex !== -1) {
-        repoContent.plugins[pluginIndex] = newEntry;
-      } else {
-        repoContent.plugins.push(newEntry);
-      }
+      const idx = repoContent.plugins.findIndex((p) => p.id === pluginData.id);
+      if (idx !== -1) repoContent.plugins[idx] = newEntry;
+      else repoContent.plugins.push(newEntry);
 
-      // 4. Hacer el Push de vuelta a GitHub
-      await axios.put(
-        url,
-        {
-          message: `Comunidad: Añadido plugin ${pluginData.name}`,
-          content: Buffer.from(JSON.stringify(repoContent, null, 2)).toString(
-            "base64",
-          ),
-          sha: fileData.sha,
-        },
-        { headers },
-      );
+      await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path,
+        message: `Añadido plugin ${pluginData.name}`,
+        content: Buffer.from(JSON.stringify(repoContent, null, 2)).toString(
+          "base64",
+        ),
+        sha: fileData.sha,
+      });
 
-      console.log("✅ Índice repository.json actualizado en GitHub");
+      console.log("✅ repository.json actualizado correctamente.");
     } catch (error) {
-      console.error(
-        "❌ Error actualizando el índice:",
-        error.response?.data || error.message,
-      );
+      console.error("❌ Error actualizando repository.json:", error.message);
     }
   }
 
@@ -183,50 +180,33 @@ class PluginService {
   // githubService.js
 
   async uploadPluginJson(pluginId, uiContent, pluginName) {
-    const { GITHUB_TOKEN, GITHUB_REPO_OWNER, GITHUB_REPO_NAME } = process.env;
-
-    // Ruta donde se guardará: carpeta 'plugins' + id del plugin + .json
+    const { auth, owner, repo } = this._githubConfig;
+    const octokit = new Octokit({ auth });
     const path = `plugins/${pluginId}.json`;
-    const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/${path}`;
-    const headers = { Authorization: `token ${GITHUB_TOKEN}` };
-    console.log(`Intentando subir a: ${url}`); // <--- DEBUG
+
     try {
       let sha;
       try {
-        // Intentamos obtener el archivo por si ya existe (para el SHA)
-        const { data } = await axios.get(url, { headers });
+        const { data } = await octokit.repos.getContent({ owner, repo, path });
         sha = data.sha;
-        console.log("Archivo encontrado, actualizando con SHA:", sha);
       } catch (e) {
-        console.log("Archivo nuevo, no requiere SHA");
-        // Si no existe, no pasa nada, sha será undefined y GitHub lo creará de cero
+        /* Archivo nuevo */
       }
 
-      // El contenido debe ir en Base64
-      const contentBase64 = Buffer.from(
-        JSON.stringify(uiContent, null, 2),
-      ).toString("base64");
+      await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo,
+        path,
+        message: `Update plugin content: ${pluginName}`,
+        content: Buffer.from(JSON.stringify(uiContent, null, 2)).toString(
+          "base64",
+        ),
+        sha,
+      });
 
-      await axios.put(
-        url,
-        {
-          message: `Update plugin content: ${pluginName}`,
-          content: contentBase64,
-          sha: sha,
-        },
-        { headers },
-      );
-
-      console.log(`✅ Archivo JSON de ${pluginName} subido a GitHub`);
-
-      // Devolvemos la URL "raw" para guardarla en el índice
-      return `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/${path}`;
+      return `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
     } catch (error) {
-      console.error(
-        "DETALLE DEL ERROR GITHUB:",
-        error.response?.status,
-        error.response?.data,
-      );
+      console.error("❌ Error subiendo JSON:", error.message);
       throw error;
     }
   }
@@ -396,11 +376,67 @@ class PluginService {
     });
   }
 
-  async deletePlugin(id, userId) {
+  async deletePlugin(id, userId, deleteFromGitHub = false) {
     const plugin = await prisma.plugin.findUnique({ where: { id } });
-    if (!plugin || plugin.authorId !== userId) {
+
+    // Verificamos que el usuario sea el dueño
+    if (!plugin || Number(plugin.authorId) !== Number(userId)) {
       throw new Error("No autorizado");
     }
+
+    if (deleteFromGitHub && plugin.isPublic) {
+      const { auth, owner, repo } = this._githubConfig;
+      const octokit = new Octokit({ auth });
+
+      try {
+        // A. Borrar archivo individual
+        try {
+          const { data: fData } = await octokit.repos.getContent({
+            owner,
+            repo,
+            path: `plugins/${id}.json`,
+          });
+          await octokit.repos.deleteFile({
+            owner,
+            repo,
+            path: `plugins/${id}.json`,
+            message: `Delete plugin: ${id}`,
+            sha: fData.sha,
+          });
+        } catch (e) {
+          console.log("Archivo no estaba en GitHub");
+        }
+
+        // B. Borrar del índice repository.json
+        const { data: iData } = await octokit.repos.getContent({
+          owner,
+          repo,
+          path: "repository.json",
+        });
+        const content = JSON.parse(
+          Buffer.from(iData.content, "base64").toString(),
+        );
+
+        content.plugins = content.plugins.filter((p) => p.id !== id);
+
+        await octokit.repos.createOrUpdateFileContents({
+          owner,
+          repo,
+          path: "repository.json",
+          message: `Remove ${id} from repository`,
+          content: Buffer.from(JSON.stringify(content, null, 2)).toString(
+            "base64",
+          ),
+          sha: iData.sha,
+        });
+
+        console.log("✅ Eliminado de GitHub con éxito");
+      } catch (error) {
+        console.error("❌ Error eliminando de GitHub:", error.message);
+      }
+    }
+
+    // Borrado de base de datos local
     return await prisma.plugin.delete({ where: { id } });
   }
 

@@ -70,11 +70,20 @@ router.put("/:id", verifyToken, validatePlugin, async (req, res) => {
 router.delete("/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    // 💡 Solo el autor podrá borrarlo
-    await pluginService.deletePlugin(id, req.user.id);
-    res.json({ success: true, message: "Plugin eliminado correctamente" });
+    const deleteFromGitHub = req.query.deleteFromGitHub === "true";
+
+    // 🚩 CAMBIO AQUÍ: Verifica que estás usando .userId (o lo que use tu JWT)
+    // Según tu log previo del token, es userId
+    const currentUserId = req.user.id; 
+
+    console.log("DEBUG RUTA: req.user contiene:", req.user); // Esto te dirá si es .id o .userId
+
+    await pluginService.deletePlugin(id, currentUserId, deleteFromGitHub);
+
+    res.json({ success: true, message: "Plugin eliminado" });
   } catch (error) {
-    res.status(403).json({ success: false, message: error.message });
+    const status = error.message === "No autorizado" ? 403 : 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 });
 

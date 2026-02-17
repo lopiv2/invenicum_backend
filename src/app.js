@@ -21,6 +21,7 @@ const aiRoutes = require("./routes/aiRoutes");
 const userRoutes = require("./routes/userRoutes");
 const preferencesRoutes = require("./routes/preferencesRoutes");
 const pluginRoutes = require("./routes/pluginRoutes");
+const integrationRoutes = require("./routes/integrationsRoutes");
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -111,6 +112,7 @@ app.use(API_BASE_PATH + "/ai", aiRoutes);
 app.use(API_BASE_PATH + "/users", userRoutes);
 app.use(API_BASE_PATH + "/preferences", preferencesRoutes);
 app.use(API_BASE_PATH + "/plugins", pluginRoutes);
+app.use(API_BASE_PATH + "/integrations", integrationRoutes);
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR

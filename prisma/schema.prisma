@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  url       = env("DATABASE_URL")
 }
 
 model User {
@@ -25,6 +24,7 @@ model User {
   themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
   savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
   preferences     UserPreferences? // Relación 1:1 con preferencias del usuario
+  integrations    UserIntegration[]
   
   containers      Container[]
   assignedItems   InventoryItem[]  @relation("UserAssignedItems")
@@ -32,6 +32,25 @@ model User {
   // Plugins creados por este usuario
   createdPlugins  Plugin[] @relation("PluginAuthor")
   plugins         UserPlugin[]
+}
+
+// ============================================
+// SISTEMA DE INTEGRACIONES EXTERNAS 🔗
+// ============================================
+model UserIntegration {
+  id        Int      @id @default(autoincrement())
+  type      String   // "gemini", "telegram", "whatsapp", "ebay", "price_charting", "qr_labels"
+  config    Json     // Almacenará los tokens/claves (preferiblemente cifrados)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relación con User
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type]) // Un usuario solo tiene una config por tipo de servicio
+  @@map("user_integration")
 }
 
 model ChatMessage {
@@ -71,6 +90,7 @@ model CustomTheme {
 model UserPreferences {
   id              Int      @id @default(autoincrement())
   language        String   @default("es")   // Código de idioma (es, en, etc.)
+  aiEnabled       Boolean  @default(true) @map("ai_enabled")
   createdAt       DateTime @default(now())  @map("created_at")
   updatedAt       DateTime @updatedAt       @map("updated_at")
   
