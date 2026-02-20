@@ -216,9 +216,9 @@ router.get(
       // 3. Verificar pertenencia del contenedor (Seguridad)
       const containerResult = await containerService.getContainerById(
         containerId,
-        userId
+        userId,
       );
-      
+
       if (!containerResult.success) {
         return res.status(404).json({
           success: false,
@@ -244,19 +244,18 @@ router.get(
           items: itemsResult.items, // 👈 Antes era itemsResult.data
           aggregationDefinitions: itemsResult.totals.definitions, // 👈 Ahora existe porque itemsResult.totals no es undefined
           aggregationResults: itemsResult.totals.aggregations,
-          marketValueTotal: itemsResult.totals.marketValueTotal // Añadido para el dashboard
+          marketValueTotal: itemsResult.totals.marketValueTotal, // Añadido para el dashboard
         },
       });
-
     } catch (error) {
       console.error("Error fetching inventory items:", error);
-      res.status(500).json({ 
-        success: false, 
+      res.status(500).json({
+        success: false,
         message: "Error interno al obtener los ítems",
-        error: error.message 
+        error: error.message,
       });
     }
-  }
+  },
 );
 
 // ===============================================
@@ -370,7 +369,7 @@ router.patch(
       // Validamos que el contenedor realmente pertenezca al usuario autenticado
       const containerResult = await containerService.getContainerById(
         parseInt(containerId),
-        userId
+        userId,
       );
 
       if (!containerResult.success) {
@@ -398,7 +397,10 @@ router.patch(
       // - Borrar imágenes viejas (disco y DB)
       // - Guardar imágenes nuevas
       // - Retornar el InventoryItemDTO.toJSON()
-      const updatedItem = await inventoryItemService.updateItem(itemId, itemData);
+      const updatedItem = await inventoryItemService.updateItem(
+        itemId,
+        itemData,
+      );
 
       // 5. RESPUESTA EXITOSA
       res.status(200).json({
@@ -406,7 +408,6 @@ router.patch(
         message: "Elemento de inventario actualizado exitosamente",
         data: updatedItem, // Objeto procesado y formateado por el DTO
       });
-
     } catch (error) {
       // 6. MANEJO DE ERRORES Y LIMPIEZA
       // Si algo falla en el proceso, no queremos dejar archivos huérfanos en el disco
@@ -421,13 +422,13 @@ router.patch(
       }
 
       console.error(`Error crítico actualizando ítem ${itemId}:`, error);
-      
+
       res.status(500).json({
         success: false,
         message: error.message || "Error interno al actualizar el elemento",
       });
     }
-  }
+  },
 );
 
 // ===============================================
@@ -457,6 +458,46 @@ router.delete("/items/:id", verifyToken, async (req, res) => {
     if (error.message.includes("not found")) {
       return res.status(404).json({ success: false, message: error.message });
     }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===============================================
+// HISTORIAL DE PRECIOS
+// GET /items/:id/price-history
+// ===============================================
+router.get("/items/:id/price-history", verifyToken, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    if (isNaN(itemId)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID de ítem inválido.",
+      });
+    }
+
+    // Llamamos al método que ya tienes en el servicio
+    const history = await inventoryItemService.getItemPriceHistory(
+      itemId,
+      userId,
+    );
+
+    res.status(200).json(history);
+  } catch (error) {
+    console.error(
+      `Error obteniendo historial para ítem ${req.params.id}:`,
+      error,
+    );
+
+    if (
+      error.message.includes("no encontrado") ||
+      error.message.includes("denegado")
+    ) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+
     res.status(500).json({ success: false, error: error.message });
   }
 });

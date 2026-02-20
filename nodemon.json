@@ -1,6 +1,7 @@
 {
-    "watch": ["src/"],
-    "ext": ".js,.json",
-    "ignore": ["src/generated/**/*"],
-    "exec": "node ./src/app.js"
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": ["src/uploads/*", "node_modules"],
+  "legacyWatch": true,
+  "pollingInterval": 1000
 }

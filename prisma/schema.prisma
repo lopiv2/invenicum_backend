@@ -236,7 +236,7 @@ model CustomFieldDefinition {
 model InventoryItem {
   id                Int                     @id @default(autoincrement())
   name              String
-  description       String?
+  description       String?              @db.Text  
   barcode           String?              @unique @map("barcode")
   // --- VALORACIÓN DE MERCADO (Campos Base) ---
   // Añadidos directamente para cálculos globales rápidos

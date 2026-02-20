@@ -22,7 +22,7 @@ class InventoryItemDTO {
     this.totalMarketValue = parseFloat(
       (this.marketValue * this.quantity).toFixed(2),
     );
-    this.priceHistory = (item.priceHistory || []).map(ph => ({
+    this.priceHistory = (prismaItem.priceHistory || []).map(ph => ({
       price: ph.price,
       createdAt: ph.createdAt
     }));

@@ -349,7 +349,7 @@ class InventoryItemService {
 
     // Obtenemos el historial
     const history = await prisma.priceHistory.findMany({
-      where: { itemId: parseInt(itemId) },
+      where: { inventoryItemId: parseInt(itemId) },
       orderBy: { createdAt: "asc" }, // De más antiguo a más reciente para la gráfica
       select: {
         price: true,
