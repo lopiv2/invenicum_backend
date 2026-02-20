@@ -332,9 +332,9 @@ class InventoryItemService {
 
   /**
    * Obtiene el historial de precios del producto
-   * @param {*} itemId 
-   * @param {*} userId 
-   * @returns 
+   * @param {*} itemId
+   * @param {*} userId
+   * @returns
    */
   async getItemPriceHistory(itemId, userId) {
     // Verificamos que el ítem pertenezca al usuario por seguridad
@@ -869,7 +869,7 @@ class InventoryItemService {
   }
 
   async syncItemMarketValue(itemId, userId) {
-    // 1. Obtener el ítem actual para sacar el barcode
+    // 1. Obtener el ítem actual para sacar el barcode y verificar permisos
     const item = await prisma.inventoryItem.findUnique({
       where: { id: parseInt(itemId) },
       include: { container: true },
@@ -882,7 +882,8 @@ class InventoryItemService {
     if (!item.barcode) {
       throw new Error("El ítem no tiene un código de barras asociado");
     }
-    // 2. Consultar el servicio de UPC
+
+    // 2. Consultar el servicio de UPC para obtener el precio de mercado
     const marketData = await upcService.getMarketDataByBarcode(
       userId,
       item.barcode,
@@ -892,24 +893,52 @@ class InventoryItemService {
       throw new Error("La API no devolvió un precio para este producto");
     }
 
-    // 3. Actualizar el ítem en la DB
+    const newPrice = marketData.suggestedPrice;
+
+    // 3. Transacción para asegurar la integridad de los datos
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // A. Crear registro en el historial
-      await tx.priceHistory.create({
-        data: {
-          price: marketData.suggestedPrice,
-          // En lugar de itemId: item.id, usamos la relación:
-          inventoryItem: {
-            connect: { id: item.id },
+      // 📅 Definimos el inicio del día actual (00:00:00)
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      // 🔍 Buscamos si ya existe algún registro de historial para HOY
+      const existingEntryToday = await tx.priceHistory.findFirst({
+        where: {
+          inventoryItemId: item.id,
+          createdAt: {
+            gte: startOfToday,
           },
         },
       });
 
-      // B. Actualizar el valor actual en el Item
+      if (existingEntryToday) {
+        // 🔄 MISMO DÍA:
+        // Si el precio es diferente, actualizamos el registro existente
+        if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
+          await tx.priceHistory.update({
+            where: { id: existingEntryToday.id },
+            data: { price: newPrice },
+          });
+        }
+        // Si el precio es igual, no hacemos nada (cumple tu regla)
+      } else {
+        // ✨ DÍA DIFERENTE:
+        // No hay registro hoy, así que creamos uno nuevo obligatoriamente
+        await tx.priceHistory.create({
+          data: {
+            price: newPrice,
+            inventoryItem: {
+              connect: { id: item.id },
+            },
+          },
+        });
+      }
+
+      // B. Actualizar el valor actual y metadatos en el Item principal
       return await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
-          marketValue: marketData.suggestedPrice,
+          marketValue: newPrice,
           currency: marketData.currency || "EUR",
           lastPriceUpdate: new Date(),
         },
@@ -917,16 +946,31 @@ class InventoryItemService {
           images: { orderBy: { order: "asc" } },
           location: true,
           priceHistory: {
-            // 📉 Opcional: devolver los últimos puntos para la gráfica
+            // Devolvemos los puntos para que la gráfica de Flutter se refresque
             orderBy: { createdAt: "asc" },
-            take: 20,
+            take: 30,
           },
         },
       });
     });
 
-    // 4. Devolver mediante DTO para que Flutter calcule el totalMarketValue al instante
+    // 4. Devolver mediante DTO para actualización instantánea en la App
     return new InventoryItemDTO(updatedItem).toJSON();
+  }
+
+  async getTotalMarketValue(userId) {
+    const result = await prisma.inventoryItem.aggregate({
+      where: {
+        container: {
+          userId: userId,
+        },
+      },
+      _sum: {
+        marketValue: true,
+      },
+    });
+
+    return result._sum.marketValue || 0;
   }
 }
 

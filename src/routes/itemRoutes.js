@@ -503,6 +503,31 @@ router.get("/items/:id/price-history", verifyToken, async (req, res) => {
 });
 
 // ===============================================
+// 📊 OBTENER VALOR DE MERCADO TOTAL DEL USUARIO
+// GET /items/total-market-value
+// ===============================================
+router.get("/total-market-value", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id; // Extraído del token de autenticación
+
+    // Llamamos a la función del servicio que creamos antes
+    const totalValue = await inventoryItemService.getTotalMarketValue(userId);
+
+    res.status(200).json({
+      success: true,
+      totalMarketValue: totalValue,
+    });
+  } catch (error) {
+    console.error("Error obteniendo el valor total de mercado:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al calcular el valor total de mercado",
+      error: error.message,
+    });
+  }
+});
+
+// ===============================================
 // VERIFICACIÓN DE CANTIDAD
 // GET /verify-quantity/:assetTypeId/:quantity
 // ===============================================
