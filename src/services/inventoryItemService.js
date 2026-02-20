@@ -1,4 +1,6 @@
 const prisma = require("../middleware/prisma");
+const InventoryItemDTO = require("../models/inventoryItemModel");
+const upcService = require("../services/upcService");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
@@ -13,190 +15,102 @@ const UPLOAD_DIR_ABSOLUTE = path.join(
 
 class InventoryItemService {
   async createItem(data) {
-    // Extraemos los archivos y el resto de los datos del ítem
     const files = data.files || [];
-    const itemData = { ...data };
-    delete itemData.files; // Limpiamos files
 
-    const containerId = parseInt(itemData.containerId);
-    const assetTypeId = parseInt(itemData.assetTypeId);
-    const locationId = parseInt(itemData.locationId);
+    // 1. DESESTRUCTURACIÓN DINÁMICA
+    // Extraemos lo que requiere lógica especial y dejamos el resto en 'restOfData'
+    const {
+      containerId,
+      assetTypeId,
+      locationId,
+      customFieldValues,
+      files: _, // ignoramos el array original de files
+      barcode,
+      ...restOfData // 🚀 Aquí caen automáticamente: name, barcode, marketValue, currency, description, etc.
+    } = data;
 
-    // 🛑 Limpiamos las IDs del objeto de datos para que Prisma no las rechace en el 'spread'.
-    delete itemData.containerId;
-    delete itemData.assetTypeId;
-    delete itemData.locationId;
+    // 2. PARSEO DE IDs Y VALIDACIÓN DE ASSET TYPE
+    const cId = parseInt(containerId);
+    const aTId = parseInt(assetTypeId);
+    const lId = parseInt(locationId);
 
-    // 🔍 DEBUG: Loguear todos los campos recibidos
-    console.log("[DEBUG] Raw itemData received:", {
-      name: itemData.name,
-      quantity: itemData.quantity,
-      minStock: itemData.minStock,
-      description: itemData.description,
-      customFieldValues: itemData.customFieldValues
-        ? "JSON present"
-        : "undefined",
-    });
+    if (isNaN(cId) || isNaN(aTId) || isNaN(lId)) {
+      files.forEach((f) => fs.unlinkSync(f.path));
+      throw new Error("Invalid Container, Asset Type or Location ID.");
+    }
 
-    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
     const assetType = await prisma.assetType.findUnique({
-      where: { id: assetTypeId },
+      where: { id: aTId },
     });
-
     if (!assetType) {
-      files.forEach((file) => fs.unlinkSync(file.path));
+      files.forEach((f) => fs.unlinkSync(f.path));
       throw new Error("Asset Type not found.");
     }
 
-    // 2. LÓGICA DE CANTIDAD (QUANTITY) - MEJORADA
-    let quantity = 1; // Default fallback
-    let quantityFromInput = itemData.quantity;
+    // 3. LÓGICA DE NEGOCIO (Quantity, MinStock y CustomFields)
+    const quantityInput = parseInt(restOfData.quantity) || 1;
+    const quantity = assetType.isSerialized
+      ? 1
+      : quantityInput > 0
+        ? quantityInput
+        : 1;
 
-    // Si viene como string (de FormData), parsearlo
-    if (typeof quantityFromInput === "string") {
-      quantityFromInput = parseInt(quantityFromInput, 10);
-    }
+    const minStock = parseInt(restOfData.minStock) || 0;
+    const finalBarcode =
+      barcode && barcode.toString().trim() !== "" && barcode !== "null"
+        ? barcode.toString().trim()
+        : null;
 
-    // Si es un número válido, usarlo; si no, undefined
-    const parsedQuantity = !isNaN(quantityFromInput)
-      ? quantityFromInput
-      : undefined;
-
-    console.log(
-      `[DEBUG QUANTITY] Raw input: "${
-        itemData.quantity
-      }", Type: ${typeof itemData.quantity}, Parsed: ${parsedQuantity}`,
-    );
-
-    if (assetType.isSerialized) {
-      // Si es seriado, la cantidad es siempre 1.
-      quantity = 1;
-      console.log(
-        `[DEBUG] AssetType ${assetTypeId} is Serialized. Quantity set to 1`,
-      );
-    } else {
-      // Si no es seriado, usamos el input o default a 1.
-      quantity = parsedQuantity && parsedQuantity > 0 ? parsedQuantity : 1;
-      console.log(
-        `[DEBUG] AssetType ${assetTypeId} is NOT Serialized. Input: "${itemData.quantity}", Parsed: ${parsedQuantity}, Final: ${quantity}`,
-      );
-    }
-
-    // Asignamos la cantidad correcta al objeto de datos
-    itemData.quantity = quantity;
-
-    // 3. LÓGICA DE MIN_STOCK
-    let minStock = 0; // Default value
-    const minStockFromInput = itemData.minStock;
-
-    // Si viene como string (de FormData), parsearlo
-    if (typeof minStockFromInput === "string") {
-      const parsedMinStock = parseInt(minStockFromInput, 10);
-      minStock =
-        !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
-    } else if (typeof minStockFromInput === "number") {
-      minStock = minStockFromInput >= 0 ? minStockFromInput : 0;
-    }
-
-    console.log(
-      `[DEBUG MINSTCOK] Raw input: "${itemData.minStock}", Parsed: ${minStock}`,
-    );
-    itemData.minStock = minStock;
-
-    if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
-      // Usamos file.path aquí, ya que Multer lo proporciona en el contexto de la ruta.
-      files.forEach((file) => fs.unlinkSync(file.path));
-      throw new Error("Invalid Container ID or Asset Type ID.");
-    }
-
-    let customFieldValues = {};
-
-    if (
-      itemData.customFieldValues &&
-      typeof itemData.customFieldValues === "string"
-    ) {
-      try {
-        customFieldValues = JSON.parse(itemData.customFieldValues);
-      } catch (e) {
-        files.forEach((file) => fs.unlinkSync(file.path));
-        throw new Error("Invalid JSON format for custom fields.");
-      }
-      // Reemplazamos el string con el objeto parseado
-      itemData.customFieldValues = customFieldValues;
-    }
-
-    // =================================================================
-    // 🔑 NUEVA LÓGICA DE VALIDACIÓN (Opcional pero muy Recomendada)
-    // Se valida que los campos que deberían ser numéricos sean válidos.
-    // Esto previene errores de totales más adelante.
-    // =================================================================
+    let parsedCustomFields = {};
     try {
-      await this.validateCustomFieldValues(assetTypeId, customFieldValues);
+      parsedCustomFields =
+        typeof customFieldValues === "string"
+          ? JSON.parse(customFieldValues)
+          : customFieldValues || {};
+
+      await this.validateCustomFieldValues(aTId, parsedCustomFields);
     } catch (error) {
-      files.forEach((file) => fs.unlinkSync(file.path));
-      throw error; // Relanzar el error de validación
+      files.forEach((f) => fs.unlinkSync(f.path));
+      throw error;
     }
-    // =================================================================
 
-    // 1. Mapear archivos a URLs públicas
+    // 4. MAPEO DE IMÁGENES
     const baseImageUrl = process.env.STATIC_URL_PREFIX;
-    const imageRelations = files.map((file, index) => {
-      const publicUrl = path
-        .join(baseImageUrl, file.filename)
-        .replace(/\\/g, "/");
-      return {
-        url: publicUrl,
-        // Si el modelo InventoryItemImage NO tiene 'filename', esto está correcto.
-        order: index,
-      };
-    });
+    const imageRelations = files.map((file, index) => ({
+      url: path.join(baseImageUrl, file.filename).replace(/\\/g, "/"),
+      order: index,
+    }));
 
     try {
-      // 2. Crear el ítem y las imágenes dentro de una sola transacción de Prisma
-      const dataForPrisma = {
-        name: itemData.name,
-        description: itemData.description,
-        quantity: itemData.quantity,
-        minStock: itemData.minStock,
-        customFieldValues: itemData.customFieldValues,
-        container: {
-          connect: { id: containerId },
-        },
-        assetType: {
-          connect: { id: assetTypeId },
-        },
-        location: {
-          connect: { id: locationId },
-        },
-        images: {
-          create: imageRelations,
-        },
-      };
-
+      // 5. CREACIÓN EN PRISMA
       const newItem = await prisma.inventoryItem.create({
-        data: dataForPrisma,
+        data: {
+          ...restOfData, // 👈 Mapeo automático de campos simples del DTO (barcode, marketValue, etc.)
+          quantity,
+          minStock,
+          barcode: finalBarcode,
+          customFieldValues: parsedCustomFields,
+          container: { connect: { id: cId } },
+          assetType: { connect: { id: aTId } },
+          location: { connect: { id: lId } },
+          images: { create: imageRelations },
+        },
         include: {
-          images: {
-            orderBy: { order: "asc" },
-          },
+          images: { orderBy: { order: "asc" } },
         },
       });
 
-      return { success: true, data: newItem };
+      // 6. RETORNO AUTOMATIZADO CON EL DTO 🏆
+      // Esto asegura que la respuesta sea idéntica a lo que Flutter espera.
+      return new InventoryItemDTO(newItem).toJSON();
     } catch (error) {
-      console.error("Prisma error during item creation:", error);
-
-      // Limpieza de archivos si falla la creación en DB
+      console.error("Prisma error:", error);
+      // Limpieza de archivos física en caso de error catastrófico
       files.forEach((file) => {
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, file.filename);
-        try {
-          fs.unlinkSync(absolutePath);
-        } catch (err) {
-          console.error("Error cleaning up file:", err);
-        }
+        if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
       });
-
-      throw new Error("Failed to create inventory item and associate images.");
+      throw new Error("Failed to create item.");
     }
   }
 
@@ -204,149 +118,157 @@ class InventoryItemService {
   // 2. MÉTODO PARA COPIAR UN ÍTEM EXISTENTE (cloneItem)
   // =================================================================
   async cloneItem(data) {
-    // Validación: No debe haber archivos subidos
+    // 1. Validación inicial
     if (data.files && data.files.length > 0) {
       throw new Error("Cloning operation cannot include new file uploads.");
     }
 
-    const itemData = { ...data };
-    delete itemData.id;
+    // 2. DESESTRUCTURACIÓN DINÁMICA (Igual que en createItem)
+    const {
+      id: _oldId, // Ignoramos el ID del ítem original
+      containerId,
+      assetTypeId,
+      locationId,
+      images: imagesFromRequest, // Extraemos imágenes para lógica de copia física
+      customFieldValues,
+      barcode,
+      ...restOfData // 🚀 Captura automática de: name, description, barcode, marketValue, currency...
+    } = data;
 
-    const containerId = parseInt(itemData.containerId);
-    const assetTypeId = parseInt(itemData.assetTypeId);
-    const locationId = parseInt(itemData.locationId);
+    const cId = parseInt(containerId);
+    const aTId = parseInt(assetTypeId);
+    const lId = parseInt(locationId);
 
-    delete itemData.containerId;
-    delete itemData.assetTypeId;
-    delete itemData.locationId;
-
-    if (isNaN(containerId) || isNaN(assetTypeId) || isNaN(locationId)) {
-      throw new Error("Invalid Container ID, Asset Type ID or Location ID.");
+    if (isNaN(cId) || isNaN(aTId) || isNaN(lId)) {
+      throw new Error("Invalid Container, Asset Type or Location ID.");
     }
 
-    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    // 3. LÓGICA DE ASSET TYPE Y CANTIDAD
     const assetType = await prisma.assetType.findUnique({
-      where: { id: assetTypeId },
+      where: { id: aTId },
     });
+    if (!assetType) throw new Error("Asset Type not found.");
 
-    if (!assetType) {
-      throw new Error("Asset Type not found.");
-    }
+    const quantityInput = parseInt(restOfData.quantity) || 1;
+    const quantity = assetType.isSerialized
+      ? 1
+      : quantityInput > 0
+        ? quantityInput
+        : 1;
+    const minStock = parseInt(restOfData.minStock) || 0;
+    const finalBarcode =
+      barcode && barcode.toString().trim() !== "" && barcode !== "null"
+        ? barcode.toString().trim()
+        : null;
 
-    // 2. LÓGICA DE CANTIDAD (QUANTITY)
-    let quantity;
-    if (assetType.isSerialized) {
-      // Si es seriado, la cantidad es siempre 1.
-      quantity = 1;
-    } else {
-      // Si no es seriado, tomamos la cantidad del input o default a 1.
-      const inputQuantity = parseInt(itemData.quantity, 10);
-      quantity = isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
-    }
-    // Asignamos la cantidad correcta al objeto de datos y borramos la original si existe
-    itemData.quantity = quantity;
-
-    // --- Lógica de Imágenes Copiadas del body ---
-    let imagesToCopy = [];
-    if (itemData.images && Array.isArray(itemData.images)) {
-      imagesToCopy = itemData.images;
-      delete itemData.images; // Limpiamos para el spread de Prisma
-    }
-
-    // --- 1. COPIA DE ARCHIVOS FÍSICOS EN DISCO ---
+    // 4. COPIA FÍSICA DE IMÁGENES EN DISCO
     const allImageRelations = [];
-    const newlyCopiedFilenames = []; // Para limpieza si falla la DB
+    const newlyCopiedFilenames = [];
     const baseImageUrl = process.env.STATIC_URL_PREFIX;
-
     const cleanBaseImageUrl = baseImageUrl.endsWith("/")
       ? baseImageUrl
       : `${baseImageUrl}/`;
 
-    for (const [index, img] of imagesToCopy.entries()) {
-      // 🔑 CORRECCIÓN CLAVE: Extracción robusta del nombre del archivo original
-      let originalFilename = img.url.replace(/\\/g, "/"); // Normalizar barras
+    if (Array.isArray(imagesFromRequest)) {
+      for (const [index, img] of imagesFromRequest.entries()) {
+        let originalFilename = img.url.replace(/\\/g, "/");
 
-      // 1. Intentar remover el prefijo público del inicio (e.g., '/images/')
-      if (originalFilename.startsWith(cleanBaseImageUrl)) {
-        originalFilename = originalFilename.substring(cleanBaseImageUrl.length);
-      } else {
-        // 2. Fallback: Si no tiene el prefijo (o si es solo el nombre), usamos path.basename
-        originalFilename = path.basename(originalFilename);
-      }
-
-      // Reconstruir la ruta absoluta donde DEBE estar el archivo original
-      const originalPath = path.join(UPLOAD_DIR_ABSOLUTE, originalFilename);
-
-      // Verificar si el archivo original existe
-      if (fs.existsSync(originalPath)) {
-        // ... (Resto de la lógica de generación de nuevo nombre y copia de archivo) ...
-
-        const ext = path.extname(originalFilename);
-        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-        const newFilename = "item-" + uniqueSuffix + ext;
-        const newPath = path.join(UPLOAD_DIR_ABSOLUTE, newFilename);
-
-        try {
-          fs.copyFileSync(originalPath, newPath); // COPIA DEL ARCHIVO
-          newlyCopiedFilenames.push(newFilename);
-        } catch (copyError) {
-          console.error(`Error copying file ${originalPath}:`, copyError);
-          continue;
+        if (originalFilename.startsWith(cleanBaseImageUrl)) {
+          originalFilename = originalFilename.substring(
+            cleanBaseImageUrl.length,
+          );
+        } else {
+          originalFilename = path.basename(originalFilename);
         }
 
-        const newPublicUrl = path
-          .join(baseImageUrl, newFilename)
-          .replace(/\\/g, "/");
+        const originalPath = path.join(UPLOAD_DIR_ABSOLUTE, originalFilename);
 
-        allImageRelations.push({
-          url: newPublicUrl,
-          altText: img.altText || null,
-          // 🔑 MEJORA: Preservar el 'order' original si existe, sino usar el índice
-          order: img.order || index + 1,
-        });
-      } else {
-        console.warn(
-          `Original image file not found: ${originalPath}. Skipping copy. Original URL was: ${img.url}`,
-        );
+        if (fs.existsSync(originalPath)) {
+          const ext = path.extname(originalFilename);
+          const uniqueSuffix =
+            Date.now() + "-" + Math.round(Math.random() * 1e9);
+          const newFilename = `item-clone-${uniqueSuffix}${ext}`;
+          const newPath = path.join(UPLOAD_DIR_ABSOLUTE, newFilename);
+
+          try {
+            fs.copyFileSync(originalPath, newPath);
+            newlyCopiedFilenames.push(newFilename);
+
+            allImageRelations.push({
+              url: path.join(baseImageUrl, newFilename).replace(/\\/g, "/"),
+              altText: img.altText || null,
+              order: img.order || index + 1,
+            });
+          } catch (copyError) {
+            console.error(`Error copying file ${originalPath}:`, copyError);
+          }
+        }
       }
     }
 
-    // --- 2. CREACIÓN EN LA BASE DE DATOS (DB) ---
+    // 5. CREACIÓN EN LA BASE DE DATOS
     try {
-      // Crear el ítem con las referencias de imágenes copiadas
-      const dataForPrisma = {
-        name: itemData.name,
-        description: itemData.description,
-        quantity: itemData.quantity,
-        minStock: itemData.minStock || 0,
-        customFieldValues: itemData.customFieldValues,
-        container: { connect: { id: containerId } },
-        assetType: { connect: { id: assetTypeId } },
-        images: { create: allImageRelations }, // Crea filas de DB que apuntan a archivos copiados
-        location: { connect: { id: locationId } },
-      };
-
       const newItem = await prisma.inventoryItem.create({
-        data: dataForPrisma,
+        data: {
+          barcode: finalBarcode,
+          ...restOfData, // 👈 Se clonan automáticamente barcode, marketValue, etc.
+          quantity,
+          minStock,
+          customFieldValues:
+            typeof customFieldValues === "string"
+              ? JSON.parse(customFieldValues)
+              : customFieldValues || {},
+          container: { connect: { id: cId } },
+          assetType: { connect: { id: aTId } },
+          location: { connect: { id: lId } },
+          images: { create: allImageRelations },
+        },
         include: { images: { orderBy: { order: "asc" } } },
       });
 
-      return newItem;
+      // 6. RETORNO CON EL DTO 🏆
+      return new InventoryItemDTO(newItem).toJSON();
     } catch (error) {
-      console.error("Prisma error during item cloning:", error);
-
-      // 🚨 Limpieza: Si la transacción de DB falla, borrar los archivos que se copiaron
+      // Limpieza de archivos si la DB falla
       newlyCopiedFilenames.forEach((filename) => {
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
-        try {
-          fs.unlinkSync(absolutePath);
-          console.log(`Cleaned up copied file: ${filename}`);
-        } catch (err) {
-          console.error(`Error cleaning up copied file ${filename}:`, err);
-        }
+        if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
       });
+      throw new Error("Failed to clone item.");
+    }
+  }
 
-      throw new Error("Failed to clone inventory item and associate images.");
+  // inventoryItemService.js
+
+  async getGlobalTotalValue(userId) {
+    try {
+      const result = await prisma.$queryRaw`
+      SELECT SUM(
+        COALESCE(
+          CAST(
+            JSON_EXTRACT(
+              i.custom_field_values, 
+              CONCAT('$."', CAST(cfd.id AS CHAR), '"') -- 👈 Se añaden comillas dobles al ID
+            ) AS DECIMAL(15,2)
+          ), 
+          0
+        ) * i.quantity
+      ) as total
+      FROM inventory_item i
+      JOIN custom_field_definition cfd ON i.asset_type_id = cfd.asset_type_id
+      JOIN container c ON i.containerId = c.id
+      WHERE c.userId = ${parseInt(userId)}
+      AND (cfd.type = 'price' OR cfd.is_monetary = 1)
+    `;
+
+      if (!result || result.length === 0) return 0;
+
+      // Acceso seguro al valor 'total'
+      const totalValue = result[0].total;
+      return totalValue ? parseFloat(totalValue) : 0;
+    } catch (error) {
+      console.error("Error SQL Detallado:", error);
+      throw new Error("Error al calcular el valor global.");
     }
   }
 
@@ -408,43 +330,73 @@ class InventoryItemService {
     }
   }
 
+  /**
+   * Obtiene el historial de precios del producto
+   * @param {*} itemId 
+   * @param {*} userId 
+   * @returns 
+   */
+  async getItemPriceHistory(itemId, userId) {
+    // Verificamos que el ítem pertenezca al usuario por seguridad
+    const item = await prisma.inventoryItem.findUnique({
+      where: { id: parseInt(itemId) },
+      select: { container: { select: { userId: true } } },
+    });
+
+    if (!item || item.container.userId !== userId) {
+      throw new Error("Ítem no encontrado o acceso denegado");
+    }
+
+    // Obtenemos el historial
+    const history = await prisma.priceHistory.findMany({
+      where: { itemId: parseInt(itemId) },
+      orderBy: { createdAt: "asc" }, // De más antiguo a más reciente para la gráfica
+      select: {
+        price: true,
+        createdAt: true,
+      },
+    });
+
+    return history;
+  }
+
+  /**
+   * Obtiene los ítems de un contenedor y tipo de activo específicos,
+   * aplicando filtros sobre campos personalizados y calculando totales.
+   */
   async getItems({
     containerId,
     assetTypeId,
     userId,
     aggregationFilters = {},
   }) {
-    // 1. Validar IDs
+    // 1. Validar y convertir IDs
     const cId = parseInt(containerId);
     const aTId = parseInt(assetTypeId);
+
     if (isNaN(cId) || isNaN(aTId)) {
       throw new Error(
-        "Invalid ID format provided for container or asset type.",
+        "Formato de ID inválido para contenedor o tipo de activo.",
       );
     }
 
-    // 2. Obtener todas las definiciones de campo
+    // 2. Obtener definiciones de campos personalizados (para saber cuáles son sumables)
     const allFieldDefinitions = await prisma.customFieldDefinition.findMany({
       where: { assetTypeId: aTId },
       select: { id: true, name: true, type: true, isSummable: true },
     });
+
     const summableFieldDefinitions = allFieldDefinitions.filter(
       (def) => def.isSummable,
     );
 
-    // 3. Inicializar resultados
-    const aggregationResults = {};
-
-    // 🔑 CONSTRUCCIÓN DE LA CLÁUSULA WHERE BASE (Solo filtros de Prisma)
-    const baseWhereClause = {
-      containerId: cId,
-      assetTypeId: aTId,
-      container: { userId: userId },
-    };
-
-    // 4. Obtener TODOS los ítems que cumplen las condiciones base (SIN filtros JSON)
+    // 3. Consulta Base a Prisma (Seguridad: filtramos por userId del contenedor)
     const allItems = await prisma.inventoryItem.findMany({
-      where: baseWhereClause,
+      where: {
+        containerId: cId,
+        assetTypeId: aTId,
+        container: { userId: userId },
+      },
       include: {
         location: true,
         assetType: true,
@@ -454,76 +406,74 @@ class InventoryItemService {
       },
     });
 
-    // 🎯 PASO CRÍTICO: FILTRADO EN JAVASCRIPT
-    let items = allItems; // Inicialmente, todos los ítems cargados
+    // 4. Filtrado en Memoria (JS) para campos dinámicos (Custom Fields)
+    let filteredItems = allItems;
 
     if (Object.keys(aggregationFilters).length > 0) {
-      // 1. Obtener la ID del campo a filtrar y el valor de filtro.
+      // Tomamos el primer filtro (puedes extenderlo a múltiples si lo necesitas)
       const fieldId = Object.keys(aggregationFilters)[0].toString();
-
-      // 2. SANEAR EL VALOR DE FILTRO: Asegurar que sea una cadena y limpiar espacios en blanco.
       const filterValue = String(aggregationFilters[fieldId]).trim();
 
-      // 🛑 Aplicar el filtro de customFieldValues en memoria
-      items = allItems.filter((item) => {
+      filteredItems = allItems.filter((item) => {
         const customValues = item.customFieldValues || {};
         const itemValueRaw = customValues[fieldId];
 
-        // 3. SANEAR EL VALOR DEL ÍTEM:
-        let itemValueString = "";
+        const itemValueString =
+          itemValueRaw !== null && itemValueRaw !== undefined
+            ? String(itemValueRaw).trim()
+            : "";
 
-        // Si el valor existe, lo convertimos a String y le quitamos espacios.
-        if (
-          itemValueRaw !== null &&
-          itemValueRaw !== undefined &&
-          itemValueRaw !== ""
-        ) {
-          itemValueString = String(itemValueRaw).trim();
-        }
-
-        // 4. Comparación estricta de cadenas saneadas.
         return itemValueString === filterValue;
       });
     }
 
-    // 5. Lógica de CONTEO (Count)
-    const totalCount = items.length; // Usamos la lista filtrada 'items'
+    // 5. Cálculo de Agregaciones (Sumas y Conteos)
+    const aggregationResults = {};
 
+    // Conteo de la selección actual
     if (Object.keys(aggregationFilters).length > 0) {
-      const fieldId = Object.keys(aggregationFilters)[0];
-      aggregationResults[`count_${fieldId}`] = totalCount;
+      aggregationResults[`count_${Object.keys(aggregationFilters)[0]}`] =
+        filteredItems.length;
     }
 
-    // 6. CÁLCULO DE SUMATORIOS en JavaScript
-    // El sumatorio se hace sobre la lista ya filtrada ('items')
+    // Sumatorios de campos marcados como 'isSummable'
     for (const def of summableFieldDefinitions) {
       const fieldKey = def.id.toString();
       let totalSum = 0;
 
-      items.forEach((item) => {
+      filteredItems.forEach((item) => {
         const value = item.customFieldValues?.[fieldKey];
-        const isPresentAndValid =
-          value !== undefined && value !== null && value !== "";
-
-        if (def.isSummable && isPresentAndValid) {
-          // El valor se lee como string (ej: "45") y se parsea a float para sumar.
+        if (value !== undefined && value !== null && value !== "") {
           const numValue = parseFloat(value);
           if (!isNaN(numValue)) totalSum += numValue;
         }
       });
 
-      if (def.isSummable) {
-        aggregationResults[`sum_${fieldKey}`] = totalSum;
-      }
+      aggregationResults[`sum_${fieldKey}`] = totalSum;
     }
 
-    // 7. Devolver los items junto con los totales
+    // 6. MAPEO AL DTO (Transformación para Flutter)
+    // Aquí es donde convertimos los datos crudos de Prisma en objetos limpios
+    const dtoItems = filteredItems.map((item) =>
+      new InventoryItemDTO(item).toJSON(),
+    );
+
+    // 7. Cálculo del Valor Total de Mercado de la selección
+    const totalMarketSelection = dtoItems.reduce(
+      (acc, item) => acc + (item.totalMarketValue || 0),
+      0,
+    );
+
+    // 8. ESTRUCTURA DE RETORNO (Clave para evitar el error de 'definitions')
+    // Retornamos 'items' y 'totals' al primer nivel para que el router los encuentre fácil
     return {
       success: true,
-      data: items,
+      items: dtoItems, // Lista de ítems procesados
       totals: {
+        // Objeto de totales que el router busca
         definitions: summableFieldDefinitions,
         aggregations: aggregationResults,
+        marketValueTotal: parseFloat(totalMarketSelection.toFixed(2)),
       },
     };
   }
@@ -543,115 +493,88 @@ class InventoryItemService {
   }
 
   async updateItem(id, data) {
-    // 1. Desestructurar y preparar los datos.
+    // 1. DESESTRUCTURACIÓN DINÁMICA
     const {
       imageIdsToDelete,
       filesToUpload,
       containerId: containerIdStr,
       assetTypeId: assetTypeIdStr,
       locationId: locationIdStr,
-      customFieldValues, // <-- Aquí viene como String JSON escapado
-      ...updateData
+      customFieldValues,
+      barcode,
+      ...restOfData
     } = data;
-
-    // 2. Conversión de tipos y limpieza.
+    // 2. CONVERSIÓN DE TIPOS CRÍTICOS
     const itemIdInt = parseInt(id);
-    const containerIdInt = parseInt(containerIdStr);
-    const assetTypeIdInt = parseInt(assetTypeIdStr);
-    const locationIdInt = parseInt(locationIdStr);
+    const cId = parseInt(containerIdStr);
+    const aTId = parseInt(assetTypeIdStr);
+    const lId = parseInt(locationIdStr);
 
-    if (
-      isNaN(itemIdInt) ||
-      isNaN(containerIdInt) ||
-      isNaN(assetTypeIdInt) ||
-      isNaN(locationIdInt)
-    ) {
-      throw new Error(
-        "Invalid ID format provided for item, container, or asset type.",
-      );
+    if (isNaN(itemIdInt) || isNaN(cId) || isNaN(aTId)) {
+      throw new Error("Invalid ID format provided.");
     }
 
-    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    // 3. LÓGICA DE ASSET TYPE Y CANTIDAD
     const assetType = await prisma.assetType.findUnique({
-      where: { id: assetTypeIdInt },
+      where: { id: aTId },
     });
+    if (!assetType) throw new Error("Asset Type not found.");
 
-    if (!assetType) {
-      throw new Error("Asset Type not found.");
-    }
-
-    // 2. LÓGICA DE CANTIDAD (QUANTITY)
-    let quantity;
+    let quantity = undefined;
     if (assetType.isSerialized) {
-      // Si es seriado, la cantidad es siempre 1.
       quantity = 1;
-    } else {
-      // Si no es seriado, tomamos la cantidad del input o default a la existente.
-      const inputQuantity = parseInt(updateData.quantity, 10);
-      quantity =
-        isNaN(inputQuantity) || inputQuantity < 1 ? undefined : inputQuantity;
+    } else if (restOfData.quantity !== undefined) {
+      const parsedQty = parseInt(restOfData.quantity, 10);
+      quantity = !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : undefined;
     }
 
-    // Asignamos la cantidad correcta al objeto de datos y borramos la original si existe
-    if (quantity !== undefined) {
-      updateData.quantity = quantity;
-    } else {
-      delete updateData.quantity;
+    // 4. PARSEO DE CUSTOM FIELDS Y CAMPOS NUMÉRICOS (Importante para Prisma)
+    let parsedCustomFields = undefined;
+    if (customFieldValues) {
+      parsedCustomFields =
+        typeof customFieldValues === "string"
+          ? JSON.parse(customFieldValues)
+          : customFieldValues;
     }
 
-    // 🚀 SOLUCIÓN CLAVE: Parsear customFieldValues
-    let parsedCustomFieldValues = {};
-    if (customFieldValues && typeof customFieldValues === "string") {
-      try {
-        // Intentamos parsear el string JSON escapado que viene del frontend
-        parsedCustomFieldValues = JSON.parse(customFieldValues);
-      } catch (e) {
-        console.error("Error parsing customFieldValues:", e);
-        throw new Error("Invalid JSON format for custom field values.");
-      }
+    // 🔑 TRUCO: Convertimos marketValue a número si existe en restOfData
+    if (restOfData.marketValue !== undefined) {
+      restOfData.marketValue = parseFloat(restOfData.marketValue) || 0;
     }
 
     const updateActions = [];
 
     // ===========================================
-    // PASO A: ELIMINACIÓN DE IMÁGENES (DB y Disco)
+    // PASO A: ELIMINACIÓN DE IMÁGENES
     // ===========================================
     if (imageIdsToDelete && imageIdsToDelete.length > 0) {
-      // Asegurar que imageIdsToDelete sea un array de Int (Multer lo convierte a String)
-      const idsToDeleteInt = imageIdsToDelete
+      // Aseguramos que sea array (a veces llega como string desde el cliente)
+      const idsArray = Array.isArray(imageIdsToDelete)
+        ? imageIdsToDelete
+        : [imageIdsToDelete];
+      const idsToDeleteInt = idsArray
         .map((id) => parseInt(id))
         .filter((id) => !isNaN(id));
 
-      // 1. Encontrar las URLs de las imágenes que vamos a eliminar
       const imagesToDelete = await prisma.inventoryItemImage.findMany({
-        where: {
-          id: { in: idsToDeleteInt },
-          inventoryItemId: itemIdInt,
-        },
+        where: { id: { in: idsToDeleteInt }, inventoryItemId: itemIdInt },
         select: { url: true },
       });
 
-      // 2. Eliminar las imágenes del disco
       for (const img of imagesToDelete) {
         const filename = path.basename(img.url);
+        // Asegúrate de que UPLOAD_DIR_ABSOLUTE esté definido al inicio del archivo
         const imagePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
-
         try {
-          if (fs.existsSync(imagePath)) {
-            fs.unlinkSync(imagePath);
-          }
+          if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
         } catch (err) {
-          console.error(`Error deleting file ${imagePath}:`, err);
+          console.error("Error deleting file:", err);
         }
       }
 
-      // 3. Eliminar las referencias de la base de datos
       updateActions.push(
         prisma.inventoryItemImage.deleteMany({
-          where: {
-            id: { in: idsToDeleteInt },
-            inventoryItemId: itemIdInt,
-          },
+          where: { id: { in: idsToDeleteInt }, inventoryItemId: itemIdInt },
         }),
       );
     }
@@ -660,44 +583,25 @@ class InventoryItemService {
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
     const itemUpdateData = {
-      name: updateData.name,
-      description: updateData.description,
-      containerId: containerIdInt,
-      assetTypeId: assetTypeIdInt,
-      customFieldValues: parsedCustomFieldValues,
+      barcode,
+      ...restOfData,
+      quantity,
+      minStock:
+        restOfData.minStock !== undefined
+          ? parseInt(restOfData.minStock) || 0
+          : undefined,
+      containerId: cId,
+      assetTypeId: aTId,
+      locationId: !isNaN(lId) ? lId : undefined,
+      customFieldValues: parsedCustomFields,
     };
 
-    if (quantity !== undefined) {
-      itemUpdateData.quantity = quantity;
-    }
-
-    // Handle minStock
-    if (updateData.minStock !== undefined) {
-      const parsedMinStock =
-        typeof updateData.minStock === "string"
-          ? parseInt(updateData.minStock, 10)
-          : updateData.minStock;
-      itemUpdateData.minStock =
-        !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
-    }
-
-    if (!isNaN(locationIdInt)) {
-      itemUpdateData.locationId = locationIdInt;
-    }
+    delete itemUpdateData.id;
 
     updateActions.push(
       prisma.inventoryItem.update({
-        where: {
-          id: itemIdInt,
-          // Usamos containerIdInt para el filtro de seguridad (validar que el ítem pertenece a ese container)
-          containerId: containerIdInt,
-        },
-        data: itemUpdateData, // 👈 Objeto de actualización construido
-        include: {
-          images: {
-            orderBy: { order: "asc" },
-          },
-        },
+        where: { id: itemIdInt },
+        data: itemUpdateData,
       }),
     );
 
@@ -708,56 +612,36 @@ class InventoryItemService {
       const lastImage = await prisma.inventoryItemImage.findFirst({
         where: { inventoryItemId: itemIdInt },
         orderBy: { order: "desc" },
-        select: { order: true },
       });
       const startOrder = lastImage ? lastImage.order + 1 : 1;
 
-      const baseImageUrl = process.env.STATIC_URL_PREFIX;
-      const UPLOAD_WEB_PATH = "/"; // 🔑 Usamos la ruta relativa correcta
-
-      const newImagesData = filesToUpload.map((file, index) => {
-        // 🔑 CORRECCIÓN: Unimos STATIC_URL_PREFIX con la ruta web /images/ y el nombre del archivo.
-        // path.join() maneja las barras de forma segura, pero lo forzamos a usar '/' al final.
-        const publicUrl = path
-          .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
-          .replace(/\\/g, "/");
-
-        return {
-          url: publicUrl,
-          inventoryItemId: itemIdInt,
-          order: startOrder + index,
-        };
-      });
+      const newImagesData = filesToUpload.map((file, index) => ({
+        url: path
+          .join(process.env.STATIC_URL_PREFIX, file.filename)
+          .replace(/\\/g, "/"),
+        inventoryItemId: itemIdInt,
+        order: startOrder + index,
+      }));
 
       updateActions.push(
-        prisma.inventoryItemImage.createMany({
-          data: newImagesData,
-        }),
+        prisma.inventoryItemImage.createMany({ data: newImagesData }),
       );
     }
 
     // ===========================================
-    // PASO D: EJECUTAR TRANSACCIÓN Y DEVOLVER EL RESULTADO FINAL
+    // PASO D: TRANSACCIÓN Y DTO FINAL 🏆
     // ===========================================
+    await prisma.$transaction(updateActions);
 
-    const results = await prisma.$transaction(updateActions);
+    const finalItem = await prisma.inventoryItem.findUnique({
+      where: { id: itemIdInt },
+      include: { images: { orderBy: { order: "asc" } } },
+    });
 
-    // Encuentra el resultado de la actualización del ítem principal para devolverlo
-    const updatedItemResult = results.find(
-      (res) => typeof res === "object" && res.id === itemIdInt,
-    );
+    if (!finalItem) throw new Error("Item not found after update.");
 
-    if (updatedItemResult) {
-      // Asegura que devolvemos el ítem con las relaciones actualizadas
-      return prisma.inventoryItem.findUnique({
-        where: { id: itemIdInt },
-        include: { images: { orderBy: { order: "asc" } } },
-      });
-    }
-
-    throw new Error(
-      "Update failed or the item could not be retrieved after update.",
-    );
+    // Retornamos la instancia del DTO
+    return new InventoryItemDTO(finalItem).toJSON();
   }
 
   async getAllItemsForUser(userId) {
@@ -982,6 +866,67 @@ class InventoryItemService {
         options,
       },
     });
+  }
+
+  async syncItemMarketValue(itemId, userId) {
+    // 1. Obtener el ítem actual para sacar el barcode
+    const item = await prisma.inventoryItem.findUnique({
+      where: { id: parseInt(itemId) },
+      include: { container: true },
+    });
+
+    if (!item || item.container.userId !== userId) {
+      throw new Error("Ítem no encontrado o acceso denegado");
+    }
+
+    if (!item.barcode) {
+      throw new Error("El ítem no tiene un código de barras asociado");
+    }
+    // 2. Consultar el servicio de UPC
+    const marketData = await upcService.getMarketDataByBarcode(
+      userId,
+      item.barcode,
+    );
+
+    if (!marketData || !marketData.suggestedPrice) {
+      throw new Error("La API no devolvió un precio para este producto");
+    }
+
+    // 3. Actualizar el ítem en la DB
+    const updatedItem = await prisma.$transaction(async (tx) => {
+      // A. Crear registro en el historial
+      await tx.priceHistory.create({
+        data: {
+          price: marketData.suggestedPrice,
+          // En lugar de itemId: item.id, usamos la relación:
+          inventoryItem: {
+            connect: { id: item.id },
+          },
+        },
+      });
+
+      // B. Actualizar el valor actual en el Item
+      return await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          marketValue: marketData.suggestedPrice,
+          currency: marketData.currency || "EUR",
+          lastPriceUpdate: new Date(),
+        },
+        include: {
+          images: { orderBy: { order: "asc" } },
+          location: true,
+          priceHistory: {
+            // 📉 Opcional: devolver los últimos puntos para la gráfica
+            orderBy: { createdAt: "asc" },
+            take: 20,
+          },
+        },
+      });
+    });
+
+    // 4. Devolver mediante DTO para que Flutter calcule el totalMarketValue al instante
+    return new InventoryItemDTO(updatedItem).toJSON();
   }
 }
 

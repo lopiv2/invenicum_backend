@@ -22,6 +22,10 @@ const userRoutes = require("./routes/userRoutes");
 const preferencesRoutes = require("./routes/preferencesRoutes");
 const pluginRoutes = require("./routes/pluginRoutes");
 const integrationRoutes = require("./routes/integrationsRoutes");
+const ebayRoutes = require("./routes/ebayRoutes");
+const upcMarketRoutes = require("./routes/upcMarketRoutes");
+
+
 
 // Crea una instancia de la aplicación Express
 const app = express();
@@ -113,6 +117,8 @@ app.use(API_BASE_PATH + "/users", userRoutes);
 app.use(API_BASE_PATH + "/preferences", preferencesRoutes);
 app.use(API_BASE_PATH + "/plugins", pluginRoutes);
 app.use(API_BASE_PATH + "/integrations", integrationRoutes);
+app.use(API_BASE_PATH + "/ebay", ebayRoutes);
+app.use(API_BASE_PATH + "/market", upcMarketRoutes);
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR

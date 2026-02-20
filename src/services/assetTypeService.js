@@ -4,6 +4,7 @@ const prisma = require("../middleware/prisma");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
+const AssetTypeDTO = require('../models/assetTypeModel');
 const BOOLEAN_TYPE_DB = "sí/no (booleano)";
 
 // 💡 CONFIGURACIÓN DE RUTAS FÍSICAS BASADAS EN .env
@@ -16,14 +17,14 @@ const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.join(
   __dirname,
   "..",
   UPLOAD_BASE_FOLDER,
-  ASSET_TYPES_SUBDIR
+  ASSET_TYPES_SUBDIR,
 );
 
 // 🔑 RUTA ABSOLUTA para las imágenes de Inventory Items (e.g., ../uploads/inventory)
 const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
   __dirname,
   "..",
-  UPLOAD_BASE_FOLDER
+  UPLOAD_BASE_FOLDER,
 );
 
 /**
@@ -42,48 +43,49 @@ async function createAssetType(containerId, userId, data) {
   } = data;
   const files = data.files || [];
 
+  // Validación básica
   if (!name || !fieldDefinitions) {
-    // Si falla, limpia todos los archivos subidos
-    files.forEach((file) => fs.unlinkSync(file.path));
+    files.forEach((file) => {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    });
     return {
       success: false,
       message: "Se requiere nombre y definiciones de campo.",
     };
   }
 
-  // 1. Preparar las relaciones de imágenes
-  const baseImageUrl = process.env.STATIC_URL_PREFIX || ""; // /images
+  // 1. Preparar imágenes
+  const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
   const UPLOAD_WEB_PATH =
-    process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR; // asset-types
+    process.env.UPLOAD_WEB_PATH_ASSET_TYPES || "asset-types";
 
-  const imageRelations = files.map((file, index) => {
-    // La URL resultante será: /images/asset-types/filename.jpg
-    const publicUrl = path
+  const imageRelations = files.map((file, index) => ({
+    url: path
       .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
-      .replace(/\\/g, "/");
-    return {
-      url: publicUrl,
-      filename: file.filename, // Guardar el nombre del archivo para el borrado físico
-      order: index,
-    };
-  });
+      .replace(/\\/g, "/"),
+    filename: file.filename,
+    order: index,
+  }));
 
-  // Convertir las definiciones de campo para el formato 'create' de Prisma.
+  // 2. Preparar definiciones para Prisma con validación de tipo numérico
   const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => {
-    // Aseguramos que los valores sean booleanos (o 'false' si no están presentes)
-    const isSummableInput = !!def.isSummable;
+    const type = def.type.toLowerCase();
+    // Consideramos numéricos los tipos que pueden llevar cálculos
     const isNumeric =
-      def.type === "number" || def.type === "currency" || def.type === "número";
+      type === "number" ||
+      type === "price" ||
+      type === "currency" ||
+      type === "número";
 
     return {
       name: def.name,
       type: def.type,
       isRequired: !!def.isRequired,
-      dataListId: def.dataListId || null,
-
-      // 🚀 ¡NUEVOS CAMPOS INCLUIDOS Y VALIDADOS!
-      // isSummable solo se permite si el tipo de campo es numérico.
-      isSummable: isNumeric ? isSummableInput : false,
+      dataListId: def.dataListId ? parseInt(def.dataListId) : null,
+      // Solo permitimos estos flags si el tipo es numérico
+      isSummable: isNumeric ? !!def.isSummable : false,
+      isMonetary: isNumeric ? !!def.isMonetary : false,
+      isCountable: isNumeric ? !!def.isCountable : false,
     };
   });
 
@@ -91,12 +93,12 @@ async function createAssetType(containerId, userId, data) {
     const newAssetType = await prisma.assetType.create({
       data: {
         name,
-        containerId,
+        containerId: parseInt(containerId),
         isSerialized: !!isSerialized,
         possessionFieldId: possessionFieldId
           ? parseInt(possessionFieldId)
-          : null, // 🎯 NUEVO
-        desiredFieldId: desiredFieldId ? parseInt(desiredFieldId) : null, // 🎯 NUEVO
+          : null,
+        desiredFieldId: desiredFieldId ? parseInt(desiredFieldId) : null,
         fieldDefinitions: {
           create: fieldDefinitionsForPrisma,
         },
@@ -106,21 +108,21 @@ async function createAssetType(containerId, userId, data) {
       },
       include: {
         fieldDefinitions: true,
-        images: {
-          orderBy: { order: "asc" },
-        },
+        images: { orderBy: { order: "asc" } },
       },
     });
 
+    // 🚀 Retornamos el DTO (toJSON es llamado automáticamente por Express al enviar la respuesta)
     return {
       success: true,
       message: "Tipo de Activo creado con éxito.",
-      data: newAssetType,
+      data: new AssetTypeDTO(newAssetType).toJSON(),
     };
   } catch (error) {
     console.error("Prisma Error en createAssetType:", error);
-    // Limpieza de archivos en caso de error de DB
-    files.forEach((file) => fs.unlinkSync(file.path));
+    files.forEach((file) => {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    });
     throw new Error("Error al crear el Tipo de Activo en la base de datos.");
   }
 }
@@ -186,7 +188,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     fieldDefinitions,
     filesToUpload,
     removeExistingImage,
-    ...assetTypeUpdates // Contiene name, isSerialized, quantity, etc.
+    ...assetTypeUpdates // name, isSerialized, possessionFieldId, desiredFieldId
   } = updateData;
 
   const assetTypeIdInt = parseInt(assetTypeId);
@@ -194,19 +196,13 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     throw new Error("ID de tipo de activo inválido.");
   }
 
-  // 💡 VALIDACIÓN DE LÓGICA DE NEGOCIO
-  // Si un tipo de activo se marca como NO seriado, la cantidad debe ser 1.
-  if (assetTypeUpdates.isSerialized === false) {
-    assetTypeUpdates.quantity = 1;
-  }
-
-  // 1. Verificar propiedad y obtener la información actual
+  // 1. Verificar propiedad y existencia
   const verification = await getAssetTypeById(assetTypeIdInt, userId, {
     include: { images: true, fieldDefinitions: true },
   });
 
   if (!verification.success) {
-    if (filesToUpload && filesToUpload.length > 0) {
+    if (filesToUpload?.length > 0) {
       filesToUpload.forEach((file) => fs.unlinkSync(file.path));
     }
     return verification;
@@ -214,80 +210,25 @@ async function updateAssetType(assetTypeId, userId, updateData) {
 
   const currentAssetType = verification.data;
 
-  // ===========================================
-  // PASO D: EJECUTAR TODA LA LÓGICA DENTRO DE UNA ÚNICA TRANSACCIÓN
-  // ===========================================
-
-  let updatedAssetType;
   try {
-    // 🔑 USAMOS UNA ÚNICA FUNCIÓN ASÍNCRONA PARA MANEJAR LA SECUENCIA DE PASOS
-    await prisma.$transaction(async (tx) => {
-      let imageWasReplaced = false;
-
-      // --- PASO A: ELIMINACIÓN DE IMAGEN EXISTENTE (Si se pidió explícitamente) ---
-      if (removeExistingImage && currentAssetType.images.length > 0) {
+    const result = await prisma.$transaction(async (tx) => {
+      
+      // --- PASO A: GESTIÓN DE IMÁGENES ---
+      // Si se pide borrar o se sube una nueva, eliminamos la anterior
+      if ((removeExistingImage || filesToUpload?.length > 0) && currentAssetType.images.length > 0) {
         const imageToDelete = currentAssetType.images[0];
-
-        // Eliminar la referencia de la base de datos
         await tx.assetTypeImage.delete({ where: { id: imageToDelete.id } });
 
-        // Eliminación del disco (debe ser SÍNCRONA y fuera del alcance de tx)
-        // NOTA: Es seguro hacer esto aquí porque si la transacción falla más tarde,
-        // la eliminación de la DB se revierte, pero la eliminación de disco NO.
-        // Se asume que la posibilidad de falla en la DB es mayor que el riesgo de error de disco.
-        try {
-          const imagePath = path.join(
-            UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
-            imageToDelete.filename
-          );
-          if (fs.existsSync(imagePath)) {
-            fs.unlinkSync(imagePath);
-          }
-        } catch (err) {
-          console.error(
-            `Error deleting file from disk ${imageToDelete.filename}:`,
-            err
-          );
-        }
+        const imagePath = path.join(UPLOAD_DIR_ASSET_TYPES_ABSOLUTE, imageToDelete.filename);
+        if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
       }
 
-      // --- PASO C-PRE: REEMPLAZO DE IMAGEN (Si se sube una nueva) ---
-      if (filesToUpload && filesToUpload.length > 0) {
-        imageWasReplaced = true;
-
-        // 1. Borrar imagen antigua si existe y NO se borró ya en el PASO A
-        if (!removeExistingImage && currentAssetType.images.length > 0) {
-          const oldImage = currentAssetType.images[0];
-
-          // Eliminar la referencia de la base de datos
-          await tx.assetTypeImage.delete({ where: { id: oldImage.id } });
-
-          // Eliminación del disco (Sincrónico)
-          try {
-            const imagePath = path.join(
-              UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
-              oldImage.filename
-            );
-            if (fs.existsSync(imagePath)) {
-              fs.unlinkSync(imagePath);
-            }
-          } catch (err) {
-            console.error(
-              `Error deleting old file from disk ${oldImage.filename}:`,
-              err
-            );
-          }
-        }
-
-        // 2. Crear la nueva imagen
+      // Si hay archivos nuevos, creamos la relación
+      if (filesToUpload?.length > 0) {
         const file = filesToUpload[0];
         const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
-        const UPLOAD_WEB_PATH =
-          process.env.UPLOAD_WEB_PATH_ASSET_TYPES || ASSET_TYPES_SUBDIR;
-
-        const publicUrl = path
-          .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
-          .replace(/\\/g, "/");
+        const UPLOAD_WEB_PATH = process.env.UPLOAD_WEB_PATH_ASSET_TYPES || "asset-types";
+        const publicUrl = path.join(baseImageUrl, UPLOAD_WEB_PATH, file.filename).replace(/\\/g, "/");
 
         await tx.assetTypeImage.create({
           data: {
@@ -299,96 +240,79 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         });
       }
 
-      // --- PASO B: ACTUALIZAR EL TIPO DE ACTIVO PRINCIPAL Y SUS DEFINICIONES DE CAMPO ---
-      // 3. ACTUALIZAR LAS DEFINICIONES DE CAMPO (SIN BORRAR TODO)
-      if (fieldDefinitions && fieldDefinitions.length > 0) {
-        // Obtenemos los IDs que vienen del frontend para saber qué NO borrar
+      // --- PASO B: ACTUALIZAR DEFINICIONES DE CAMPO ---
+      if (fieldDefinitions) {
         const incomingIds = fieldDefinitions
-          .filter((fd) => fd.id && fd.id > 0)
+          .filter((fd) => fd.id && parseInt(fd.id) > 0)
           .map((fd) => parseInt(fd.id));
 
-        // Borramos SOLO los campos que el usuario eliminó realmente en la UI
+        // 1. Borrar campos que ya no vienen en la lista
         await tx.customFieldDefinition.deleteMany({
           where: {
-            assetTypeId: parseInt(assetTypeId),
+            assetTypeId: assetTypeIdInt,
             id: { notIn: incomingIds },
           },
         });
 
-        // Procesamos cada campo uno por uno
+        // 2. Upsert (Actualizar o Crear)
         for (const fd of fieldDefinitions) {
-          if (fd.id && fd.id > 0) {
-            // 🔑 ACTUALIZAR: Si tiene ID, mantenemos el registro (ID 2 sigue siendo 2)
+          const type = fd.type.toLowerCase();
+          const isNumeric = type === "number" || type === "price" || type === "currency";
+          
+          const fieldData = {
+            name: fd.name,
+            type: fd.type,
+            isRequired: !!fd.isRequired,
+            dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
+            // 🛡️ Validación de lógica de negocio: solo numéricos tienen estos flags
+            isSummable: isNumeric ? !!fd.isSummable : false,
+            isMonetary: isNumeric ? !!fd.isMonetary : false,
+            isCountable: isNumeric ? !!fd.isCountable : false,
+          };
+
+          if (fd.id && parseInt(fd.id) > 0) {
             await tx.customFieldDefinition.update({
               where: { id: parseInt(fd.id) },
-              data: {
-                name: fd.name,
-                type: fd.type,
-                isRequired: fd.isRequired || false,
-                isSummable: fd.isSummable || false,
-                isCountable: fd.isCountable || false,
-                dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
-              },
+              data: fieldData,
             });
           } else {
-            // 🆕 CREAR: Si no tiene ID, es un campo nuevo
             await tx.customFieldDefinition.create({
-              data: {
-                name: fd.name,
-                type: fd.type,
-                isRequired: fd.isRequired || false,
-                isSummable: fd.isSummable || false,
-                isCountable: fd.isCountable || false,
-                assetTypeId: parseInt(assetTypeId),
-                dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
-              },
+              data: { ...fieldData, assetTypeId: assetTypeIdInt },
             });
           }
         }
-      } else {
-        // Si no vienen campos, borramos todos
-        await tx.customFieldDefinition.deleteMany({
-          where: { asset_type_id: parseInt(assetTypeId) },
-        });
       }
 
-      // Actualizar los campos principales de AssetType
-      return tx.assetType.update({
+      // --- PASO C: ACTUALIZAR CAMPOS PRINCIPALES ---
+      return await tx.assetType.update({
         where: { id: assetTypeIdInt },
-        data: assetTypeUpdates,
-        select: { id: true }, // Solo necesitamos el ID para el findUnique final
+        data: {
+          name: assetTypeUpdates.name,
+          isSerialized: !!assetTypeUpdates.isSerialized,
+          possessionFieldId: assetTypeUpdates.possessionFieldId ? parseInt(assetTypeUpdates.possessionFieldId) : null,
+          desiredFieldId: assetTypeUpdates.desiredFieldId ? parseInt(assetTypeUpdates.desiredFieldId) : null,
+        },
+        include: {
+          fieldDefinitions: { orderBy: { id: "asc" } },
+          images: { orderBy: { order: "asc" } },
+        },
       });
-    }); // Fin de la transacción
-
-    // Obtener el resultado final con todas las relaciones actualizadas
-    updatedAssetType = await prisma.assetType.findUnique({
-      where: { id: assetTypeIdInt },
-      include: {
-        fieldDefinitions: { orderBy: { id: "asc" } },
-        images: { orderBy: { order: "asc" } },
-      },
     });
 
-    if (!updatedAssetType) {
-      throw new Error("Asset Type not found after update transaction.");
-    }
+    // 🚀 RETORNO CON DTO
+    return {
+      success: true,
+      message: "Tipo de Activo actualizado con éxito.",
+      data: new AssetTypeDTO(result).toJSON(),
+    };
+
   } catch (error) {
-    console.error("Prisma Error en updateAssetType:", error);
-
-    // Limpiar archivos subidos si la DB falla
-    if (filesToUpload && filesToUpload.length > 0) {
-      filesToUpload.forEach((file) => fs.unlinkSync(file.path));
+    console.error("Error en updateAssetType:", error);
+    if (filesToUpload?.length > 0) {
+      filesToUpload.forEach((file) => { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); });
     }
-    throw new Error(
-      "Error al actualizar el Tipo de Activo en la base de datos."
-    );
+    throw new Error("No se pudo completar la actualización del Tipo de Activo.");
   }
-
-  return {
-    success: true,
-    data: updatedAssetType,
-    message: "Tipo de Activo actualizado con éxito.",
-  };
 }
 
 /**
@@ -424,7 +348,7 @@ async function deleteAssetType(assetTypeId, userId) {
       // 🔑 USANDO la ruta absoluta corregida para Asset Types
       const absolutePath = path.join(
         UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
-        image.filename
+        image.filename,
       );
 
       try {
@@ -545,7 +469,7 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
 async function updateAssetTypeCollectionFields(
   assetTypeId,
   userId,
-  updateData
+  updateData,
 ) {
   const { possessionFieldId, desiredFieldId } = updateData;
 
@@ -580,7 +504,7 @@ async function updateAssetTypeCollectionFields(
 
     // 4. Validar que el campo exista en este AssetType
     const fieldDefinition = assetType.fieldDefinitions.find(
-      (f) => f.id === parsedId
+      (f) => f.id === parsedId,
     );
     if (!fieldDefinition) {
       return {
@@ -636,7 +560,7 @@ async function updateAssetTypeCollectionFields(
     const possessionValidation = validateAndParseField(
       possessionFieldId,
       assetType,
-      "posesión"
+      "posesión",
     );
     if (!possessionValidation.success) {
       return { success: false, message: possessionValidation.message };
@@ -647,7 +571,7 @@ async function updateAssetTypeCollectionFields(
     const desiredValidation = validateAndParseField(
       desiredFieldId,
       assetType,
-      "deseado"
+      "deseado",
     );
     if (!desiredValidation.success) {
       return { success: false, message: desiredValidation.message };
@@ -680,7 +604,7 @@ async function updateAssetTypeCollectionFields(
     console.error("Error en updateAssetTypeCollectionFields:", error);
     // Lanza un error genérico para evitar exponer detalles internos
     throw new Error(
-      "Error al actualizar los campos de colección del AssetType."
+      "Error al actualizar los campos de colección del AssetType.",
     );
   }
 }

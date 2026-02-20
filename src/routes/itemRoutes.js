@@ -86,7 +86,7 @@ router.post(
       }
       res.status(500).json({ success: false, error: error.message });
     }
-  }
+  },
 );
 
 // ===============================================
@@ -122,7 +122,7 @@ router.post(
       // 1. Verificar la pertenencia del contenedor (seguridad)
       const containerResult = await containerService.getContainerById(
         containerId,
-        userId
+        userId,
       );
       if (!containerResult.success) {
         return res.status(404).json({
@@ -157,7 +157,7 @@ router.post(
       }
       res.status(500).json({ success: false, error: error.message });
     }
-  }
+  },
 );
 
 // --- NUEVA RUTA GLOBAL PARA EL DASHBOARD ---
@@ -193,9 +193,17 @@ router.get(
       const userId = req.user.id;
       const aggFiltersString = req.query.aggFilters;
 
+      // 1. Validar IDs
+      if (isNaN(containerId) || isNaN(assetTypeId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid containerId or assetTypeId.",
+        });
+      }
+
+      // 2. Parsear filtros de agregación (Custom Fields)
       let aggregationFilters = {};
       if (aggFiltersString && typeof aggFiltersString === "string") {
-        // Ejemplo: '10:Dañado,12:Rojo'
         aggregationFilters = aggFiltersString.split(",").reduce((acc, part) => {
           const [fieldId, value] = part.split(":");
           if (fieldId && value) {
@@ -205,18 +213,12 @@ router.get(
         }, {});
       }
 
-      if (isNaN(containerId) || isNaN(assetTypeId)) {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid containerId or assetTypeId.",
-        });
-      }
-
-      // 1. Verificar la pertenencia del contenedor
+      // 3. Verificar pertenencia del contenedor (Seguridad)
       const containerResult = await containerService.getContainerById(
         containerId,
         userId
       );
+      
       if (!containerResult.success) {
         return res.status(404).json({
           success: false,
@@ -224,7 +226,8 @@ router.get(
         });
       }
 
-      // 2. Llamar al servicio de inventario para obtener los ítems filtrados
+      // 4. Llamar al servicio
+      // Recordatorio: El servicio devuelve { success, items, totals }
       const itemsResult = await inventoryItemService.getItems({
         containerId,
         assetTypeId,
@@ -232,19 +235,26 @@ router.get(
         aggregationFilters,
       });
 
-      // El servicio debe devolver { success: true, data: {...} }
+      // 5. RESPUESTA (Corregida para evitar errores de undefined)
+      // Ajustamos el mapeo para que Flutter reciba exactamente lo que espera
       res.status(200).json({
         success: true,
         message: "Items retrieved successfully",
         data: {
-          items: itemsResult.data,
-          aggregationDefinitions: itemsResult.totals.definitions,
+          items: itemsResult.items, // 👈 Antes era itemsResult.data
+          aggregationDefinitions: itemsResult.totals.definitions, // 👈 Ahora existe porque itemsResult.totals no es undefined
           aggregationResults: itemsResult.totals.aggregations,
+          marketValueTotal: itemsResult.totals.marketValueTotal // Añadido para el dashboard
         },
       });
+
     } catch (error) {
       console.error("Error fetching inventory items:", error);
-      res.status(500).json({ success: false, error: error.message });
+      res.status(500).json({ 
+        success: false, 
+        message: "Error interno al obtener los ítems",
+        error: error.message 
+      });
     }
   }
 );
@@ -254,46 +264,30 @@ router.get(
 // POST /items
 // ===============================================
 router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
-  // IMPORTANTE: Los archivos ya han sido guardados en ./uploads/inventory en este punto.
+  const uploadedFiles = req.files || [];
+
   try {
     const userId = req.user.id;
+    // 🔑 Ya no desestructuramos containerId y name aquí para validar,
+    // dejamos que el servicio o el flujo de datos lo maneje,
+    // o validamos de forma que no choque con el nuevo mapeo automático.
+    const { containerId } = req.body;
 
-    // 🔍 LOG: Ver qué se recibe exactamente en req.body
-    console.log("[DEBUG POST /items] req.body keys:", Object.keys(req.body));
-    console.log(
-      "[DEBUG POST /items] req.body.quantity:",
-      req.body.quantity,
-      "Type:",
-      typeof req.body.quantity
-    );
-    console.log(
-      "[DEBUG POST /items] req.body.minStock:",
-      req.body.minStock,
-      "Type:",
-      typeof req.body.minStock
-    );
-    console.log("[DEBUG POST /items] Full req.body:", req.body);
-
-    // Los campos de texto están en req.body; los archivos están en req.files
-    const { containerId, name } = req.body;
-    const uploadedFiles = req.files || []; // Array de objetos de archivo de Multer
-
-    if (!containerId || !name) {
-      // 💡 MANEJO DE ERRORES: Si falla la validación, borra los archivos que ya se subieron.
+    if (!containerId) {
       uploadedFiles.forEach((file) => fs.unlinkSync(file.path));
       return res.status(400).json({
         success: false,
-        message: "Container ID and name are required.",
+        message: "Container ID is required.",
       });
     }
 
-    // 1. Verificar la pertenencia del contenedor
+    // 1. Verificar la pertenencia del contenedor (Lógica de seguridad)
     const containerResult = await containerService.getContainerById(
       parseInt(containerId),
-      userId
+      userId,
     );
+
     if (!containerResult.success) {
-      // 💡 MANEJO DE ERRORES: Si falla la autorización, borra los archivos.
       uploadedFiles.forEach((file) => fs.unlinkSync(file.path));
       return res.status(404).json({
         success: false,
@@ -301,30 +295,32 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
       });
     }
 
-    // 2. Crear el objeto de datos para el servicio
+    // 2. Preparar el objeto de datos
+    // 🔑 IMPORTANTE: Pasamos req.body tal cual.
+    // El servicio usará el operador spread (...) para capturar barcode, marketValue, etc.
     const itemData = {
       ...req.body,
-      // PASAMOS la información de los archivos locales al servicio.
-      // El servicio usará `file.filename` para construir la URL pública.
       files: uploadedFiles,
     };
 
-    // 3. Llamar al servicio de inventario para crear el ítem
+    // 3. Llamar al servicio
+    // 🔑 El itemResult ya vendrá formateado por el InventoryItemDTO.toJSON()
     const itemResult = await inventoryItemService.createItem(itemData);
 
-    // 201 Created. Devolvemos el objeto creado con su ID.
+    // 4. Respuesta exitosa
+    // 🔑 Nota que ya no envolvemos en 'data: itemResult' si el DTO ya devuelve
+    // la estructura que prefieres, o mantenemos la consistencia de tu API:
     res.status(201).json({
       success: true,
       message: "Elemento de inventario creado exitosamente",
-      data: itemResult,
+      data: itemResult, // itemResult ya es el JSON limpio del DTO
     });
   } catch (error) {
-    // 💡 MANEJO DE ERRORES: Si ocurre un error en el servicio, borra los archivos.
-    // Hay que asegurarse de que `req.files` esté disponible aquí.
-    if (req.files) {
-      req.files.forEach((file) => {
+    // Manejo de errores y limpieza de archivos
+    if (uploadedFiles.length > 0) {
+      uploadedFiles.forEach((file) => {
         try {
-          fs.unlinkSync(file.path);
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
         } catch (err) {
           console.error("Error cleaning up file:", err);
         }
@@ -334,8 +330,7 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
     console.error("Error creating item:", error);
     res.status(500).json({
       success: false,
-      message: "Error al crear el elemento de inventario",
-      error: error.message,
+      message: error.message || "Error al crear el elemento de inventario",
     });
   }
 });
@@ -349,67 +344,87 @@ router.patch(
   verifyToken,
   upload.array("images"),
   async (req, res) => {
-    let itemId;
-    const uploadedFiles = req.files || []; // Archivos nuevos subidos
+    const uploadedFiles = req.files || [];
+    const itemId = req.params.id;
 
     try {
-      itemId = parseInt(req.params.id);
       const userId = req.user.id;
 
-      // 💡 1. Extraer TODOS los datos del body (Multer los ha parseado)
-      const { containerId, imageIdsToDelete } = req.body;
+      // 1. EXTRAER Y PRE-VALIDAR
+      // Extraemos containerId e imageIdsToDelete para tratarlos específicamente
+      // 'restOfBody' contendrá name, description, barcode, marketValue, etc.
+      const { containerId, imageIdsToDelete, ...restOfBody } = req.body;
 
-      if (isNaN(itemId) || !containerId) {
-        // ... (Manejo de errores si falla la validación)
-        uploadedFiles.forEach((file) => fs.unlinkSync(file.path)); // Limpieza
+      if (!itemId || !containerId) {
+        // Si falta información vital, borramos lo que Multer guardó físicamente
+        uploadedFiles.forEach((file) => {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        });
         return res.status(400).json({
           success: false,
-          message: "Invalid ID or missing containerId.",
+          message: "El ID del ítem y el ID del contenedor son obligatorios.",
         });
       }
 
-      // 2. Deserializar el array de IDs a eliminar
-      const idsToDelete = imageIdsToDelete ? JSON.parse(imageIdsToDelete) : [];
-
-      // 3. Crear el objeto de datos para el servicio
-      const itemData = {
-        ...req.body, // Incluye name, description, customFieldValues, etc.
-        filesToUpload: uploadedFiles, // Archivos nuevos
-        imageIdsToDelete: idsToDelete, // IDs de eliminación
-      };
-
-      // 4. Llamar al servicio con la data completa
-      const updatedItem = await inventoryItemService.updateItem(
-        itemId,
-        itemData // Pasamos toda la data, incluyendo archivos e IDs
+      // 2. VERIFICACIÓN DE SEGURIDAD
+      // Validamos que el contenedor realmente pertenezca al usuario autenticado
+      const containerResult = await containerService.getContainerById(
+        parseInt(containerId),
+        userId
       );
 
-      if (!updatedItem) {
-        uploadedFiles.forEach((file) => fs.unlinkSync(file.path)); // Limpieza
-        return res
-          .status(404)
-          .json({ success: false, message: "Item not found." });
+      if (!containerResult.success) {
+        uploadedFiles.forEach((file) => {
+          if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+        });
+        return res.status(404).json({
+          success: false,
+          message: "Contenedor no encontrado o acceso denegado.",
+        });
       }
 
+      // 3. PREPARAR OBJETO PARA EL SERVICIO
+      const itemData = {
+        ...restOfBody,
+        containerId: containerId, // Lo pasamos explícitamente
+        filesToUpload: uploadedFiles, // Archivos nuevos desde req.files
+        // Convertimos el string JSON de IDs a borrar en un array real de JS
+        imageIdsToDelete: imageIdsToDelete ? JSON.parse(imageIdsToDelete) : [],
+      };
+
+      // 4. LLAMADA AL SERVICIO
+      // El servicio se encarga de:
+      // - Parsear números (quantity, marketValue)
+      // - Borrar imágenes viejas (disco y DB)
+      // - Guardar imágenes nuevas
+      // - Retornar el InventoryItemDTO.toJSON()
+      const updatedItem = await inventoryItemService.updateItem(itemId, itemData);
+
+      // 5. RESPUESTA EXITOSA
       res.status(200).json({
         success: true,
         message: "Elemento de inventario actualizado exitosamente",
-        data: updatedItem,
+        data: updatedItem, // Objeto procesado y formateado por el DTO
       });
+
     } catch (error) {
-      // Manejo de errores y limpieza de archivos
-      uploadedFiles.forEach((file) => {
-        try {
-          fs.unlinkSync(file.path);
-        } catch (err) {
-          console.error("Error cleaning up file:", err);
-        }
-      });
-      console.error(`Error updating item ${itemId ? itemId : "N/A"}:`, error);
+      // 6. MANEJO DE ERRORES Y LIMPIEZA
+      // Si algo falla en el proceso, no queremos dejar archivos huérfanos en el disco
+      if (uploadedFiles.length > 0) {
+        uploadedFiles.forEach((file) => {
+          try {
+            if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+          } catch (err) {
+            console.error("Error al limpiar archivo tras error en PATCH:", err);
+          }
+        });
+      }
+
+      console.error(`Error crítico actualizando ítem ${itemId}:`, error);
+      
       res.status(500).json({
         success: false,
-        message: "Error al actualizar el elemento de inventario",
-        error: error.message,
+        message: error.message || "Error interno al actualizar el elemento",
       });
     }
   }
@@ -492,7 +507,7 @@ router.get(
       console.error("Error verifying quantity:", error);
       res.status(500).json({ success: false, error: error.message });
     }
-  }
+  },
 );
 
 module.exports = router;

@@ -1,72 +1,110 @@
 const prisma = require("../middleware/prisma");
+const inventoryItemService = require("../services/inventoryItemService");
 
 class DashboardDataService {
-    /**
-     * Obtiene los contadores clave para el dashboard, limitando los resultados
-     * a los datos asociados al usuario autenticado.
-     * @param {number} userId - El ID del usuario autenticado.
-     * @returns {Promise<{totalContainers: number, totalItems: number}>}
-     */
-    async getGlobalStatsFromDb(userId) {
-        try {
-            // ----------------------------------------------------
-            // 1. Contar Contenedores Totales (Asociados al Usuario)
-            // ----------------------------------------------------
-            const totalContainers = await prisma.container.count({
-                where: {
-                    userId: userId,
-                },
-            });
+  async getGlobalStatsFromDb(userId) {
+    try {
+      const userId_int = parseInt(userId);
 
-            // ----------------------------------------------------
-            // 2. Contar Items Totales (en todos los contenedores del usuario)
-            // ----------------------------------------------------
-            // Primero, obtenemos los IDs de los contenedores del usuario
-            const userContainerIds = await prisma.container.findMany({
-                where: { userId: userId },
-                select: { id: true },
-            }).then(containers => containers.map(c => c.id));
-            
-            // Luego, contamos todos los InventoryItems asociados a esos contenedores
-            const totalItems = await prisma.inventoryItem.count({
-                where: {
-                    containerId: {
-                        in: userContainerIds,
-                    },
-                },
-            });
+      // Ejecutamos todo en paralelo. Ahora las queries son mucho más directas.
+      const [
+        totalContainers,
+        totalItems,
+        totalAssets,
+        totalValue,
+        topItems,
+        expiringToday,
+      ] = await Promise.all([
+        // 1. Conteo de Contenedores del usuario
+        prisma.container.count({ where: { userId: userId_int } }),
 
-            // Luego, contamos todos los InventoryItems asociados a esos contenedores
-            const totalAssets = await prisma.assetType.count({
-                where: {
-                    containerId: {
-                        in: userContainerIds,
-                    },
-                },
-            });
-            
+        // 2. Conteo de Items (Suma de stock de items que pertenecen al usuario)
+        // Usamos la relación directa a través de container
+        prisma.inventoryItem.count({
+          where: { container: { userId: userId_int } },
+        }),
 
-            // ----------------------------------------------------
-            // 5. Devolver los resultados
-            // ----------------------------------------------------
-            return {
-                totalContainers: totalContainers,
-                totalItems: totalItems,
-                totalAssets: totalAssets
-            };
+        // 3. Conteo de Tipos de Activos del usuario
+        prisma.assetType.count({
+          where: { container: { userId: userId_int } },
+        }),
 
-        } catch (error) {
-            console.error("Error obteniendo estadísticas del dashboard:", error);
-            // Lanzar un error para que la capa de rutas lo capture y devuelva 500
-            throw new Error("Error al consultar las estadísticas del inventario.");
-        } finally {
-            // No es necesario desconectar aquí, PrismaClient maneja sus conexiones
-        }
+        // 4. Valor económico (SQL Raw optimizado)
+        inventoryItemService.getGlobalTotalValue(userId_int),
+
+        // 5. Top Préstamos (Query simplificada)
+        this.getTopLoanedItems(userId_int, 5),
+
+        // 6. Préstamos que vencen hoy (Query simplificada)
+        this.getLoansExpiringToday(userId_int),
+      ]);
+
+      return {
+        totalContainers,
+        totalItems,
+        totalAssets,
+        totalValue: totalValue || 0.0,
+        topLoanedItems: topItems,
+        loansExpiringToday: expiringToday,
+      };
+    } catch (error) {
+      console.error("Error in DashboardDataService:", error);
+      throw new Error("Error al consultar los datos del dashboard.");
     }
+  }
 
-    // ------------------------------------------------------------------
-    // --- Puedes añadir más métodos relacionados con el Dashboard aquí ---
-    // ------------------------------------------------------------------
+  async getLoansExpiringToday(userId) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    return await prisma.loan.findMany({
+      where: {
+        userId: userId, // 👈 Filtramos por tu usuario
+        status: "active",
+        expectedReturnDate: {
+          // 👈 Usamos el nombre del schema
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+      include: {
+        inventoryItem: true, // Para tener el nombre del objeto
+      },
+    });
+  }
+
+  async getTopLoanedItems(userId, limit = 5) {
+  try {
+    const result = await prisma.$queryRaw`
+      SELECT 
+        i.id as id, 
+        i.name as name, 
+        i.asset_type_id as assetTypeId, -- 👈 Alias para que coincida con el map
+        i.containerId as containerId,   -- 👈 Verifica si en la DB es containerId o container_id
+        COUNT(l.id) as loanCount
+      FROM loan l
+      JOIN inventory_item i ON l.inventory_item_id = i.id
+      WHERE l.user_id = ${userId}
+      GROUP BY i.id, i.name, i.asset_type_id, i.containerId
+      ORDER BY loanCount DESC
+      LIMIT ${parseInt(limit)}
+    `;
+
+    return result.map((row) => ({
+      id: Number(row.id),
+      name: row.name,
+      count: Number(row.loanCount),
+      // Ahora row.assetTypeId existirá porque usamos el alias en el SELECT
+      assetTypeId: Number(row.assetTypeId), 
+      containerId: Number(row.containerId),
+    }));
+  } catch (error) {
+    console.error("Error obteniendo top préstamos:", error);
+    return [];
+  }
+}
 }
 
 module.exports = new DashboardDataService();

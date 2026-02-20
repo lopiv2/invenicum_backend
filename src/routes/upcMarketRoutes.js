@@ -1,0 +1,57 @@
+const express = require("express");
+const router = express.Router();
+const upcService = require("../services/upcService");
+const inventoryItemService = require("../services/inventoryItemService"); // Para actualizar el item
+const verifyToken = require("../middleware/authMiddleware");
+
+/**
+ * GET /api/market/lookup/:barcode
+ * Solo consulta la API externa y devuelve la info (Previsualización)
+ */
+router.get("/lookup/:barcode", verifyToken, async (req, res) => {
+  try {
+    const { barcode } = req.params;
+    const userId = req.user.id;
+
+    const data = await upcService.getMarketDataByBarcode(userId, barcode);
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: "No se encontraron datos para este código de barras",
+      });
+    }
+
+    res.json({ success: true, data });
+  } catch (error) {
+    const status = error.message.includes("configurada") ? 404 : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/market/sync-item/:itemId
+ * Consulta la API y GUARDA el precio directamente en el ítem de inventario
+ */
+router.post("/sync-item/:itemId", verifyToken, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const userId = req.user.id;
+
+    // Llamamos a un nuevo método en el servicio de inventario
+    const updatedItem = await inventoryItemService.syncItemMarketValue(
+      itemId,
+      userId,
+    );
+
+    res.json({
+      success: true,
+      message: "Valor de mercado actualizado y guardado",
+      data: updatedItem,
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;

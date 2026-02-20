@@ -46,6 +46,7 @@ router.post("/chat/veni", verifyToken, async (req, res) => {
 router.post("/extract", verifyToken, async (req, res) => {
   try {
     const { url, fields } = req.body;
+    const userId = req.user.id; // Extraído por el middleware verifyToken
 
     if (!url) {
       return res
@@ -61,10 +62,9 @@ router.post("/extract", verifyToken, async (req, res) => {
       "Especificaciones",
     ];
 
-    // Llamamos al servicio que ya probamos y funciona
-    const result = await aiService.extractInfoFromUrl(url, targetFields);
+    // PASO CLAVE: Pasamos el userId al servicio para que él gestione la API Key
+    const result = await aiService.extractInfoFromUrl(url, targetFields, userId);
 
-    // Devolvemos la respuesta limpia
     res.status(200).json({
       success: true,
       data: result,
@@ -72,11 +72,19 @@ router.post("/extract", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("❌ Error en Ruta AI:", error.message);
 
+    // Si el error es específicamente por falta de configuración
+    if (error.message.includes("configuración") || error.message.includes("activa")) {
+        return res.status(404).json({
+            success: false,
+            message: error.message
+        });
+    }
+
     // Manejo de cuota de Google (429)
-    if (error.status === 429) {
+    if (error.status === 429 || error.message.includes("429")) {
       return res.status(429).json({
         success: false,
-        message: "La IA está saturada, espera un minuto.",
+        message: "Tu cuota de Gemini se ha agotado o está saturada.",
       });
     }
 

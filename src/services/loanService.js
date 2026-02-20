@@ -1,59 +1,27 @@
 const prisma = require("../middleware/prisma");
 const alertService = require("./alertService");
-
-/**
- * Convierte una fecha string ISO8601 a un objeto Date
- * Maneja correctamente las fechas sin hora (YYYY-MM-DD)
- */
-function parseDate(dateString) {
-  if (!dateString) return null;
-
-  // Si ya es un objeto Date, devolverlo
-  if (dateString instanceof Date) {
-    return dateString;
-  }
-
-  // Convertir string a Date
-  const date = new Date(dateString);
-
-  // Validar que es una fecha válida
-  if (isNaN(date.getTime())) {
-    throw new Error(`Formato de fecha inválido: ${dateString}`);
-  }
-
-  return date;
-}
+const LoanDTO = require("../models/loanModel");
 
 class LoanService {
+  /**
+   * Mapea resultados de Prisma a DTOs
+   */
+  _mapToDTO(loan) {
+    if (!loan) return null;
+    return new LoanDTO(loan).toJSON();
+  }
+
   /**
    * Obtiene todos los préstamos de un contenedor
    */
   async getLoans(containerId) {
     try {
       const loans = await prisma.loan.findMany({
-        where: {
-          containerId: parseInt(containerId),
-        },
-        include: {
-          inventoryItem: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          container: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-        },
-        orderBy: {
-          loanDate: "desc",
-        },
+        where: { containerId: parseInt(containerId) },
+        orderBy: { loanDate: "desc" },
       });
 
-      return loans;
+      return loans.map(this._mapToDTO); // 👈 Simplificado con DTO
     } catch (error) {
       console.error("Error in getLoans:", error);
       throw new Error(`Error al obtener préstamos: ${error.message}`);
@@ -103,136 +71,87 @@ class LoanService {
   }
 
   /**
-   * Obtiene todos los préstamos de forma global para un usuario
-   * Útil para el Dashboard
+   * Obtiene todos los préstamos globales filtrados por userId
+   * Ahora usamos l.userId directamente gracias a la nueva relación
    */
   async getAllLoans(userId) {
     try {
       const loans = await prisma.loan.findMany({
-        where: {
-          // Filtramos para que solo vea préstamos de sus contenedores
-          container: {
-            userId: parseInt(userId),
-          },
-        },
-        include: {
-          inventoryItem: { select: { id: true, name: true } },
-          container: { select: { id: true, name: true } },
-        },
-        orderBy: {
-          loanDate: "desc",
-        },
+        where: { userId: parseInt(userId) }, // 🔑 Seguridad directa
+        orderBy: { loanDate: "desc" },
       });
-      return loans;
+      return loans.map(this._mapToDTO);
     } catch (error) {
       console.error("Error in getAllLoans:", error);
-      throw new Error(`Error al obtener préstamos globales: ${error.message}`);
+      throw new Error("Error al obtener préstamos globales");
     }
   }
 
   /**
-   * Crea un nuevo préstamo
+   * Crea un nuevo préstamo con validación de stock y alertas
    */
-  async createLoan(containerId, loanData) {
+  async createLoan(containerId, loanData, userId) {
     try {
-      const {
-        inventoryItemId,
-        itemName,
-        borrowerName,
-        borrowerEmail,
-        borrowerPhone,
-        loanDate,
-        expectedReturnDate,
-        notes,
-        quantity, // 👈 Ahora recibimos la cantidad desde el frontend
-        userId, // 👈 Necesitamos el userId para crear la alerta
-      } = loanData;
-
+      const { inventoryItemId, quantity, expectedReturnDate } = loanData;
       const containerId_int = parseInt(containerId);
       const inventoryItemId_int = parseInt(inventoryItemId);
-      const quantityToLoan = parseInt(quantity || 1); // Por defecto 1 si no viene
+      const quantityToLoan = parseInt(quantity || 1);
 
-      // 1. Buscamos el artículo para validar stock y pertenencia
+      // 1. Validar artículo y stock
       const inventoryItem = await prisma.inventoryItem.findUnique({
         where: { id: inventoryItemId_int },
-        include: {
-          assetType: {
-            select: { id: true, isSerialized: true },
-          },
-        },
       });
 
-      if (!inventoryItem)
-        throw new Error("Artículo de inventario no encontrado");
-      if (inventoryItem.containerId !== containerId_int) {
-        throw new Error("El artículo no pertenece a este contenedor");
+      if (!inventoryItem || inventoryItem.containerId !== containerId_int) {
+        throw new Error("Artículo no válido para este contenedor");
       }
 
-      // 2. Validar si hay stock suficiente
       if (inventoryItem.quantity < quantityToLoan) {
-        throw new Error(
-          `Stock insuficiente. Disponible: ${inventoryItem.quantity}`,
-        );
+        throw new Error(`Stock insuficiente (${inventoryItem.quantity} disp.)`);
       }
 
-      // 3. Ejecutar todo en una Transacción Atómica
-      return await prisma.$transaction(async (tx) => {
-        // A. Crear el registro del Préstamo
+      // 2. Transacción Atómica
+      const result = await prisma.$transaction(async (tx) => {
+        // A. Crear Préstamo (DTO de entrada)
         const loan = await tx.loan.create({
           data: {
+            userId: parseInt(userId), // 🔑 Asignación obligatoria
             containerId: containerId_int,
             inventoryItemId: inventoryItemId_int,
-            quantity: quantityToLoan, // 👈 Guardamos la cantidad prestada
-            itemName: itemName || inventoryItem.name,
-            borrowerName: borrowerName || null,
-            borrowerEmail: borrowerEmail || null,
-            borrowerPhone: borrowerPhone || null,
-            loanDate: parseDate(loanDate) || new Date(),
+            quantity: quantityToLoan,
+            itemName: inventoryItem.name,
+            borrowerName: loanData.borrowerName || null,
+            borrowerEmail: loanData.borrowerEmail || null,
+            borrowerPhone: loanData.borrowerPhone || null,
+            loanDate: new Date(), // Fecha actual por defecto
             expectedReturnDate: expectedReturnDate
-              ? parseDate(expectedReturnDate)
+              ? new Date(expectedReturnDate)
               : null,
-            notes: notes || null,
+            notes: loanData.notes || null,
             status: "active",
           },
-          include: {
-            inventoryItem: { select: { id: true, name: true } },
-            container: { select: { id: true, name: true } },
-          },
         });
 
-        // B. Actualizar stock en el inventario
+        // B. Decrementar stock
         const updatedItem = await tx.inventoryItem.update({
           where: { id: inventoryItemId_int },
-          data: {
-            quantity: {
-              decrement: quantityToLoan, // 👈 Resta automáticamente la cantidad
-            },
-          },
+          data: { quantity: { decrement: quantityToLoan } },
         });
 
-        // C. 🚨 Lógica de Alerta de Stock Bajo
-        // Comparamos el nuevo stock con el mínimo definido en el artículo
-        const minAllowed = updatedItem.minStock || 1; // Por defecto 1 si no tiene definido
-
-        if (updatedItem.quantity <= minAllowed && userId) {
+        // C. Alerta de Stock Bajo
+        if (updatedItem.quantity <= (updatedItem.minStock || 1)) {
           await alertService.createAlert(parseInt(userId), {
-            title: "⚠️ Stock Bajo Detectado",
-            message: `El artículo "${updatedItem.name}" ha bajado a ${updatedItem.quantity} unidades tras el último préstamo.`,
+            title: "⚠️ Stock Bajo",
+            message: `"${updatedItem.name}" bajó a ${updatedItem.quantity} unidades.`,
             type: "warning",
           });
-          console.log(
-            `[ALERT] Generada alerta de stock bajo para Item ID: ${updatedItem.id}`,
-          );
         }
-
-        console.log(
-          `[DEBUG] Préstamo ID ${loan.id} creado. Cantidad prestada: ${quantityToLoan}. Stock restante: ${updatedItem.quantity}`,
-        );
 
         return loan;
       });
+
+      return this._mapToDTO(result);
     } catch (error) {
-      console.error("Error in createLoan:", error);
       throw new Error(error.message);
     }
   }
@@ -240,262 +159,173 @@ class LoanService {
   /**
    * Actualiza un préstamo existente
    */
-  async updateLoan(containerId, loanId, loanData) {
+  /**
+   * Actualiza un préstamo existente de forma segura
+   */
+  async updateLoan(containerId, loanId, loanData, userId) {
     try {
       const loanId_int = parseInt(loanId);
-      const containerId_int = parseInt(containerId);
+      const userId_int = parseInt(userId);
 
-      // Verificar que el préstamo existe y pertenece al contenedor
-      const existingLoan = await prisma.loan.findUnique({
+      // 1. Verificamos existencia y propiedad en una sola consulta
+      const existingLoan = await prisma.loan.findFirst({
         where: {
           id: loanId_int,
+          userId: userId_int, // 🔑 Seguridad: Solo el dueño puede editar
         },
       });
 
-      if (!existingLoan) {
-        throw new Error("Préstamo no encontrado");
-      }
+      if (!existingLoan)
+        throw new Error("Préstamo no encontrado o acceso denegado");
 
-      if (existingLoan.containerId !== containerId_int) {
-        throw new Error("El préstamo no pertenece a este contenedor");
-      }
+      // 2. Limpieza de datos (DTO de entrada "ad-hoc")
+      // Solo extraemos los campos que permitimos editar
+      const {
+        borrowerName,
+        borrowerEmail,
+        borrowerPhone,
+        expectedReturnDate,
+        notes,
+        status,
+      } = loanData;
 
-      // Si se proporciona un inventoryItemId diferente, validar que existe y pertenece al contenedor
-      if (
-        loanData.inventoryItemId &&
-        loanData.inventoryItemId !== existingLoan.inventoryItemId
-      ) {
-        const newItem = await prisma.inventoryItem.findUnique({
-          where: {
-            id: parseInt(loanData.inventoryItemId),
-          },
-        });
-
-        if (!newItem) {
-          throw new Error("Nuevo artículo de inventario no encontrado");
-        }
-
-        if (newItem.containerId !== containerId_int) {
-          throw new Error("El nuevo artículo no pertenece a este contenedor");
-        }
-      }
-
-      // Preparar datos para actualizar
-      const updateData = { ...loanData };
-
-      // Procesar fechas correctamente
-      if (loanData.loanDate !== undefined && loanData.loanDate !== null) {
-        updateData.loanDate = parseDate(loanData.loanDate);
-      }
-
-      if (loanData.expectedReturnDate !== undefined) {
-        if (loanData.expectedReturnDate === null) {
-          updateData.expectedReturnDate = null;
-        } else {
-          updateData.expectedReturnDate = parseDate(
-            loanData.expectedReturnDate,
-          );
-        }
-      }
-
-      if (loanData.actualReturnDate !== undefined) {
-        if (loanData.actualReturnDate === null) {
-          updateData.actualReturnDate = null;
-        } else {
-          updateData.actualReturnDate = parseDate(loanData.actualReturnDate);
-        }
-      }
-
-      // Si se proporciona inventoryItemId, actualizar también itemName si no se proporciona explícitamente
-      if (
-        loanData.inventoryItemId &&
-        !loanData.itemName &&
-        loanData.inventoryItemId !== existingLoan.inventoryItemId
-      ) {
-        const newItem = await prisma.inventoryItem.findUnique({
-          where: {
-            id: parseInt(loanData.inventoryItemId),
-          },
-        });
-        updateData.itemName = newItem.name;
-      }
-
+      // 3. Actualización directa
       const updatedLoan = await prisma.loan.update({
-        where: {
-          id: loanId_int,
-        },
-        data: updateData,
-        include: {
-          inventoryItem: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
-          container: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
+        where: { id: loanId_int },
+        data: {
+          borrowerName:
+            borrowerName !== undefined
+              ? borrowerName
+              : existingLoan.borrowerName,
+          borrowerEmail:
+            borrowerEmail !== undefined
+              ? borrowerEmail
+              : existingLoan.borrowerEmail,
+          borrowerPhone:
+            borrowerPhone !== undefined
+              ? borrowerPhone
+              : existingLoan.borrowerPhone,
+          notes: notes !== undefined ? notes : existingLoan.notes,
+          status: status || existingLoan.status,
+          // Manejo de fechas simplificado: new Date() entiende ISO strings
+          expectedReturnDate: expectedReturnDate
+            ? new Date(expectedReturnDate)
+            : existingLoan.expectedReturnDate,
         },
       });
 
-      return updatedLoan;
+      // 4. Retornamos mediante el DTO de salida
+      return this._mapToDTO(updatedLoan);
     } catch (error) {
       console.error("Error in updateLoan:", error);
-      throw new Error(`Error al actualizar préstamo: ${error.message}`);
+      throw new Error(error.message);
     }
   }
 
   /**
-   * Marca un préstamo como devuelto
+   * Marca como devuelto e incrementa stock
    */
-  async returnLoan(containerId, loanId) {
+  async returnLoan(containerId, loanId, userId) {
     try {
-      const loanId_int = parseInt(loanId);
-      const containerId_int = parseInt(containerId);
-
-      // 1. Buscar el préstamo y su ítem asociado
-      const existingLoan = await prisma.loan.findUnique({
-        where: { id: loanId_int },
-        include: {
-          inventoryItem: true,
+      const loan = await prisma.loan.findFirst({
+        where: {
+          id: parseInt(loanId),
+          userId: parseInt(userId), // 🔑 Solo el dueño puede devolverlo
         },
       });
 
-      if (!existingLoan) throw new Error("Préstamo no encontrado");
-      if (existingLoan.containerId !== containerId_int) {
-        throw new Error("El préstamo no pertenece a este contenedor");
-      }
-      if (existingLoan.status === "returned") {
-        throw new Error("Este préstamo ya fue devuelto anteriormente");
+      if (!loan || loan.status === "returned") {
+        throw new Error("Préstamo no encontrado o ya devuelto");
       }
 
-      // 2. Ejecutar actualización en una transacción para asegurar integridad
       const result = await prisma.$transaction(async (tx) => {
-        // A. Actualizar el stock del ítem: Sumamos la cantidad exacta que se prestó
-        const updatedItem = await tx.inventoryItem.update({
-          where: { id: existingLoan.inventoryItemId },
-          data: {
-            quantity: {
-              increment: existingLoan.quantity, // 🔑 Incremento automático atómico
-            },
-          },
+        await tx.inventoryItem.update({
+          where: { id: loan.inventoryItemId },
+          data: { quantity: { increment: loan.quantity } },
         });
 
-        // B. Marcar el préstamo como devuelto
-        const returnedLoan = await tx.loan.update({
-          where: { id: loanId_int },
+        return await tx.loan.update({
+          where: { id: loan.id },
           data: {
             status: "returned",
             actualReturnDate: new Date(),
           },
-          include: {
-            inventoryItem: {
-              select: { id: true, name: true },
-            },
-            container: {
-              select: { id: true, name: true },
-            },
-          },
         });
-
-        console.log(
-          `[STOCK] Item ${existingLoan.inventoryItemId} incrementado en ${existingLoan.quantity}. Nuevo stock: ${updatedItem.quantity}`,
-        );
-
-        return returnedLoan;
       });
 
-      return result;
+      return this._mapToDTO(result);
     } catch (error) {
-      console.error("Error in returnLoan:", error);
-      throw new Error(`Error al devolver préstamo: ${error.message}`);
+      throw new Error(error.message);
     }
   }
 
   /**
-   * Elimina un préstamo
+   * Elimina un préstamo (Solo si es el dueño)
    */
-  async deleteLoan(containerId, loanId) {
+  async deleteLoan(loanId, userId) {
     try {
-      const loanId_int = parseInt(loanId);
-      const containerId_int = parseInt(containerId);
-
-      // Verificar que el préstamo existe y pertenece al contenedor
-      const existingLoan = await prisma.loan.findUnique({
+      await prisma.loan.deleteMany({
         where: {
-          id: loanId_int,
+          id: parseInt(loanId),
+          userId: parseInt(userId),
         },
       });
-
-      if (!existingLoan) {
-        throw new Error("Préstamo no encontrado");
-      }
-
-      if (existingLoan.containerId !== containerId_int) {
-        throw new Error("El préstamo no pertenece a este contenedor");
-      }
-
-      await prisma.loan.delete({
-        where: {
-          id: loanId_int,
-        },
-      });
-
-      return { success: true, message: "Préstamo eliminado correctamente" };
+      return { success: true };
     } catch (error) {
-      console.error("Error in deleteLoan:", error);
-      throw new Error(`Error al eliminar préstamo: ${error.message}`);
+      throw new Error("No se pudo eliminar el préstamo");
     }
   }
 
   /**
    * Obtiene estadísticas de préstamos
    */
-  async getLoanStats(containerId) {
+  async getLoanStats(containerId, userId) {
     try {
       const containerId_int = parseInt(containerId);
+      const userId_int = parseInt(userId);
 
-      const totalLoans = await prisma.loan.count({
-        where: {
-          containerId: containerId_int,
-        },
+      // 1. Verificamos que el contenedor pertenezca al usuario (Seguridad)
+      const container = await prisma.container.findFirst({
+        where: { id: containerId_int, userId: userId_int },
+      });
+      if (!container)
+        throw new Error("Contenedor no encontrado o acceso denegado");
+
+      // 2. Una sola consulta para agrupar todos los conteos por status
+      const stats = await prisma.loan.groupBy({
+        by: ["status"],
+        where: { containerId: containerId_int },
+        _count: { id: true },
       });
 
-      const activeLoans = await prisma.loan.count({
-        where: {
-          containerId: containerId_int,
-          status: "active",
-        },
-      });
+      // 3. Formateamos el resultado (DTO style)
+      const counts = {
+        active: 0,
+        returned: 0,
+        overdue: 0,
+        total: 0,
+      };
 
-      const returnedLoans = await prisma.loan.count({
-        where: {
-          containerId: containerId_int,
-          status: "returned",
-        },
-      });
-
-      const overdueLoans = await prisma.loan.count({
-        where: {
-          containerId: containerId_int,
-          status: "overdue",
-        },
+      stats.forEach((item) => {
+        const status = item.status;
+        const count = item._count.id;
+        if (counts.hasOwnProperty(status)) {
+          counts[status] = count;
+        }
+        counts.total += count;
       });
 
       return {
-        totalLoans,
-        activeLoans,
-        returnedLoans,
-        overdueLoans,
+        totalLoans: counts.total,
+        activeLoans: counts.active,
+        returnedLoans: counts.returned,
+        overdueLoans: counts.overdue,
       };
     } catch (error) {
       console.error("Error in getLoanStats:", error);
-      throw new Error(`Error al obtener estadísticas: ${error.message}`);
+      throw new Error(error.message);
     }
   }
 }
 
-module.exports = LoanService;
+module.exports = new LoanService();

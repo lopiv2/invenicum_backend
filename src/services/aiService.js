@@ -3,48 +3,25 @@ const cheerio = require("cheerio");
 const { GoogleGenAI } = require("@google/genai");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const prisma = require("../middleware/prisma");
+const integrationService = require("./integrationsService");
 
 class AIService {
   async processChatConversation(userInput, context = {}) {
     const userId = parseInt(context.userId);
     if (isNaN(userId)) throw new Error("userId requerido");
+    const geminiData = await integrationService.getGeminiApiKey(userId);
+
     try {
-      // 1. BUSCAR LA INTEGRACIÓN OBLIGATORIA
-      const userIntegration = await prisma.userIntegration.findUnique({
-        where: { userId_type: { userId, type: "gemini" } },
-      });
-      // 2. VALIDAR QUE ESTÉ ACTIVA Y TENGA DATOS
-      if (
-        !userIntegration ||
-        !userIntegration.isActive ||
-        !userIntegration.config?.data
-      ) {
+      if (!geminiData) {
         return {
           answer:
-            "⚠️ Para hablar conmigo, primero debes configurar tu API Key de Gemini en el apartado de Integraciones.",
-          action: "NAVIGATE", // Sugerimos ir a configurarlo
+            "⚠️ Por favor, configura tu API Key de Gemini en Integraciones.",
+          action: "NAVIGATE",
           data: { path: "/integrations" },
         };
       }
-      // 3. DESCIFRAR LA CLAVE DEL USUARIO
-      let apiKeyToUse;
-      let defaultModel = "gemini-3-flash-preview";
-      try {
-        const decryptedConfig = JSON.parse(
-          decrypt(userIntegration.config.data),
-        );
-        apiKeyToUse = decryptedConfig.apiKey;
-        if (decryptedConfig.model) defaultModel = decryptedConfig.model;
-      } catch (e) {
-        throw new Error(
-          "No se pudo descifrar la configuración de la integración",
-        );
-      }
-      if (!apiKeyToUse)
-        throw new Error("API Key no encontrada en la configuración");
 
-      // 4. INICIALIZAR EL CLIENTE CON LA CLAVE DEL USUARIO
-      const dynamicClient = new GoogleGenAI({ apiKey: apiKeyToUse });
+      const dynamicClient = new GoogleGenAI({ apiKey: geminiData.apiKey });
 
       // Buscamos los contenedores para que Veni conozca los IDs reales
       const containers = await prisma.container.findMany({
@@ -80,9 +57,8 @@ class AIService {
         "data": {}
       }`;
 
-      // 5. LLAMADA A GEMINI (Sintaxis que ya te funciona)
       const response = await dynamicClient.models.generateContent({
-        model: defaultModel || "gemini-3-flash-preview",
+        model: geminiData.model || "gemini-3-flash-preview",
         contents: [
           {
             role: "user",
@@ -98,8 +74,8 @@ class AIService {
       const rawText = response.candidates[0].content.parts[0].text;
       const result = JSON.parse(rawText.replace(/```json|```/g, "").trim());
 
-      // 6. LÓGICA DE EXTRACCIÓN (Tu función de scraping)
-      // 6. EXTRAER INFO (Pasando la misma clave)
+      // LÓGICA DE EXTRACCIÓN (Tu función de scraping)
+      // EXTRAER INFO (Pasando la misma clave)
       if (result.action === "PRODUCT_EXTRACT" && result.data.url) {
         result.data = await this.extractInfoFromUrl(
           result.data.url,
@@ -122,72 +98,139 @@ class AIService {
     }
   }
 
-  async extractInfoFromUrl(url, fields, apiKey) {
-    // 1. Verificación de seguridad: si no hay clave de usuario, no hay servicio.
-    if (!apiKey) {
+  async getBase64FromUrl(imageUrl) {
+    if (!imageUrl || !imageUrl.startsWith("http")) return imageUrl;
+
+    try {
+      const axios = require("axios");
+      const response = await axios.get(imageUrl, {
+        responseType: "arraybuffer",
+        timeout: 5000,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
+
+      const contentType = response.headers["content-type"] || "image/jpeg";
+      const base64 = Buffer.from(response.data, "binary").toString("base64");
+      return `data:${contentType};base64,${base64}`;
+    } catch (error) {
+      console.error(
+        "⚠️ No se pudo convertir la imagen a Base64:",
+        error.message,
+      );
+      return imageUrl; // Si falla, devolvemos la URL original como respaldo
+    }
+  }
+
+  async extractInfoFromUrl(url, fields, userId) {
+    const geminiData = await integrationService.getGeminiApiKey(userId);
+    const apiKeyToUse = geminiData.apiKey;
+
+    if (!apiKeyToUse) {
       throw new Error(
         "Se requiere una API Key de usuario para realizar la extracción.",
       );
     }
 
     try {
-      // 2. Inicializamos el cliente específico para esta petición
-      const dynamicClient = new GoogleGenAI({ apiKey });
+      const dynamicClient = new GoogleGenAI({ apiKey: apiKeyToUse });
 
+      // 1. Obtener HTML con timeout y headers adecuados
       const { data: html } = await axios.get(url, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
-        timeout: 15000,
+        timeout: 10000,
       });
 
+      // 2. Procesamiento del HTML
       const $ = cheerio.load(html);
-      $("script, style, nav, footer, header, aside").remove();
+      const baseUrl = new URL(url);
+
+      // --- NORMALIZACIÓN DE ogImage ---
+      let ogImage = $('meta[property="og:image"]').attr("content");
+      if (ogImage) {
+        if (ogImage.startsWith("/")) {
+          ogImage = `${baseUrl.origin}${ogImage}`;
+        } else if (!ogImage.startsWith("http")) {
+          ogImage =
+            ogImage.includes("www.") || ogImage.includes(".")
+              ? `https://${ogImage.replace(/^\/\//, "")}`
+              : `${baseUrl.origin}/${ogImage}`;
+        }
+      }
+
+      // Limpieza de etiquetas innecesarias para ahorrar tokens
+      $("script, style, nav, footer, header, aside, noscript").remove();
       const cleanText = $("body")
         .text()
         .replace(/\s+/g, " ")
         .trim()
-        .substring(0, 25000);
+        .substring(0, 25000); // Límite seguro de caracteres
 
-      // 3. Usamos el cliente dinámico y un modelo optimizado (Gemini 1.5 Flash es ideal aquí)
-      const model = dynamicClient.models.get("gemini-1.5-flash");
-
-      const response = await model.generateContent({
+      // 3. Configuración del modelo (Gemini 3 Flash)
+      const response = await dynamicClient.models.generateContent({
+        model: geminiData.model || "gemini-3-flash-preview",
         contents: [
           {
             role: "user",
             parts: [
               {
-                text: `Analiza este contenido extraído de una web: "${cleanText}". 
-              Extrae exactamente estos campos en formato JSON: ${fields.join(", ")}.
-              IMPORTANTE: Si no encuentras algún campo, devuélvelo como null. 
-              Usa los nombres de los campos exactamente como se te proporcionan (case-sensitive).
-              Responde únicamente el objeto JSON.`,
+                text: `Analiza el contenido de esta web: "${cleanText}". 
+              URL de referencia: ${url}
+              
+              Extrae los siguientes campos en formato JSON:
+              - name (nombre del producto)
+              - description (breve descripción)
+              - "imageUrl": usa prioritariamente esta URL: ${ogImage || "null"}.
+              - ${fields.join(", ")}: campos adicionales.
+
+              REGLAS CRÍTICAS:
+              1. Si la imageUrl es relativa, complétala usando el dominio ${baseUrl.origin}.
+              2. Si un campo no existe, devuelve null.
+              3. Usa exactamente los nombres de campos proporcionados (case-sensitive).
+              4. Responde ÚNICAMENTE el objeto JSON, sin bloques de código ni explicaciones.`,
               },
             ],
           },
         ],
-        // Forzamos respuesta JSON si el modelo lo soporta (en los SDKs de GoogleGenAI)
-        generationConfig: { responseMimeType: "application/json" },
+        config: { generationConfig: { responseMimeType: "application/json" } },
       });
 
-      // 4. Limpieza y parseo de la respuesta
-      const rawText = response.candidates[0].content.parts[0].text;
-      const cleanJson = rawText
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
+      // 4. Procesamiento de respuesta con Limpieza de Seguridad
+      let rawText = response.candidates[0].content.parts[0].text;
+
+      // Limpieza por si el modelo incluye Markdown a pesar de la instrucción
+      const cleanJsonString = rawText
+        .replace(/^```json\s*/i, "")
+        .replace(/```\s*$/, "")
         .trim();
 
-      return JSON.parse(cleanJson);
-    } catch (error) {
-      console.error(
-        "❌ Error en extractInfoFromUrl (con clave de usuario):",
-        error.message,
-      );
+      const result = JSON.parse(cleanJsonString);
 
-      // Mapeo de errores de cuota/clave para el usuario
-      if (error.message.includes("429")) {
+      // Doble seguro para la URL de la imagen
+      if (
+        result.imageUrl &&
+        typeof result.imageUrl === "string" &&
+        !result.imageUrl.startsWith("http")
+      ) {
+        result.imageUrl = new URL(result.imageUrl, baseUrl.origin).href;
+      }
+
+      // --- NUEVA LÓGICA DE CONVERSIÓN ---
+      if (result.imageUrl && result.imageUrl.startsWith("http")) {
+        console.log("🔄 Convirtiendo imagen a Base64 para evitar CORS...");
+        result.imageUrl = await this.getBase64FromUrl(result.imageUrl);
+      }
+
+      return result;
+    } catch (error) {
+      console.error("❌ Error en extractInfoFromUrl:", error.message);
+
+      if (error.response?.status === 429 || error.message.includes("429")) {
         throw new Error(
           "Tu cuota de Gemini se ha agotado. Revisa tu panel de Google AI Studio.",
         );
@@ -196,7 +239,7 @@ class AIService {
         throw new Error("Tu API Key de Gemini parece no ser válida.");
       }
 
-      throw error;
+      throw new Error(`Error en la extracción IA: ${error.message}`);
     }
   }
 

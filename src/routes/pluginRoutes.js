@@ -10,7 +10,6 @@ router.get("/installed", verifyToken, async (req, res) => {
     const userId = req.user.id;
     // Pasamos el userId para que el servicio calcule el campo 'isMine'
     const plugins = await pluginService.getUserPlugins(userId);
-    console.log(`Plugins instalados para el usuario ${userId}:`, plugins);
     res.json(plugins);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -75,8 +74,6 @@ router.delete("/:id", verifyToken, async (req, res) => {
     // 🚩 CAMBIO AQUÍ: Verifica que estás usando .userId (o lo que use tu JWT)
     // Según tu log previo del token, es userId
     const currentUserId = req.user.id; 
-
-    console.log("DEBUG RUTA: req.user contiene:", req.user); // Esto te dirá si es .id o .userId
 
     await pluginService.deletePlugin(id, currentUserId, deleteFromGitHub);
 

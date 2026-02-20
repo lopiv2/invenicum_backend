@@ -25,7 +25,7 @@ model User {
   savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
   preferences     UserPreferences? // Relación 1:1 con preferencias del usuario
   integrations    UserIntegration[]
-  
+  loans           Loan[]
   containers      Container[]
   assignedItems   InventoryItem[]  @relation("UserAssignedItems")
   alerts          Alert[]
@@ -217,6 +217,7 @@ model CustomFieldDefinition {
   type            String      
   isRequired      Boolean     @default(false) @map("is_required")
   isSummable      Boolean     @default(false) @map("is_summable") // true si es un campo numérico que se debe sumar
+  isMonetary      Boolean     @default(false) @map("is_monetary") //Solo para valor económico
   isCountable     Boolean     @default(false) @map("is_countable")
 
   // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
@@ -236,6 +237,12 @@ model InventoryItem {
   id                Int                     @id @default(autoincrement())
   name              String
   description       String?
+  barcode           String?              @unique @map("barcode")
+  // --- VALORACIÓN DE MERCADO (Campos Base) ---
+  // Añadidos directamente para cálculos globales rápidos
+  marketValue       Float?               @default(0) @map("market_value")
+  lastPriceUpdate   DateTime?            @map("last_price_update")
+  currency          String               @default("EUR") @map("currency")
   // Si AssetType.isSerialized es true, este valor siempre será 1.
   // Si es false, aquí guardamos cuántas unidades hay en esta ubicación.
   quantity          Int                     @default(1)
@@ -263,8 +270,24 @@ model InventoryItem {
   container         Container               @relation(fields: [containerId], references: [id])
   images            InventoryItemImage[]
   loans             Loan[]
+  priceHistory      PriceHistory[]
   
   @@map("inventory_item") 
+}
+
+model PriceHistory {
+  id              Int           @id @default(autoincrement())
+  price           Float
+  currency        String        @default("EUR")
+  createdAt       DateTime      @default(now())
+  
+  // Relación con el Item
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  inventoryItemId Int
+  
+  @@map("price_history") 
+  @@index([inventoryItemId])
+  @@index([createdAt])
 }
 
 // NUEVO MODELO: Almacena la URL o ruta de una imagen adjunta a un InventoryItem
@@ -325,7 +348,8 @@ model AssetTypeImage {
 // Modelo para los préstamos de artículos
 model Loan {
   id                  Int       @id @default(autoincrement())
-  
+  userId              Int       @map("user_id")
+  user                User      @relation(fields: [userId], references: [id])
   // Relación con Container (Muchos a Uno)
   containerId         Int       @map("container_id")
   container           Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
@@ -348,6 +372,7 @@ model Loan {
   
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
+
   
   @@map("loan")
 }

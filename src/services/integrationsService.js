@@ -2,6 +2,7 @@ const prisma = require("../middleware/prisma");
 const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
+const axios = require("axios");
 
 class IntegrationService {
   /**
@@ -45,6 +46,79 @@ class IntegrationService {
             message: "Conexión con Gemini establecida correctamente",
           };
         }
+        case "upcitemdb": {
+          const isProTest = !!(
+            config &&
+            config.apiKey &&
+            config.apiKey.trim() !== ""
+          );
+          const testURL = isProTest
+            ? "https://api.upcitemdb.com/prod/v1/lookup"
+            : "https://api.upcitemdb.com/prod/trial/lookup";
+
+          console.log(
+            `🚀 Iniciando test UPC (${isProTest ? "PRO" : "FREE"}). URL: ${testURL}`,
+          );
+
+          try {
+            const response = await axios.post(
+              testURL,
+              { upc: "4002293401102" },
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  Accept: "application/json",
+                  "Accept-Encoding": "gzip",
+                  ...(isProTest && {
+                    user_key: config.apiKey,
+                    key_type: "3scale",
+                  }),
+                },
+                timeout: 5000,
+              },
+            );
+
+            // ✅ Si llega aquí, es un 200 OK
+            console.log("✅ Respuesta de UPCitemdb:", response.data);
+
+            return {
+              success: true,
+              message: isProTest
+                ? "Conexión PRO establecida correctamente"
+                : "Conexión modo FREE (Trial) disponible",
+            };
+          } catch (error) {
+            // ❌ LOG DE ERROR PARA LA CONSOLA DEL BACKEND
+            console.error("❌ Error detectado en UPC Service:");
+            if (error.response) {
+              // El servidor respondió con un código fuera de 2xx
+              console.error("Status:", error.response.status);
+              console.error("Data:", JSON.stringify(error.response.data));
+            } else if (error.request) {
+              // La petición se hizo pero no hubo respuesta (CORS, Red, etc)
+              console.error(
+                "No hubo respuesta del servidor (Posible Timeout/Red)",
+              );
+            } else {
+              console.error("Mensaje:", error.message);
+            }
+
+            // Lógica de errores existente...
+            if (error.response?.status === 401)
+              throw new Error("La API Key proporcionada no es válida.");
+            if (error.response?.status === 429) {
+              return {
+                success: isProTest,
+                message: "Límite de peticiones alcanzado (Rate Limit).",
+              };
+            }
+
+            throw new Error(
+              "Error de conexión: " +
+                (error.response?.data?.message || error.message),
+            );
+          }
+        }
 
         default:
           return {
@@ -63,6 +137,38 @@ class IntegrationService {
         msg = "Permisos insuficientes para Gemini";
 
       return { success: false, message: msg };
+    }
+  }
+
+  /**
+   * Obtiene la API Key de Gemini ya desencriptada para uso interno
+   * @param {number|string} userId
+   * @returns {Promise<{apiKey: string, model: string}|null>}
+   */
+  async getGeminiApiKey(userId) {
+    try {
+      // 1. Buscamos el registro en la base de datos
+      const record = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId: parseInt(userId), type: "gemini" } },
+      });
+
+      // 2. Si no existe o no está activa, devolvemos null
+      if (!record || !record.isActive || !record.config?.data) {
+        return null;
+      }
+
+      // 3. DESENCRIPTAMOS MANUALMENTE (Igual que haces en getConfig)
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+
+      // 4. Devolvemos solo lo necesario para la IA
+      return {
+        apiKey: configObj.apiKey,
+        model: configObj.model || "gemini-3-flash-preview",
+      };
+    } catch (e) {
+      console.error("❌ Error obtaining/decrypting Gemini API Key:", e.message);
+      return null;
     }
   }
 
@@ -105,11 +211,10 @@ class IntegrationService {
     // 2. DESCIFRAMOS MANUALMENTE AQUÍ
     try {
       const decrypted = decrypt(record.config.data);
-      console.log("🔐 Config descifrada:", decrypted);
       record.config = JSON.parse(decrypted);
       return new IntegrationDTO(record);
     } catch (e) {
-      console.error("Error descifrando integración:", e.message);
+      console.error("Error decrypting config:", e.message);
       return null;
     }
   }
@@ -138,6 +243,45 @@ class IntegrationService {
       where: { userId_type: { userId: parseInt(userId), type: type } },
       data: { isActive: false },
     });
+  }
+
+  /**
+   * Obtiene la configuración de UPCitemdb ya desencriptada para uso interno
+   * @param {number|string} userId
+   * @returns {Promise<{apiKey: string}|null>}
+   */
+  async getUpcApiKey(userId) {
+    try {
+      // 1. Buscamos el registro en la base de datos para el tipo 'upcitemdb'
+      const record = await prisma.userIntegration.findUnique({
+        where: {
+          userId_type: {
+            userId: parseInt(userId),
+            type: "upcitemdb",
+          },
+        },
+      });
+
+      // 2. Si no existe, no está activa o no tiene datos, devolvemos null
+      if (!record || !record.isActive || !record.config?.data) {
+        return null;
+      }
+
+      // 3. DESENCRIPTAMOS MANUALMENTE usando tu utilidad de crypto
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+
+      // 4. Devolvemos la API Key (y cualquier otro parámetro de config si existiera)
+      return {
+        apiKey: configObj.apiKey,
+      };
+    } catch (e) {
+      console.error(
+        "❌ Error obtaining/decrypting UPCitemdb API Key:",
+        e.message,
+      );
+      return null;
+    }
   }
 }
 
