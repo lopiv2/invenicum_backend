@@ -897,61 +897,64 @@ class InventoryItemService {
 
     // 3. Transacción para asegurar la integridad de los datos
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // 📅 Definimos el inicio del día actual (00:00:00)
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+  // 📅 Definimos el rango exacto de HOY
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
-      // 🔍 Buscamos si ya existe algún registro de historial para HOY
-      const existingEntryToday = await tx.priceHistory.findFirst({
-        where: {
-          inventoryItemId: item.id,
-          createdAt: {
-            gte: startOfToday,
-          },
-        },
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  // 🔍 Buscamos si existe un registro estrictamente DENTRO de hoy
+  const existingEntryToday = await tx.priceHistory.findFirst({
+    where: {
+      inventoryItemId: item.id,
+      createdAt: {
+        gte: startOfToday,
+        lte: endOfToday, // 🛡️ Evita que encuentre registros de días futuros
+      },
+    },
+  });
+
+  if (existingEntryToday) {
+    // 🔄 MISMO DÍA: Actualizar solo si el precio cambió
+    if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
+      await tx.priceHistory.update({
+        where: { id: existingEntryToday.id },
+        data: { price: newPrice },
       });
-
-      if (existingEntryToday) {
-        // 🔄 MISMO DÍA:
-        // Si el precio es diferente, actualizamos el registro existente
-        if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
-          await tx.priceHistory.update({
-            where: { id: existingEntryToday.id },
-            data: { price: newPrice },
-          });
-        }
-        // Si el precio es igual, no hacemos nada (cumple tu regla)
-      } else {
-        // ✨ DÍA DIFERENTE:
-        // No hay registro hoy, así que creamos uno nuevo obligatoriamente
-        await tx.priceHistory.create({
-          data: {
-            price: newPrice,
-            inventoryItem: {
-              connect: { id: item.id },
-            },
-          },
-        });
-      }
-
-      // B. Actualizar el valor actual y metadatos en el Item principal
-      return await tx.inventoryItem.update({
-        where: { id: item.id },
-        data: {
-          marketValue: newPrice,
-          currency: marketData.currency || "EUR",
-          lastPriceUpdate: new Date(),
+    }
+  } else {
+    // ✨ DÍA DIFERENTE: Crear registro nuevo para hoy
+    await tx.priceHistory.create({
+      data: {
+        price: newPrice,
+        inventoryItem: {
+          connect: { id: item.id },
         },
-        include: {
-          images: { orderBy: { order: "asc" } },
-          location: true,
-          priceHistory: {
-            // Devolvemos los puntos para que la gráfica de Flutter se refresque
-            orderBy: { createdAt: "asc" },
-            take: 30,
-          },
-        },
-      });
+        // Forzamos la fecha a hoy por seguridad
+        createdAt: new Date(), 
+      },
+    });
+  }
+
+  // B. Actualizar el item principal con la media y los rangos
+  return await tx.inventoryItem.update({
+    where: { id: item.id },
+    data: {
+      marketValue: newPrice,
+      // Guardamos también los rangos que vienen de UPC por si quieres usarlos en la UI
+      currency: marketData.currency || "EUR",
+      lastPriceUpdate: new Date(),
+    },
+    include: {
+      images: { orderBy: { order: "asc" } },
+      location: true,
+      priceHistory: {
+        orderBy: { createdAt: "asc" },
+        take: 30,
+      },
+    },
+  });
     });
 
     // 4. Devolver mediante DTO para actualización instantánea en la App
