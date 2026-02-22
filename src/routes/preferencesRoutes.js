@@ -13,6 +13,13 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
+router.use((req, res, next) => {
+  console.log(
+    `[DEBUG] Método: ${req.method} | Path solicitado: ${req.path} | Full URL: ${req.originalUrl}`,
+  );
+  next();
+});
+
 // PATCH /api/v1/preferences/ai-status
 router.patch("/ai-status", verifyToken, async (req, res) => {
   try {
@@ -97,6 +104,36 @@ router.put("/language", verifyToken, async (req, res) => {
       req.user.id,
       language,
     );
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.put("/currency", verifyToken, async (req, res) => {
+  try {
+    const { currency } = req.body;
+
+    if (!currency) {
+      return res.status(400).json({
+        success: false,
+        message: "El campo 'currency' es requerido",
+      });
+    }
+
+    // Validación de longitud básica (ej: 'EUR', 'USD')
+    if (currency.length !== 3) {
+      return res.status(400).json({
+        success: false,
+        message: "Formato de moneda inválido (deben ser 3 caracteres)",
+      });
+    }
+
+    const result = await preferencesService.updateCurrency(
+      req.user.id,
+      currency.toUpperCase(), // Lo guardamos siempre en mayúsculas
+    );
+
     res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

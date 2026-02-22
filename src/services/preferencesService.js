@@ -1,5 +1,7 @@
 const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
+const currencyService = require("../services/currencyService");
+
 
 class PreferencesService {
   /**
@@ -11,8 +13,17 @@ class PreferencesService {
         where: { userId: parseInt(userId) },
       });
 
-      // Retornamos siempre una instancia del DTO (manejando el caso null internamente)
-      return new UserPreferencesDTO(preferences).toJSON();
+      // 1. Obtenemos las preferencias limpias del DTO
+      const prefsData = new UserPreferencesDTO(preferences).toJSON();
+
+      // 2. Obtenemos los tipos de cambio actuales
+      const rates = await currencyService.getLatestRates();
+
+      // 3. Devolvemos todo junto
+      return {
+        ...prefsData,
+        exchangeRates: rates, // Flutter usará esto para multiplicar los marketValue
+      };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
       throw new Error("Error al obtener las preferencias");
@@ -56,6 +67,10 @@ class PreferencesService {
    */
   async updateLanguage(userId, languageCode) {
     return this.updatePreferences(userId, { language: languageCode });
+  }
+
+  async updateCurrency(userId, currencyCode) {
+    return this.updatePreferences(userId, { currency: currencyCode });
   }
 
   async updateAiEnabled(userId, enabled) {

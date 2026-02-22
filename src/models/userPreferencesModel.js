@@ -3,34 +3,27 @@ class UserPreferencesDTO {
    * @param {Object} prismaPreferences - El objeto crudo que devuelve Prisma
    */
   constructor(prismaPreferences) {
-    // Si por alguna razón no hay preferencias (usuario recién creado sin ellas),
-    // inicializamos valores por defecto seguros.
     const prefs = prismaPreferences || {};
 
-    // 1. ID único de la preferencia
     this.id = prefs.id ? parseInt(prefs.id) : null;
-
-    // 2. Idioma: Mantenemos el 'es' por defecto del schema
     this.language = prefs.language || "es";
+    
+    // 🔑 1. Aseguramos la moneda (coincidiendo con el default del schema)
+    this.currency = prefs.currency || "EUR";
 
-    // 3. AI Enabled: Este es el booleano que controla el Switch de Flutter
-    // Forzamos a booleano real por seguridad
     this.aiEnabled =
       prefs.aiEnabled !== undefined ? Boolean(prefs.aiEnabled) : true;
 
-    // 4. Fechas de auditoría (opcionales para el frontend, pero útiles)
     this.createdAt = prefs.createdAt || null;
     this.updatedAt = prefs.updatedAt || null;
-
-    // 5. Relación con el usuario
     this.userId = prefs.userId ? parseInt(prefs.userId) : null;
   }
 
   static toPrismaData(data) {
     const prismaData = {};
 
-    // Lista de campos que permitimos actualizar
-    const allowedFields = ["language", "aiEnabled"];
+    // 🔑 2. Añadimos 'currency' a la lista de campos permitidos para Prisma
+    const allowedFields = ["language", "aiEnabled", "currency"];
 
     allowedFields.forEach((field) => {
       if (data[field] !== undefined) {
@@ -48,6 +41,8 @@ class UserPreferencesDTO {
     return {
       id: this.id,
       language: this.language,
+      // 🔑 3. IMPORTANTE: Si no lo añades aquí, Flutter nunca recibirá el campo
+      currency: this.currency, 
       aiEnabled: this.aiEnabled,
       updatedAt: this.updatedAt,
       userId: this.userId,
@@ -56,12 +51,15 @@ class UserPreferencesDTO {
 
   /**
    * Método estático para validar y limpiar los datos que vienen DE Flutter
-   * Útil para el endpoint PUT /preferences
    */
   static fromRequest(body) {
     const validData = {};
 
     if (body.language !== undefined) validData.language = String(body.language);
+    
+    // 🔑 4. Validamos la moneda que viene de la App
+    if (body.currency !== undefined) validData.currency = String(body.currency);
+    
     if (body.aiEnabled !== undefined)
       validData.aiEnabled = Boolean(body.aiEnabled);
 

@@ -90,6 +90,7 @@ model CustomTheme {
 model UserPreferences {
   id              Int      @id @default(autoincrement())
   language        String   @default("es")   // Código de idioma (es, en, etc.)
+  currency        String   @default("USD")
   aiEnabled       Boolean  @default(true) @map("ai_enabled")
   createdAt       DateTime @default(now())  @map("created_at")
   updatedAt       DateTime @updatedAt       @map("updated_at")
