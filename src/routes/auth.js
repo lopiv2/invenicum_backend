@@ -211,6 +211,44 @@ router.get("/me", verifyToken, async (req, res) => {
   }
 });
 
+// --- RUTA CAMBIO DE CONTRASEÑA ---
+router.post("/change-password", verifyToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.userId || req.user.id;
+
+    // Validación básica de entrada
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Ambas contraseñas son requeridas",
+      });
+    }
+
+    // Llamamos al servicio
+    const result = await userService.changePassword(userId, {
+      currentPassword,
+      newPassword,
+    });
+
+    if (!result.success) {
+      // Si la contraseña actual no coincide, el servicio devolverá success: false
+      return res.status(401).json(result);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Contraseña actualizada correctamente",
+    });
+  } catch (error) {
+    console.error("[ERROR][CHANGE-PASSWORD]:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al cambiar la contraseña",
+    });
+  }
+});
+
 // Ruta para cerrar sesión
 router.post("/logout", (req, res) => {
   // Aquí iría la lógica para invalidar el token si estás usando JWT

@@ -24,6 +24,8 @@ const pluginRoutes = require("./routes/pluginRoutes");
 const integrationRoutes = require("./routes/integrationsRoutes");
 const ebayRoutes = require("./routes/ebayRoutes");
 const upcMarketRoutes = require("./routes/upcMarketRoutes");
+const templateRoutes = require("./routes/templateRoutes");
+
 
 
 
@@ -119,6 +121,7 @@ app.use(API_BASE_PATH + "/plugins", pluginRoutes);
 app.use(API_BASE_PATH + "/integrations", integrationRoutes);
 app.use(API_BASE_PATH + "/ebay", ebayRoutes);
 app.use(API_BASE_PATH + "/market", upcMarketRoutes);
+app.use(API_BASE_PATH + "/templates", templateRoutes);
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR

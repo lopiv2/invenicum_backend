@@ -220,12 +220,7 @@ class UserService {
     }
   }
 
-
-
-
-
   // userService.js
-
 
   async updateGitHubIdentity(userId, githubData) {
     const linkedAt = new Date();
@@ -285,6 +280,43 @@ class UserService {
         success: false,
         message: "Error interno al procesar la vinculación con GitHub",
       };
+    }
+  }
+
+  async changePassword(userId, { currentPassword, newPassword }) {
+    try {
+      // 1. Buscar al usuario en la base de datos
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        return { success: false, message: "Usuario no encontrado" };
+      }
+
+      // 2. Verificar si la contraseña actual es correcta
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return {
+          success: false,
+          message: "La contraseña actual es incorrecta",
+        };
+      }
+
+      // 3. Encriptar la nueva contraseña
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      // 4. Actualizar en la base de datos
+      await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword },
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error("Error en userService.changePassword:", error);
+      throw error;
     }
   }
 }

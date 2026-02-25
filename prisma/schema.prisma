@@ -32,6 +32,8 @@ model User {
   // Plugins creados por este usuario
   createdPlugins  Plugin[] @relation("PluginAuthor")
   plugins         UserPlugin[]
+  createdTemplates AssetTemplate[] @relation("TemplateCreator")
+  savedTemplates   UserTemplate[]
 }
 
 // ============================================
@@ -400,4 +402,55 @@ model Alert {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("alert")
+}
+
+// ============================================
+// SISTEMA DE PLANTILLAS (MARKETPLACE)
+// ============================================
+
+model AssetTemplate {
+  id              String   @id @default(uuid())
+  name            String
+  description     String   @db.Text
+  category        String
+  tags            Json?    // ["retro", "tecnología"]
+  
+  authorName      String   @map("author_name")
+  authorAvatarUrl String?  @map("author_avatar_url") @db.Text
+  
+  // Estructura de campos (CustomFieldDefinition[])
+  fields          Json     
+  downloadUrl     String?
+  version         Float    @default(1.0)
+  isOfficial      Boolean  @default(false) @map("is_official")
+  isPublic        Boolean  @default(true) @map("is_public")
+  
+  // Relación con el creador original
+  creatorId       Int?     @map("creator_id")
+  creator         User?    @relation("TemplateCreator", fields: [creatorId], references: [id])
+
+  // Usuarios que han guardado/instalado esta plantilla
+  users           UserTemplate[]
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("asset_template")
+}
+
+model UserTemplate {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  templateId      String   @map("template_id")
+  
+  // Permite al usuario renombrar su copia local si quiere
+  customName      String?  @map("custom_name") 
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template        AssetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, templateId]) // Un usuario no guarda la misma plantilla dos veces
+  @@map("user_template")
 }

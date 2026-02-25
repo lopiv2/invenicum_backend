@@ -1,7 +1,6 @@
 const prisma = require("../middleware/prisma");
 const axios = require("axios");
 const { Octokit } = require("@octokit/rest");
-const { decrypt } = require("../middleware/cryptoUtils");
 require("dotenv").config();
 
 class PluginService {

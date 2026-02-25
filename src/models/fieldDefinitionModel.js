@@ -1,22 +1,40 @@
+// En tu backend: src/models/fieldDefinitionModel.js
+
 class FieldDefinitionDTO {
-  constructor(prismaField) {
-    this.id = parseInt(prismaField.id);
-    this.name = prismaField.name;
-    this.type = prismaField.type;
-    this.isRequired = !!prismaField.isRequired;
-    this.isSummable = !!prismaField.isSummable;
-    this.isCountable = !!prismaField.isCountable;
-    this.isMonetary = !!prismaField.isMonetary;
-    this.dataListId = prismaField.dataListId ? parseInt(prismaField.dataListId) : null;
+  constructor(data) {
+    this.id = data.id ? parseInt(data.id) : null;
+    this.name = data.name || "";
+    this.type = data.type || "text";
     
-    // Si tienes un ID del AssetType al que pertenece
-    if (prismaField.assetTypeId) {
-      this.assetTypeId = parseInt(prismaField.assetTypeId);
-    }
+    // 🚩 CAMBIO: Usar camelCase para que coincida con tu Flutter factory
+    this.isRequired = !!(data.isRequired || data.is_required);
+    this.isSummable = !!(data.isSummable || data.is_summable);
+    this.isCountable = !!(data.isCountable || data.is_countable);
+    this.isMonetary = !!(data.isMonetary || data.is_monetary);
+    
+    this.dataListId = data.dataListId || data.data_list_id || null;
+    this.options = data.options || null;
   }
 
   static fromList(list) {
-    return (list || []).map(item => new FieldDefinitionDTO(item));
+    if (!list) return [];
+    const safeList = Array.isArray(list) ? list : [list];
+    return safeList.map(item => new FieldDefinitionDTO(item));
+  }
+
+  // Este método es el que genera el JSON que recibe Flutter
+  toJSON() {
+    return {
+      id: this.id,
+      name: this.name,
+      type: this.type,
+      isRequired: this.isRequired, // 👈 Sincronizado
+      isSummable: this.isSummable, // 👈 Sincronizado
+      isCountable: this.isCountable,
+      isMonetary: this.isMonetary,
+      dataListId: this.dataListId,
+      options: this.options
+    };
   }
 }
 
