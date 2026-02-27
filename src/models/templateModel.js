@@ -17,8 +17,7 @@ class AssetTemplateDTO {
     // Campos procesados por su propio DTO
     this.fields = FieldDefinitionDTO.fromList(data.fields || []);
 
-    // 🚩 FIX: Aseguramos capturar el valor booleano correctamente
-    // Buscamos en todas las variantes posibles que puedan venir de DB o GitHub
+    this.downloadCount = data.downloadCount || 0;
     this.isOfficial = !!(data.isOfficial === true || data.is_official === true);
     this.isPublic = !!(data.isPublic === true || data.is_public === true);
 
@@ -49,6 +48,7 @@ class AssetTemplateDTO {
       isPublic: this.isPublic,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
+      downloadCount: this.downloadCount,
     };
   }
 }

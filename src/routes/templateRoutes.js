@@ -17,6 +17,21 @@ router.get("/market", verifyToken, async (req, res) => {
   }
 });
 
+// Ruta para registrar la descarga/instalación
+router.post("/:id/download", verifyToken, async (req, res) => {
+  try {
+    const templateId = req.params.id;
+
+    // Ejecutamos el incremento (puedes no usar 'await' si quieres que la
+    // respuesta al front sea instantánea sin esperar a GitHub)
+    templateService.incrementDownloadCount(templateId);
+
+    res.json({ success: true, message: "Contador de descarga actualizado" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // POST: Publicar una nueva plantilla en el Market
 router.post("/publish", verifyToken, async (req, res) => {
   try {

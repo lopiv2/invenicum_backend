@@ -9,8 +9,45 @@ class IntegrationService {
    * Realiza una prueba de conexión sin guardar datos
    */
   async testConnection(type, config) {
+    console.log("Recibida petición de test:");
+    console.log("Tipo:", type);   // Mira qué imprime aquí (ej: 'telegram' o 'telegram_bot')
+    console.log("Config:", config);
     try {
       switch (type) {
+        case "telegram": {
+          if (!config.botToken || !config.chatId) {
+            throw new Error("Token del Bot y Chat ID son requeridos");
+          }
+
+          try {
+            // Probamos llamando al método getMe de Telegram para validar el token
+            const response = await axios.get(
+              `https://api.telegram.org/bot${config.botToken}/getMe`,
+            );
+
+            if (response.data.ok) {
+              // Si el token es válido, intentamos enviar un mensaje de prueba
+              await axios.post(
+                `https://api.telegram.org/bot${config.botToken}/sendMessage`,
+                {
+                  chat_id: config.chatId,
+                  text: "✅ *Invenicum:* Prueba de conexión exitosa",
+                  parse_mode: "Markdown",
+                },
+              );
+
+              return {
+                success: true,
+                message: `Conectado como @${response.data.result.username}`,
+              };
+            }
+          } catch (error) {
+            const errorMsg =
+              error.response?.data?.description ||
+              "Token no válido o Chat ID incorrecto";
+            throw new Error(errorMsg);
+          }
+        }
         case "gemini": {
           if (!config.apiKey) throw new Error("API Key requerida");
 
@@ -137,6 +174,30 @@ class IntegrationService {
         msg = "Permisos insuficientes para Gemini";
 
       return { success: false, message: msg };
+    }
+  }
+
+  /**
+   * Obtiene la config de Telegram desencriptada
+   */
+  async getTelegramConfig(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId: parseInt(userId), type: "telegram" } },
+      });
+
+      if (!record || !record.isActive || !record.config?.data) return null;
+
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+
+      return {
+        botToken: configObj.botToken,
+        chatId: configObj.chatId,
+      };
+    } catch (e) {
+      console.error("❌ Error al obtener config de Telegram:", e.message);
+      return null;
     }
   }
 

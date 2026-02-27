@@ -396,6 +396,11 @@ model Alert {
   type      String   @default("info") // 'info', 'warning', 'critical', 'stock_low'
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
+  // --- NUEVOS CAMPOS PARA NOTIFICACIONES/CALENDARIO ---
+  isEvent     Boolean  @default(false) @map("is_event") // Diferencia alerta de notificación
+  scheduledAt DateTime? @map("scheduled_at")             // Fecha del evento
+  notifyAt    DateTime? @map("notify_at")    // Fecha exacta del aviso
+  endDate     DateTime? @map("end_date")
   
   // Relación con el usuario para que cada uno vea solo sus alertas
   userId    Int      @map("user_id")
@@ -414,7 +419,7 @@ model AssetTemplate {
   description     String   @db.Text
   category        String
   tags            Json?    // ["retro", "tecnología"]
-  
+  downloadCount   Int      @default(0)
   authorName      String   @map("author_name")
   authorAvatarUrl String?  @map("author_avatar_url") @db.Text
   
