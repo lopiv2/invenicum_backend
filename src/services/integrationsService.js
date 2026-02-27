@@ -3,6 +3,8 @@ const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
 const axios = require("axios");
+const {Resend} = require("resend");
+
 
 class IntegrationService {
   /**
@@ -10,10 +12,42 @@ class IntegrationService {
    */
   async testConnection(type, config) {
     console.log("Recibida petición de test:");
-    console.log("Tipo:", type);   // Mira qué imprime aquí (ej: 'telegram' o 'telegram_bot')
+    console.log("Tipo:", type); // Mira qué imprime aquí (ej: 'telegram' o 'telegram_bot')
     console.log("Config:", config);
+    console.log(type);
     try {
       switch (type) {
+        case "email": {
+          const { apiKey, fromEmail } = config;
+          const resend = new Resend(apiKey);
+          
+          try {
+            console.log("Intentando enviar mail con Resend...");
+
+            const response = await resend.emails.send({
+              from: fromEmail,
+              to: "lopiv2@gmail.com", // Pon tu mail real aquí para el test
+              subject: "✅ Invenicum: Test de Conexión",
+              html: "<p>Si lees esto, la configuración es correcta.</p>",
+            });
+
+            if (response.error) {
+              console.error("Detalle error Resend:", response.error);
+              // Esto nos dirá si es 'Unauthorized', 'Invalid Sender', etc.
+              throw new Error(response.error.message);
+            }
+
+            return {
+              success: true,
+              message: "¡Correo enviado! Revisa lopiv2@gmail.com",
+            };
+          } catch (error) {
+            console.error("Error capturado:", error);
+            throw new Error(
+              error.message || "Error de red al conectar con Resend",
+            );
+          }
+        }
         case "telegram": {
           if (!config.botToken || !config.chatId) {
             throw new Error("Token del Bot y Chat ID son requeridos");
@@ -174,6 +208,30 @@ class IntegrationService {
         msg = "Permisos insuficientes para Gemini";
 
       return { success: false, message: msg };
+    }
+  }
+
+  /**
+   * Obtiene la config de Resend desencriptada para uso interno
+   */
+  async getResendConfig(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId: parseInt(userId), type: "resend" } },
+      });
+
+      if (!record || !record.isActive || !record.config?.data) return null;
+
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+
+      return {
+        apiKey: configObj.apiKey,
+        fromEmail: configObj.fromEmail,
+      };
+    } catch (e) {
+      console.error("❌ Error al obtener config de Resend:", e.message);
+      return null;
     }
   }
 
