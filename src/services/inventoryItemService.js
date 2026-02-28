@@ -4,6 +4,7 @@ const upcService = require("../services/upcService");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
+const alertService = require("./alertService");
 
 // 💡 Ruta Absoluta donde se guardan los archivos
 // Asumimos que la carpeta 'uploads/inventory' está un nivel por encima del archivo de servicio
@@ -492,7 +493,7 @@ class InventoryItemService {
     });
   }
 
-  async updateItem(id, data) {
+  async updateItem(id, data, userId) {
     // 1. DESESTRUCTURACIÓN DINÁMICA
     const {
       imageIdsToDelete,
@@ -639,6 +640,10 @@ class InventoryItemService {
     });
 
     if (!finalItem) throw new Error("Item not found after update.");
+
+    // E. Alerta de Stock Bajo
+
+    await alertService.checkAndNotifyLowStock(userId, finalItem);
 
     // Retornamos la instancia del DTO
     return new InventoryItemDTO(finalItem).toJSON();
@@ -897,64 +902,64 @@ class InventoryItemService {
 
     // 3. Transacción para asegurar la integridad de los datos
     const updatedItem = await prisma.$transaction(async (tx) => {
-  // 📅 Definimos el rango exacto de HOY
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+      // 📅 Definimos el rango exacto de HOY
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
 
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
 
-  // 🔍 Buscamos si existe un registro estrictamente DENTRO de hoy
-  const existingEntryToday = await tx.priceHistory.findFirst({
-    where: {
-      inventoryItemId: item.id,
-      createdAt: {
-        gte: startOfToday,
-        lte: endOfToday, // 🛡️ Evita que encuentre registros de días futuros
-      },
-    },
-  });
-
-  if (existingEntryToday) {
-    // 🔄 MISMO DÍA: Actualizar solo si el precio cambió
-    if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
-      await tx.priceHistory.update({
-        where: { id: existingEntryToday.id },
-        data: { price: newPrice },
-      });
-    }
-  } else {
-    // ✨ DÍA DIFERENTE: Crear registro nuevo para hoy
-    await tx.priceHistory.create({
-      data: {
-        price: newPrice,
-        inventoryItem: {
-          connect: { id: item.id },
+      // 🔍 Buscamos si existe un registro estrictamente DENTRO de hoy
+      const existingEntryToday = await tx.priceHistory.findFirst({
+        where: {
+          inventoryItemId: item.id,
+          createdAt: {
+            gte: startOfToday,
+            lte: endOfToday, // 🛡️ Evita que encuentre registros de días futuros
+          },
         },
-        // Forzamos la fecha a hoy por seguridad
-        createdAt: new Date(), 
-      },
-    });
-  }
+      });
 
-  // B. Actualizar el item principal con la media y los rangos
-  return await tx.inventoryItem.update({
-    where: { id: item.id },
-    data: {
-      marketValue: newPrice,
-      // Guardamos también los rangos que vienen de UPC por si quieres usarlos en la UI
-      currency: marketData.currency || "EUR",
-      lastPriceUpdate: new Date(),
-    },
-    include: {
-      images: { orderBy: { order: "asc" } },
-      location: true,
-      priceHistory: {
-        orderBy: { createdAt: "asc" },
-        take: 30,
-      },
-    },
-  });
+      if (existingEntryToday) {
+        // 🔄 MISMO DÍA: Actualizar solo si el precio cambió
+        if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
+          await tx.priceHistory.update({
+            where: { id: existingEntryToday.id },
+            data: { price: newPrice },
+          });
+        }
+      } else {
+        // ✨ DÍA DIFERENTE: Crear registro nuevo para hoy
+        await tx.priceHistory.create({
+          data: {
+            price: newPrice,
+            inventoryItem: {
+              connect: { id: item.id },
+            },
+            // Forzamos la fecha a hoy por seguridad
+            createdAt: new Date(),
+          },
+        });
+      }
+
+      // B. Actualizar el item principal con la media y los rangos
+      return await tx.inventoryItem.update({
+        where: { id: item.id },
+        data: {
+          marketValue: newPrice,
+          // Guardamos también los rangos que vienen de UPC por si quieres usarlos en la UI
+          currency: marketData.currency || "EUR",
+          lastPriceUpdate: new Date(),
+        },
+        include: {
+          images: { orderBy: { order: "asc" } },
+          location: true,
+          priceHistory: {
+            orderBy: { createdAt: "asc" },
+            take: 30,
+          },
+        },
+      });
     });
 
     // 4. Devolver mediante DTO para actualización instantánea en la App

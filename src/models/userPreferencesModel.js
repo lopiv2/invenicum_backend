@@ -1,69 +1,68 @@
 class UserPreferencesDTO {
-  /**
-   * @param {Object} prismaPreferences - El objeto crudo que devuelve Prisma
-   */
   constructor(prismaPreferences) {
     const prefs = prismaPreferences || {};
-
-    this.id = prefs.id ? parseInt(prefs.id) : null;
-    this.language = prefs.language || "es";
     
-    // 🔑 1. Aseguramos la moneda (coincidiendo con el default del schema)
-    this.currency = prefs.currency || "EUR";
+    this.language = prefs.language || "es";
+    this.currency = prefs.currency || "USD";
+    this.aiEnabled = prefs.aiEnabled ?? true;
 
-    this.aiEnabled =
-      prefs.aiEnabled !== undefined ? Boolean(prefs.aiEnabled) : true;
-
-    this.createdAt = prefs.createdAt || null;
-    this.updatedAt = prefs.updatedAt || null;
-    this.userId = prefs.userId ? parseInt(prefs.userId) : null;
-  }
-
-  static toPrismaData(data) {
-    const prismaData = {};
-
-    // 🔑 2. Añadimos 'currency' a la lista de campos permitidos para Prisma
-    const allowedFields = ["language", "aiEnabled", "currency"];
-
-    allowedFields.forEach((field) => {
-      if (data[field] !== undefined) {
-        prismaData[field] = data[field];
-      }
-    });
-
-    return prismaData;
-  }
-
-  /**
-   * Limpia el objeto para enviarlo a la App
-   */
-  toJSON() {
-    return {
-      id: this.id,
-      language: this.language,
-      // 🔑 3. IMPORTANTE: Si no lo añades aquí, Flutter nunca recibirá el campo
-      currency: this.currency, 
-      aiEnabled: this.aiEnabled,
-      updatedAt: this.updatedAt,
-      userId: this.userId,
+    // 🔔 Construimos el objeto "notifications" para Flutter
+    this.notifications = {
+      // 🔄 CONVERSIÓN: De "telegram,email" (DB) a ["telegram", "email"] (Flutter)
+      channelOrder: typeof prefs.channelOrder === 'string' 
+        ? prefs.channelOrder.split(',') 
+        : ["telegram", "email"],
+      
+      alertStockLow: prefs.alertStockLow ?? true,
+      alertPreSales: prefs.alertPreSales ?? true,
+      alertLoanReminders: prefs.alertLoanReminders ?? true,
+      alertOverdueLoans: prefs.alertOverdueLoans ?? true,
+      alertMaintenance: prefs.alertMaintenance ?? false,
+      alertPriceChange: prefs.alertPriceChange ?? false,
     };
   }
 
   /**
-   * Método estático para validar y limpiar los datos que vienen DE Flutter
+   * 🚀 Prepara los datos para Prisma (Mapeo Flutter -> Database)
    */
-  static fromRequest(body) {
-    const validData = {};
-
-    if (body.language !== undefined) validData.language = String(body.language);
+  static toPrismaData(body) {
+    const prismaData = {};
     
-    // 🔑 4. Validamos la moneda que viene de la App
-    if (body.currency !== undefined) validData.currency = String(body.currency);
-    
-    if (body.aiEnabled !== undefined)
-      validData.aiEnabled = Boolean(body.aiEnabled);
+    // Campos de primer nivel
+    if (body.language) prismaData.language = body.language;
+    if (body.currency) prismaData.currency = body.currency;
+    if (body.aiEnabled !== undefined) prismaData.aiEnabled = body.aiEnabled;
 
-    return validData;
+    // Campos anidados de notificaciones
+    if (body.notifications) {
+      const n = body.notifications;
+      
+      // Alertas booleanas
+      if (n.alertStockLow !== undefined) prismaData.alertStockLow = n.alertStockLow;
+      if (n.alertPreSales !== undefined) prismaData.alertPreSales = n.alertPreSales;
+      if (n.alertLoanReminders !== undefined) prismaData.alertLoanReminders = n.alertLoanReminders;
+      if (n.alertOverdueLoans !== undefined) prismaData.alertOverdueLoans = n.alertOverdueLoans;
+      if (n.alertMaintenance !== undefined) prismaData.alertMaintenance = n.alertMaintenance;
+      if (n.alertPriceChange !== undefined) prismaData.alertPriceChange = n.alertPriceChange;
+
+      // 🔄 CONVERSIÓN: De ["telegram", "email"] (Flutter) a "telegram,email" (DB)
+      if (n.channelOrder) {
+        prismaData.channelOrder = Array.isArray(n.channelOrder) 
+          ? n.channelOrder.join(',') 
+          : n.channelOrder;
+      }
+    }
+
+    return prismaData;
+  }
+
+  toJSON() {
+    return {
+      language: this.language,
+      currency: this.currency,
+      aiEnabled: this.aiEnabled,
+      notifications: this.notifications,
+    };
   }
 }
 

@@ -2,7 +2,6 @@ const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
 const currencyService = require("../services/currencyService");
 
-
 class PreferencesService {
   /**
    * Obtiene las preferencias del usuario y las devuelve formateadas por el DTO
@@ -92,6 +91,13 @@ class PreferencesService {
         id: "desc", // Los más nuevos primero
       },
     });
+  }
+
+  /**
+   * 🔔 NUEVO: Actualiza las notificaciones (los 6 switches o el reorden de canales)
+   */
+  async updateNotificationSettings(userId, notificationData) {
+    return this.updatePreferences(userId, notificationData);
   }
 
   async updateThemePreference(userId, themeData) {

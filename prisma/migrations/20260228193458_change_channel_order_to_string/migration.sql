@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `user_preferences` ADD COLUMN `channel_order` VARCHAR(191) NOT NULL DEFAULT 'telegram,email';

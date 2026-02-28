@@ -139,13 +139,7 @@ class LoanService {
         });
 
         // C. Alerta de Stock Bajo
-        if (updatedItem.quantity <= (updatedItem.minStock || 1)) {
-          await alertService.createAlert(parseInt(userId), {
-            title: "⚠️ Stock Bajo",
-            message: `"${updatedItem.name}" bajó a ${updatedItem.quantity} unidades.`,
-            type: "warning",
-          });
-        }
+        await alertService.checkAndNotifyLowStock(userId, updatedItem);
 
         return loan;
       });

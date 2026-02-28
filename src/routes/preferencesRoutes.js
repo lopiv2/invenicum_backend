@@ -20,6 +20,32 @@ router.use((req, res, next) => {
   next();
 });
 
+// PUT /api/v1/preferences/notifications
+router.put("/notifications", verifyToken, async (req, res) => {
+  try {
+    // 1. Obtenemos el ID del usuario del token
+    const userId = req.user.id;
+
+    // 2. Llamamos al servicio (necesitaremos crear este método en preferencesService)
+    const result = await preferencesService.updateNotificationSettings(
+      userId,
+      req.body,
+    );
+
+    res.json({
+      success: true,
+      data: result,
+      message: "Configuración de notificaciones actualizada",
+    });
+  } catch (error) {
+    console.error("Error en PATCH /notifications:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al actualizar las notificaciones: " + error.message,
+    });
+  }
+});
+
 // PATCH /api/v1/preferences/ai-status
 router.patch("/ai-status", verifyToken, async (req, res) => {
   try {

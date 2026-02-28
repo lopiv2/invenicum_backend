@@ -96,6 +96,16 @@ model UserPreferences {
   aiEnabled       Boolean  @default(true) @map("ai_enabled")
   createdAt       DateTime @default(now())  @map("created_at")
   updatedAt       DateTime @updatedAt       @map("updated_at")
+  channelOrder    String  @default("telegram,email") @map("channel_order")
+  // --- CONFIGURACIÓN DE ALERTAS ---
+  alertStockLow       Boolean @default(true)  @map("alert_stock_low")     // Alerta de stock bajo
+  alertPreSales       Boolean @default(true)  @map("alert_pre_sales")    // Tu alerta de preventas
+  alertLoanReminders  Boolean @default(true)  @map("alert_loan_reminders") // Tu recordatorio de préstamos
+  
+  // --- NUEVAS PROPUESTAS ---
+  alertOverdueLoans   Boolean @default(true)  @map("alert_overdue_loans") // Préstamos ya vencidos
+  alertMaintenance    Boolean @default(false) @map("alert_maintenance")    // Mantenimiento preventivo
+  alertPriceChange    Boolean @default(false) @map("alert_price_change")   // Cambios bruscos de valor (Marketplace)
   
   userId          Int      @unique
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)

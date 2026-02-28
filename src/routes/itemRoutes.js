@@ -400,6 +400,7 @@ router.patch(
       const updatedItem = await inventoryItemService.updateItem(
         itemId,
         itemData,
+        userId,
       );
 
       // 5. RESPUESTA EXITOSA
