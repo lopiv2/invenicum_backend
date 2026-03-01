@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const aiService = require("../services/aiService");
+const templateService = require("../services/templateService");
 const verifyToken = require("../middleware/authMiddleware");
 
 // Middleware de logging igual al que tienes en otros archivos
@@ -10,6 +11,28 @@ router.use((req, res, next) => {
     `[AI-LOG] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`,
   );
   next();
+});
+
+router.post("/chat/save-template", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { templateData } = req.body; // El objeto 'data' generado por Gemini
+
+    // Usamos el ID generado o uno nuevo
+    const finalTemplate = {
+      id: `tpl_ai_${Date.now()}`,
+      ...templateData,
+      isOfficial: false,
+      author: "Veni AI",
+    };
+
+    // Guardamos directamente en la biblioteca del usuario
+    await templateService.saveTemplateToUser(userId, finalTemplate);
+
+    res.status(200).json({ success: true, message: "Plantilla guardada" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // POST /api/ai/chat/veni
@@ -63,7 +86,11 @@ router.post("/extract", verifyToken, async (req, res) => {
     ];
 
     // PASO CLAVE: Pasamos el userId al servicio para que él gestione la API Key
-    const result = await aiService.extractInfoFromUrl(url, targetFields, userId);
+    const result = await aiService.extractInfoFromUrl(
+      url,
+      targetFields,
+      userId,
+    );
 
     res.status(200).json({
       success: true,
@@ -73,11 +100,14 @@ router.post("/extract", verifyToken, async (req, res) => {
     console.error("❌ Error en Ruta AI:", error.message);
 
     // Si el error es específicamente por falta de configuración
-    if (error.message.includes("configuración") || error.message.includes("activa")) {
-        return res.status(404).json({
-            success: false,
-            message: error.message
-        });
+    if (
+      error.message.includes("configuración") ||
+      error.message.includes("activa")
+    ) {
+      return res.status(404).json({
+        success: false,
+        message: error.message,
+      });
     }
 
     // Manejo de cuota de Google (429)

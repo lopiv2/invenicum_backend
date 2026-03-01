@@ -9,7 +9,9 @@ class TemplateService {
   get _githubConfig() {
     return {
       owner: process.env.GITHUB_REPO_OWNER,
+      auth: process.env.GITHUB_TOKEN,
       repo: process.env.GITHUB_REPO_NAME,
+      templateRepoUrl: process.env.GITHUB_TEMPLATE_REPO,
     };
   }
 
@@ -18,55 +20,37 @@ class TemplateService {
    */
   async saveTemplateToUser(userId, templateData) {
     try {
-      const { id: templateId, isOfficial } = templateData;
+      const { id: templateId } = templateData;
 
-      let template = await prisma.assetTemplate.findUnique({
+      // Guardamos solo la relación.
+      // Si tu DB requiere que la plantilla exista, puedes hacer un upsert mínimo (solo ID y nombre)
+      // para satisfacer la integridad referencial sin guardar todos los campos/fields.
+      await prisma.assetTemplate.upsert({
         where: { id: templateId },
+        update: { name: templateData.name }, // Actualización mínima
+        create: {
+          id: templateId,
+          name: templateData.name,
+          isOfficial: true,
+          isPublic: true,
+        },
       });
 
-      if (!template && isOfficial) {
-        // Si no tenemos los fields, los descargamos antes de guardar en caché
-        let fields = templateData.fields;
-        if ((!fields || fields.length === 0) && templateData.download_url) {
-          const response = await axios.get(templateData.download_url);
-          fields = response.data.fields;
-        }
-
-        template = await prisma.assetTemplate.create({
-          data: {
-            id: templateId,
-            name: templateData.name,
-            description: templateData.description,
-            category: templateData.category,
-            tags: templateData.tags || [],
-            authorName: templateData.author || "Invenicum Team",
-            authorAvatarUrl: templateData.authorAvatarUrl,
-            fields: fields || [],
-            isOfficial: true,
-            isPublic: true,
-            version: templateData.version || 1.0,
-          },
-        });
-      }
-
-      const connection = await prisma.userTemplate.upsert({
+      return await prisma.userTemplate.upsert({
         where: { userId_templateId: { userId, templateId } },
         update: {},
         create: { userId, templateId },
       });
-
-      return connection;
     } catch (error) {
-      console.error("❌ Error al guardar en biblioteca:", error);
+      console.error("❌ Error al vincular plantilla al usuario:", error);
       throw error;
     }
   }
 
   async _getGitHubTemplates() {
     try {
-      const { owner, repo } = this._githubConfig;
-      const repoUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/repository.json`;
-      const response = await axios.get(repoUrl);
+      const { templateRepoUrl } = this._githubConfig;
+      const response = await axios.get(templateRepoUrl);
 
       if (response.data && response.data.templates) {
         return response.data.templates.map((t) => ({
@@ -86,57 +70,15 @@ class TemplateService {
    */
   async getAllMarketTemplates() {
     try {
+      // 1. Obtenemos directamente de GitHub
       const githubTemplates = await this._getGitHubTemplates();
-      if (githubTemplates.length > 0) {
-        await prisma.$transaction(
-          githubTemplates.map((t) =>
-            prisma.assetTemplate.upsert({
-              where: { id: t.id },
-              update: {
-                name: t.name,
-                description: t.description,
-                downloadUrl: t.download_url,
-                downloadCount: t.downloadCount || 0,
-                authorAvatarUrl: t.authorAvatarUrl,
-                tags: t.tags || [],
-                category: t.category,
-                authorName: t.author || "Invenicum Team",
-                fields: t.fields || [],
-                isOfficial: true,
-                isPublic: true,
-              },
-              create: {
-                id: t.id,
-                name: t.name,
-                downloadUrl: t.download_url,
-                downloadCount: t.downloadCount || 0,
-                authorAvatarUrl: t.authorAvatarUrl,
-                tags: t.tags || [],
-                description: t.description,
-                category: t.category,
-                authorName: t.author || "Invenicum Team",
-                // 🚩 HIDRATAR AL CREAR: No guardar vacío
-                fields: t.fields || [],
-                isOfficial: true,
-                isPublic: true,
-              },
-            }),
-          ),
-        );
-      }
 
-      const dbTemplates = await prisma.assetTemplate.findMany({
-        where: { isPublic: true },
-        orderBy: { createdAt: "desc" },
-      });
-      // 🚩 Retornamos a través del DTO para normalizar fechas y campos
-      return AssetTemplateDTO.fromList(dbTemplates);
+      // 2. Retornamos los datos transformados por el DTO sin pasar por Prisma
+      // Nota: Asegúrate de que tu DTO acepte objetos simples de JS
+      return AssetTemplateDTO.fromList(githubTemplates);
     } catch (error) {
-      console.error("❌ Error Market:", error);
-      const cache = await prisma.assetTemplate.findMany({
-        where: { isPublic: true },
-      });
-      return AssetTemplateDTO.fromList(cache);
+      console.error("❌ Error al obtener market desde GitHub:", error);
+      return [];
     }
   }
 
@@ -144,88 +86,93 @@ class TemplateService {
    * Detalle Hidratado con DTO
    */
   async getTemplateDetail(id) {
-    let template = await prisma.assetTemplate.findUnique({ where: { id } });
-    if (!template) throw new Error("Plantilla no encontrada");
-    // Si es oficial y no tiene campos, es una plantilla de GitHub "sin hidratar"
-    if (
-      template.isOfficial &&
-      (!template.fields || template.fields.length === 0)
-    ) {
-      try {
-        const response = await axios.get(template.downloadUrl);
-        const fullData = response.data;
-        // Guardamos los campos en nuestra DB para que la PRÓXIMA vez sea instantáneo
-        template = await prisma.assetTemplate.update({
-          where: { id },
-          data: {
-            fields: fullData.fields || [],
-            // Aprovechamos para actualizar descripción o tags si han cambiado
-            description: fullData.description || template.description,
-          },
-        });
-        /*console.log(
-          `✅ Plantilla ${id} hidratada desde GitHub y cacheada en DB.`,
-        );*/
-      } catch (error) {
-        console.error(
-          `❌ Error al hidratar detalle desde GitHub para ${id}:`,
-          error.message,
-        );
-        // Si falla GitHub, devolvemos lo que tengamos (aunque sea vacío)
-      }
+    try {
+      const templates = await this._getGitHubTemplates();
+      const templateMeta = templates.find((t) => t.id === id);
+
+      if (!templateMeta)
+        throw new Error("Plantilla no encontrada en el repositorio");
+
+      // Descargamos el contenido completo (fields, etc.) desde la download_url
+      const response = await axios.get(templateMeta.download_url);
+      const fullData = response.data;
+
+      // Retornamos un objeto combinado (meta + contenido completo)
+      return new AssetTemplateDTO({
+        ...templateMeta,
+        ...fullData,
+      });
+    } catch (error) {
+      console.error(`❌ Error obteniendo detalle de ${id}:`, error.message);
+      throw error;
     }
-    return new AssetTemplateDTO(template);
   }
 
   /**
    * Publicación con Sistema de PR corregido
    */
   async publishTemplate(userId, templateData) {
-    try {
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user || !user.githubHandle) throw new Error("GitHub no vinculado");
+  try {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error("Usuario no encontrado");
 
-      // Generamos un ID temporal para el PR
-      const templateId = `tpl_${uuidv4().substring(0, 8)}`;
+    // 1. Generamos el ID Único para que sea el mismo en DB y GitHub
+    const templateId = `tpl_${uuidv4().substring(0, 8)}`;
 
-      // 🚩 NO guardamos en prisma.assetTemplate.
-      // Simplemente preparamos el objeto para enviar a GitHub.
-      const templateToPublish = {
-        id: templateId,
-        name: templateData.name,
-        description: templateData.description,
-        category: templateData.category || "General",
-        tags: templateData.tags || [],
-        author: user.githubHandle,
-        authorAvatarUrl: user.avatarUrl,
-        fields: templateData.fields,
-        isOfficial: false,
-        isPublic: true, // Esto es para el JSON de GitHub
-      };
+    // 2. Creamos el objeto completo con el ID inyectado
+    const templateToPublish = {
+      ...templateData,
+      id: templateId, // 🚩 IMPORTANTE: Aquí asignamos el ID
+      authorName: user.githubHandle || user.username,
+      authorAvatarUrl: user.avatarUrl,
+      isOfficial: false,
+      isPublic: true,
+      createdAt: new Date().toISOString()
+    };
+
+    // 3. Registro en DB Local
+    await prisma.$transaction(async (tx) => {
+      await tx.assetTemplate.create({
+        data: {
+          id: templateId,
+          name: templateToPublish.name,
+          description: templateToPublish.description,
+          category: templateToPublish.category || "General",
+          authorName: templateToPublish.authorName,
+          authorAvatarUrl: templateToPublish.authorAvatarUrl,
+          fields: templateToPublish.fields, 
+          isOfficial: false,
+          isPublic: true,
+        },
+      });
 
       await tx.userTemplate.create({
         data: { userId, templateId },
       });
+    });
 
-      // Abrimos el PR. Hasta que no se acepte, nadie la verá en el market.
-      await this._openGitHubPullRequest(templateToPublish, user.githubHandle);
+    // 4. Enviar a GitHub (Ahora enviamos el objeto que YA TIENE el ID)
+    // 🚩 IMPORTANTE: Pasamos templateToPublish, no templateData
+    await this._openGitHubPullRequest(
+      templateToPublish, 
+      user.githubHandle, 
+      templateId
+    );
 
-      // Devolvemos el objeto al front para que lo vea en "Mi Biblioteca" localmente
-      // si hace falta, pero no persistirá en la tabla global de la DB.
-      return templateToPublish;
-    } catch (error) {
-      console.error("❌ Error publicación:", error);
-      throw error;
-    }
+    return { ...templateToPublish, status: "published_pending_index" };
+  } catch (error) {
+    console.error("❌ Error publicación:", error);
+    throw error;
   }
+}
 
   async incrementDownloadCount(templateId) {
-    const octokit = new Octokit({ auth: process.env.GITHUB_ADMIN_TOKEN });
-    const { owner, repo } = this._githubConfig;
-    const path = "repository.json"; // Ruta de tu archivo índice
+    const { auth, owner, repo } = this._githubConfig;
+    const octokit = new Octokit({ auth });
+    const path = "repository_template.json"; // El archivo de índice
 
     try {
-      // 1. Obtener el archivo actual y su SHA
+      // 1. Descargamos el índice actual de GitHub
       const { data: fileData } = await octokit.repos.getContent({
         owner,
         repo,
@@ -236,7 +183,7 @@ class TemplateService {
         Buffer.from(fileData.content, "base64").toString(),
       );
 
-      // 2. Buscar la plantilla e incrementar
+      // 2. Buscamos la plantilla en el JSON y sumamos 1
       let found = false;
       content.templates = content.templates.map((tpl) => {
         if (tpl.id === templateId) {
@@ -246,9 +193,9 @@ class TemplateService {
         return tpl;
       });
 
-      if (!found) return; // Si no existe en el repository.json, no hacemos nada
+      if (!found) return;
 
-      // 3. Subir el cambio de vuelta a GitHub
+      // 3. Subimos el archivo actualizado a GitHub
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -257,39 +204,64 @@ class TemplateService {
         content: Buffer.from(JSON.stringify(content, null, 2)).toString(
           "base64",
         ),
-        sha: fileData.sha, // Requerido para actualizar archivos existentes
+        sha: fileData.sha, // Importante: SHA actual para poder sobreescribir
       });
+
+      console.log(`✅ Contador incrementado en GitHub para ${templateId}`);
     } catch (error) {
-      console.error("[INCREMENT_DOWNLOAD_ERROR]:", error.message);
-      // No lanzamos el error para no bloquear la instalación al usuario si falla la analítica
+      console.error(
+        "❌ Error al actualizar contador en GitHub:",
+        error.message,
+      );
     }
   }
 
   async _openGitHubPullRequest(template, githubHandle) {
-    const octokit = new Octokit({ auth: process.env.GITHUB_ADMIN_TOKEN });
+    const token = process.env.GITHUB_TOKEN;
     const { owner, repo } = this._githubConfig;
-    const branchName = `submission/${template.id}`;
+
+    // 1. Validación de configuración básica
+    if (!token) throw new Error("Configuración incompleta: Falta GITHUB_TOKEN");
+    if (!owner || !repo)
+      throw new Error(
+        "Configuración incompleta: Falta OWNER o REPO en el servidor",
+      );
+
+    const octokit = new Octokit({ auth: token });
 
     try {
+      // 🚀 2. VALIDACIÓN ACTIVA DEL TOKEN
+      // Intentamos obtener los datos del usuario autenticado para verificar el token
+      await octokit.users.getAuthenticated();
+      console.log("🔐 Token verificado exitosamente para el proceso de PR.");
+
+      const branchName = `submission/${template.id}`;
+
+      // 3. Obtener el SHA de main
       const { data: ref } = await octokit.git.getRef({
         owner,
         repo,
         ref: "heads/main",
       });
 
-      await octokit.git.createRef({
-        owner,
-        repo,
-        ref: `refs/heads/${branchName}`,
-        sha: ref.object.sha,
-      });
+      // 4. Crear la rama
+      try {
+        await octokit.git.createRef({
+          owner,
+          repo,
+          ref: `refs/heads/${branchName}`,
+          sha: ref.object.sha,
+        });
+      } catch (e) {
+        if (e.status !== 422) throw e; // 422 significa que la rama ya existe
+      }
 
-      // Usamos el DTO para generar el JSON que irá a GitHub, pero marcándolo como oficial
+      // 5. Preparar contenido del archivo
       const dto = new AssetTemplateDTO(template);
       dto.isOfficial = true;
+      const githubContent = dto.toJSON ? dto.toJSON() : dto;
 
-      const githubContent = dto.toJSON();
-
+      // 6. Subir archivo
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -301,16 +273,36 @@ class TemplateService {
         branch: branchName,
       });
 
-      await octokit.pulls.create({
+      // 7. Crear el Pull Request
+      const pr = await octokit.pulls.create({
         owner,
         repo,
         title: `📦 Template: ${template.name}`,
-        body: `Propuesta de plantilla enviada por @${githubHandle}.`,
+        body: `Propuesta de plantilla enviada por @${githubHandle}.\n\nID: ${template.id}`,
         head: branchName,
         base: "main",
       });
+
+      return pr.data;
     } catch (err) {
-      console.error("⚠️ GitHub PR Failed:", err.message);
+      // Manejo de errores específico según el código de estado de GitHub
+      if (err.status === 401) {
+        console.error(
+          "❌ ERROR: El GITHUB_ADMIN_TOKEN no es válido o ha expirado.",
+        );
+        throw new Error(
+          "El servidor no tiene permisos para publicar en GitHub (Auth Error).",
+        );
+      }
+      if (err.status === 404) {
+        console.error(
+          `❌ ERROR: No se encontró el repositorio ${owner}/${repo}.`,
+        );
+        throw new Error("Repositorio de destino no encontrado.");
+      }
+
+      console.error("❌ Error en el proceso de GitHub:", err.message);
+      throw err;
     }
   }
 }

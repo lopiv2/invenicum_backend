@@ -50,6 +50,21 @@ class AIService {
       - Si pide "Preferencias": usa "NAVIGATE" y data: {"path": "/preferences"}.
       - Si pide escanear: usa "OPEN_SCANNER".
 
+      ACCIONES DE PLANTILLAS (NUEVO):
+      - Si el usuario quiere crear una plantilla (ej: "Ayúdame a organizar mis vinilos" o "Crea una plantilla para herramientas"):
+        1. Identifica campos lógicos según el contexto.
+        2. Establece "action": "CREATE_TEMPLATE".
+        3. En "data", construye este objeto EXACTO:
+           {
+             "name": "Nombre de la plantilla",
+             "description": "Breve descripción de lo que permite organizar",
+             "category": "Categoría (ej: Multimedia, Herramientas, Ropa)",
+             "fields": [
+               { "name": "Nombre del campo", "type": "text" }
+             ]
+           }
+        4. REGLA CRÍTICA: "type" SOLO puede ser uno de estos: "text", "number", "date", "dropdown", "price", "boolean", "url". No inventes otros.
+
       IMPORTANTE: Responde SIEMPRE con un objeto JSON:
       {
         "answer": "Tu respuesta conversacional",

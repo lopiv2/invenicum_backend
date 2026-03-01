@@ -10,6 +10,8 @@ class PluginService {
       auth: process.env.GITHUB_ADMIN_TOKEN,
       owner: process.env.GITHUB_REPO_OWNER,
       repo: process.env.GITHUB_REPO_NAME,
+      pluginRepoUrl: process.env.GITHUB_PLUGIN_REPO,
+      pluginTemplateRepoUrl: process.env.GITHUB_TEMPLATE_REPO,
     };
   }
   /**
@@ -17,8 +19,8 @@ class PluginService {
    */
   async _getGitHubPlugins() {
     try {
-      const { owner, repo } = this._githubConfig;
-      const repoUrl = `https://raw.githubusercontent.com/${owner}/${repo}/main/repository.json`;
+      const { pluginRepoUrl } = this._githubConfig;
+      const repoUrl = pluginRepoUrl;
 
       console.log("🔍 Intentando leer catálogo desde:", repoUrl);
 
@@ -45,7 +47,7 @@ class PluginService {
       // Si el archivo no existe (404), devolvemos array vacío en lugar de error
       if (error.response?.status === 404) {
         console.warn(
-          "⚠️ El archivo repository.json no existe todavía en GitHub.",
+          "⚠️ El archivo repository_plugin.json no existe todavía en GitHub.",
         );
         return [];
       }
@@ -54,24 +56,24 @@ class PluginService {
     }
   }
 
+  //
   async createPlugin(pluginData, userId) {
     const uId = parseInt(userId);
     const user = await prisma.user.findUnique({ where: { id: uId } });
 
     if (!user) throw new Error("User not found");
-    if (pluginData.isPublic && !user.username) {
-      throw new Error("You must have a username to publish public plugins");
-    }
 
+    // 1. Guardar en DB local siempre (como "Mis Plugins")
     const newPlugin = await prisma.$transaction(async (tx) => {
       const p = await tx.plugin.create({
         data: {
           id: pluginData.id,
           name: pluginData.name,
+          description: pluginData.description || "",
           version: pluginData.version || "1.0.0",
           ui: pluginData.ui,
-          slot: pluginData.slot,
-          isPublic: pluginData.isPublic,
+          slot: pluginData.slot || "dashboard_top",
+          isPublic: pluginData.isPublic, // Aquí se decide si va a GitHub
           authorId: uId,
         },
       });
@@ -82,74 +84,16 @@ class PluginService {
       return p;
     });
 
+    // 2. Si el usuario marcó "Público", sincronizamos con el Market de GitHub
     if (newPlugin.isPublic) {
       try {
-        // Subimos el JSON individual
-        await this.uploadPluginJson(newPlugin.id, newPlugin.ui, newPlugin.name);
-
-        // Actualizamos el índice global
-        const pluginForRepo = {
-          ...newPlugin,
-          author: user.username,
-        };
-        await this.pushPluginToGitHub(pluginForRepo);
-        console.log("🚀 Publicado en GitHub con Token Maestro");
+        // Pasamos el username para que el archivo en GitHub tenga el autor correcto
+        await this.uploadPluginJson(newPlugin, user.username);
       } catch (e) {
-        console.error("⚠️ Error sincronizando con GitHub:", e.message);
+        console.error("⚠️ Error en sync inicial con GitHub:", e.message);
       }
     }
     return newPlugin;
-  }
-
-  async pushPluginToGitHub(pluginData) {
-    const { auth, owner, repo } = this._githubConfig;
-    const octokit = new Octokit({ auth });
-    const path = "repository.json";
-
-    try {
-      const { data: fileData } = await octokit.repos.getContent({
-        owner,
-        repo,
-        path,
-      });
-
-      // 1. Convertimos el contenido de base64 a string
-      const rawContent = Buffer.from(fileData.content, "base64").toString();
-
-      // 2. 🌟 LA LÍNEA MÁGICA: Limpia comas sobrantes antes de ] o }
-      const cleanContent = rawContent.replace(/,[ \t\r\n]*([\]}])/g, "$1");
-
-      // 3. Parseamos el contenido ya limpio
-      const repoContent = JSON.parse(cleanContent);
-
-      const newEntry = {
-        id: pluginData.id,
-        name: pluginData.name,
-        version: pluginData.version || "1.0.0",
-        author: pluginData.author || "Community",
-        isOfficial: false,
-        download_url: `https://raw.githubusercontent.com/${owner}/${repo}/main/plugins/${pluginData.id}.json`,
-      };
-
-      const idx = repoContent.plugins.findIndex((p) => p.id === pluginData.id);
-      if (idx !== -1) repoContent.plugins[idx] = newEntry;
-      else repoContent.plugins.push(newEntry);
-
-      await octokit.repos.createOrUpdateFileContents({
-        owner,
-        repo,
-        path,
-        message: `Añadido plugin ${pluginData.name}`,
-        content: Buffer.from(JSON.stringify(repoContent, null, 2)).toString(
-          "base64",
-        ),
-        sha: fileData.sha,
-      });
-
-      console.log("✅ repository.json actualizado correctamente.");
-    } catch (error) {
-      console.error("❌ Error actualizando repository.json:", error.message);
-    }
   }
 
   /**
@@ -178,10 +122,21 @@ class PluginService {
 
   // githubService.js
 
-  async uploadPluginJson(pluginId, uiContent, pluginName) {
+  async uploadPluginJson(plugin, authorName) {
     const { auth, owner, repo } = this._githubConfig;
     const octokit = new Octokit({ auth });
-    const path = `plugins/${pluginId}.json`;
+    const path = `plugins/${plugin.id}.json`;
+
+    // 🚩 Este es el objeto que la GitHub Action procesará
+    const pluginFileContent = {
+      id: plugin.id,
+      name: plugin.name,
+      description: plugin.description,
+      version: plugin.version,
+      author: authorName,
+      slot: plugin.slot,
+      ui: plugin.ui, // La lógica visual/funcional del plugin
+    };
 
     try {
       let sha;
@@ -196,16 +151,14 @@ class PluginService {
         owner,
         repo,
         path,
-        message: `Update plugin content: ${pluginName}`,
-        content: Buffer.from(JSON.stringify(uiContent, null, 2)).toString(
-          "base64",
-        ),
+        message: `🚀 Publish/Update plugin: ${plugin.name}`,
+        content: Buffer.from(
+          JSON.stringify(pluginFileContent, null, 2),
+        ).toString("base64"),
         sha,
       });
-
-      return `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
     } catch (error) {
-      console.error("❌ Error subiendo JSON:", error.message);
+      console.error("❌ Error subiendo a GitHub:", error.message);
       throw error;
     }
   }
@@ -268,68 +221,77 @@ class PluginService {
    * Instala un plugin (Soporta IDs de DB o Datos de GitHub)
    */
   async installPlugin(userId, pluginData) {
-    try {
-      const uId = parseInt(userId);
-      // 1. Validar que recibimos datos
-      if (!pluginData || !pluginData.id) {
-        throw new Error("Datos del plugin incompletos");
-      }
-
-      const targetPluginId = pluginData.id;
-      const finalAuthorId = pluginData.isOfficial
-        ? null
-        : pluginData.authorId || uId;
-
-      // 2. Descargar UI si es necesario (GitHub)
-      let uiData = pluginData.ui;
-      if (!uiData) {
-        const urlToDownload =
-          pluginData.download_url || pluginData.downloadUrl || pluginData.url;
-        if (urlToDownload) {
-          const response = await axios.get(urlToDownload);
-          uiData = response.data;
-        }
-      }
-
-      const incomingVersion = pluginData.version || "1.0.0";
-
-      // 3. UPSERT: Si la tabla está vacía, esto creará el primer registro sin fallar
-      await prisma.plugin.upsert({
-        where: { id: targetPluginId },
-        update: {
-          version: incomingVersion, // Actualiza la versión si ya existe
-          ui: uiData,
-        },
-        create: {
-          id: targetPluginId,
-          name: pluginData.name || "No name",
-          version: incomingVersion,
-          description: pluginData.description || "",
-          slot: pluginData.slot || "dashboard_top",
-          ui: uiData || {},
-          isPublic: true,
-          authorId: finalAuthorId,
-        },
-      });
-
-      // 4. Relación UserPlugin
-      return await prisma.userPlugin.upsert({
-        where: {
-          userId_pluginId: { userId: uId, pluginId: targetPluginId },
-        },
-        update: { isActive: true },
-        create: {
-          userId: uId,
-          pluginId: targetPluginId,
-          isActive: true,
-        },
-      });
-    } catch (error) {
-      // 🔍 ESTO ES VITAL: Mira la consola de tu BACKEND (Node) para ver el mensaje real
-      console.error("❌ ERROR REAL EN EL BACKEND:", error.message);
-      throw error;
+  try {
+    const uId = parseInt(userId);
+    // 1. Validar que recibimos datos
+    if (!pluginData || !pluginData.id) {
+      throw new Error("Datos del plugin incompletos");
     }
+
+    const targetPluginId = pluginData.id;
+    const finalAuthorId = pluginData.isOfficial
+      ? null
+      : pluginData.authorId || uId;
+
+    // 2. Obtener y limpiar la UI (Stac fragment)
+    let uiData = pluginData.ui;
+
+    // A. Si no hay UI, intentamos descargarla de GitHub
+    if (!uiData) {
+      const urlToDownload =
+        pluginData.download_url || pluginData.downloadUrl || pluginData.url;
+      if (urlToDownload) {
+        const response = await axios.get(urlToDownload);
+        
+        // 🚩 CORRECCIÓN: Si el JSON descargado tiene la nueva estructura, extraemos la llave 'ui'
+        uiData = response.data.ui ? response.data.ui : response.data;
+      }
+    } else {
+      // B. Si la UI ya viene en el pluginData, verificamos si está anidada
+      // Esto pasa si el frontend envía el objeto del Market tal cual
+      if (uiData.ui) {
+        uiData = uiData.ui;
+      }
+    }
+
+    const incomingVersion = pluginData.version || "1.0.0";
+
+    // 3. UPSERT: Guardamos en la base de datos
+    await prisma.plugin.upsert({
+      where: { id: targetPluginId },
+      update: {
+        version: incomingVersion, // Mantiene la actualización de versión
+        ui: uiData,               // 🚩 Ahora guardamos la UI limpia (sin metadatos)
+      },
+      create: {
+        id: targetPluginId,
+        name: pluginData.name || "No name",
+        version: incomingVersion,
+        description: pluginData.description || "",
+        slot: pluginData.slot || "dashboard_top",
+        ui: uiData || {},        // 🚩 Ahora guardamos la UI limpia
+        isPublic: true,
+        authorId: finalAuthorId,
+      },
+    });
+
+    // 4. Relación UserPlugin (Activar el plugin para el usuario)
+    return await prisma.userPlugin.upsert({
+      where: {
+        userId_pluginId: { userId: uId, pluginId: targetPluginId },
+      },
+      update: { isActive: true },
+      create: {
+        userId: uId,
+        pluginId: targetPluginId,
+        isActive: true,
+      },
+    });
+  } catch (error) {
+    console.error("❌ ERROR REAL EN EL BACKEND:", error.message);
+    throw error;
   }
+}
 
   // --- MÉTODOS DE GESTIÓN LOCAL ---
 
@@ -376,68 +338,37 @@ class PluginService {
   }
 
   async deletePlugin(id, userId, deleteFromGitHub = false) {
-    const plugin = await prisma.plugin.findUnique({ where: { id } });
+  const plugin = await prisma.plugin.findUnique({ where: { id } });
 
-    // Verificamos que el usuario sea el dueño
-    if (!plugin || Number(plugin.authorId) !== Number(userId)) {
-      throw new Error("No autorizado");
-    }
-
-    if (deleteFromGitHub && plugin.isPublic) {
-      const { auth, owner, repo } = this._githubConfig;
-      const octokit = new Octokit({ auth });
-
-      try {
-        // A. Borrar archivo individual
-        try {
-          const { data: fData } = await octokit.repos.getContent({
-            owner,
-            repo,
-            path: `plugins/${id}.json`,
-          });
-          await octokit.repos.deleteFile({
-            owner,
-            repo,
-            path: `plugins/${id}.json`,
-            message: `Delete plugin: ${id}`,
-            sha: fData.sha,
-          });
-        } catch (e) {
-          console.log("Archivo no estaba en GitHub");
-        }
-
-        // B. Borrar del índice repository.json
-        const { data: iData } = await octokit.repos.getContent({
-          owner,
-          repo,
-          path: "repository.json",
-        });
-        const content = JSON.parse(
-          Buffer.from(iData.content, "base64").toString(),
-        );
-
-        content.plugins = content.plugins.filter((p) => p.id !== id);
-
-        await octokit.repos.createOrUpdateFileContents({
-          owner,
-          repo,
-          path: "repository.json",
-          message: `Remove ${id} from repository`,
-          content: Buffer.from(JSON.stringify(content, null, 2)).toString(
-            "base64",
-          ),
-          sha: iData.sha,
-        });
-
-        console.log("✅ Eliminado de GitHub con éxito");
-      } catch (error) {
-        console.error("❌ Error eliminando de GitHub:", error.message);
-      }
-    }
-
-    // Borrado de base de datos local
-    return await prisma.plugin.delete({ where: { id } });
+  if (!plugin || Number(plugin.authorId) !== Number(userId)) {
+    throw new Error("No autorizado");
   }
+
+  // Si es público y se solicita, borramos el archivo de la carpeta /plugins
+  if (deleteFromGitHub && plugin.isPublic) {
+    const { auth, owner, repo } = this._githubConfig;
+    const octokit = new Octokit({ auth });
+
+    try {
+      const { data: fData } = await octokit.repos.getContent({
+        owner, repo, path: `plugins/${id}.json`
+      });
+      
+      await octokit.repos.deleteFile({
+        owner,
+        repo,
+        path: `plugins/${id}.json`,
+        message: `🗑️ Remove plugin: ${id}`,
+        sha: fData.sha,
+      });
+      // 💡 La Action detectará el borrado y actualizará el índice global solo.
+    } catch (e) {
+      console.warn("No se pudo borrar de GitHub (quizás no existía):", e.message);
+    }
+  }
+
+  return await prisma.plugin.delete({ where: { id } });
+}
 
   async toggleUserPlugin(userId, pluginId, isActive) {
     return await prisma.userPlugin.update({
