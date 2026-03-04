@@ -55,13 +55,24 @@ router.post("/", verifyToken, validatePlugin, async (req, res) => {
 });
 
 // PUT: Actualizar un plugin existente
+// routes/plugins.js
 router.put("/:id", verifyToken, validatePlugin, async (req, res) => {
   try {
     const { id } = req.params;
+    // Pasamos id del plugin, datos del body e id del usuario autenticado
     const result = await pluginService.updatePlugin(id, req.body, req.user.id);
-    res.json(result);
+
+    res.json({
+      success: true,
+      message: result.prCreated
+        ? "Propuesta de actualización enviada (PR creado)"
+        : "Plugin actualizado correctamente",
+      data: result,
+    });
   } catch (error) {
-    res.status(403).json({ success: false, message: error.message });
+    // Si es un error de permisos mandamos 403, si no 500
+    const statusCode = error.message.includes("autorizado") ? 403 : 500;
+    res.status(statusCode).json({ success: false, message: error.message });
   }
 });
 
@@ -73,7 +84,7 @@ router.delete("/:id", verifyToken, async (req, res) => {
 
     // 🚩 CAMBIO AQUÍ: Verifica que estás usando .userId (o lo que use tu JWT)
     // Según tu log previo del token, es userId
-    const currentUserId = req.user.id; 
+    const currentUserId = req.user.id;
 
     await pluginService.deletePlugin(id, currentUserId, deleteFromGitHub);
 

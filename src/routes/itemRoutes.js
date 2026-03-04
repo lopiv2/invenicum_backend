@@ -43,6 +43,38 @@ router.use((req, res, next) => {
 });
 
 // ===============================================
+// 🖨️ GENERACIÓN DE ETIQUETA QR PARA IMPRESIÓN
+// GET /items/:id/print-label
+// ===============================================
+router.get("/items/:id/print-label", verifyToken, async (req, res) => {
+  try {
+    const itemId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    if (isNaN(itemId)) {
+      return res.status(400).json({ success: false, message: "ID de ítem inválido." });
+    }
+
+    // 1. Llamamos a un nuevo método en el servicio que genere el PDF
+    // Le pasamos res para que haga el pipe directamente
+    await inventoryItemService.generatePrintLabelPDF(itemId, userId, res);
+
+  } catch (error) {
+    console.error(`Error generando etiqueta para ítem ${req.params.id}:`, error);
+    
+    if (error.message.includes("not found") || error.message.includes("denegado")) {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    
+    // Si el error ocurre después de empezar el pipe del PDF, 
+    // Express podría tener problemas enviando un JSON, pero este catch lo previene.
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// ===============================================
 // 🔑 NUEVA RUTA DE CLONACIÓN (CLONE)
 // POST /containers/:containerId/asset-types/:assetTypeId/items/clone
 // ===============================================

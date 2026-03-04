@@ -29,8 +29,6 @@ model User {
   containers      Container[]
   assignedItems   InventoryItem[]  @relation("UserAssignedItems")
   alerts          Alert[]
-  // Plugins creados por este usuario
-  createdPlugins  Plugin[] @relation("PluginAuthor")
   plugins         UserPlugin[]
   createdTemplates AssetTemplate[] @relation("TemplateCreator")
   savedTemplates   UserTemplate[]
@@ -118,23 +116,22 @@ model UserPreferences {
 // ============================================
 
 model Plugin {
-  id          String   @id @default(uuid())
-  name        String
-  version     String?  @default("1.0.0")
-  description String?  @db.Text
-  slot        String   // Ej: "dashboard_top", "dashboard_bottom", "asset_detail"
-  ui          Json     // Estructura JSON que procesa el SDK de Stac en Flutter
-  isPublic    Boolean  @default(true) @map("is_public")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id           String   @id @default(uuid())
+  name         String
+  version      String?  @default("1.0.0")
+  description  String?  @db.Text
+  slot         String   
+  ui           Json     
+  isPublic     Boolean  @default(true) @map("is_public")
+  authorAvatar String?  @db.Text
 
-  // --- NUEVA RELACIÓN DE AUTORÍA ---
-  authorId    Int?     @map("author_id")
-  author      User?    @relation("PluginAuthor", fields: [authorId], references: [id])
-  // ---------------------------------
+  // 🚩 CAMBIO CLAVE: Solo guardamos el String del handle de GitHub
+  author       String?  @map("author_handle") 
 
-  // Relación con los usuarios que lo han instalado
-  installedBy UserPlugin[]
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  installedBy  UserPlugin[]
 
   @@map("plugin")
 }
@@ -469,3 +466,4 @@ model UserTemplate {
   @@unique([userId, templateId]) // Un usuario no guarda la misma plantilla dos veces
   @@map("user_template")
 }
+

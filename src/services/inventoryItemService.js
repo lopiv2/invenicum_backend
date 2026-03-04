@@ -5,6 +5,8 @@ const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
 const alertService = require("./alertService");
+const PDFDocument = require("pdfkit");
+const bwipjs = require("bwip-js");
 
 // 💡 Ruta Absoluta donde se guardan los archivos
 // Asumimos que la carpeta 'uploads/inventory' está un nivel por encima del archivo de servicio
@@ -979,6 +981,66 @@ class InventoryItemService {
     });
 
     return result._sum.marketValue || 0;
+  }
+
+  async generatePrintLabelPDF(itemId, userId, res) {
+    const item = await prisma.inventoryItem.findFirst({
+      where: { id: itemId, container: { userId: userId } },
+    });
+
+    if (!item) throw new Error("Ítem no encontrado.");
+
+    const width = 50 * 2.83465;
+    const height = 30 * 2.83465;
+
+    const doc = new PDFDocument({
+      size: [width, height],
+      margins: { top: 5, bottom: 5, left: 5, right: 5 },
+    });
+
+    res.setHeader("Content-Type", "application/pdf");
+    doc.pipe(res);
+
+    // 1. Generar e insertar QR
+    const qrBuffer = await bwipjs.toBuffer({
+      bcid: "qrcode",
+      text: `invenicum://asset/${itemId}`,
+      scale: 4,
+    });
+    doc.image(qrBuffer, 8, 8, { width: 45 });
+
+    // 2. Dibujar Nombre y CAPTURAR la posición y final
+    // .text() devuelve el objeto doc, pero podemos consultar doc.y después de llamarlo
+    doc
+      .fillColor("#000000")
+      .fontSize(8)
+      .font("Helvetica-Bold")
+      .text(item.name, 60, 10, { width: 75 });
+
+    // Calculamos un pequeño margen después del nombre
+    const currentY = doc.y + 2;
+
+    // 3. Dibujar ID debajo del nombre (dinámico)
+    doc
+      .fillColor("#444444")
+      .fontSize(7)
+      .font("Helvetica")
+      .text(`ID: #${itemId}`, 60, currentY);
+
+    // 4. Dibujar el Badge debajo del ID
+    const badgeY = currentY + 10;
+
+    // Dibujamos el fondo del badge
+    doc.roundedRect(60, badgeY, 65, 10, 2).fill("#F0F0F0");
+
+    // Texto dentro del badge
+    doc
+      .fillColor("#666666")
+      .fontSize(5)
+      .font("Helvetica-Bold")
+      .text("50x30mm Standard", 63, badgeY + 3);
+
+    doc.end();
   }
 }
 

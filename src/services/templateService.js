@@ -288,7 +288,7 @@ class TemplateService {
       // Manejo de errores específico según el código de estado de GitHub
       if (err.status === 401) {
         console.error(
-          "❌ ERROR: El GITHUB_ADMIN_TOKEN no es válido o ha expirado.",
+          "❌ ERROR: El GITHUB_TOKEN no es válido o ha expirado.",
         );
         throw new Error(
           "El servidor no tiene permisos para publicar en GitHub (Auth Error).",
