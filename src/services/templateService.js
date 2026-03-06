@@ -1,7 +1,7 @@
 const prisma = require("../middleware/prisma");
 const axios = require("axios");
 const { Octokit } = require("@octokit/rest");
-const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
 const AssetTemplateDTO = require("../models/templateModel"); // 👈 Importamos el DTO
 require("dotenv").config();
 
@@ -112,59 +112,59 @@ class TemplateService {
    * Publicación con Sistema de PR corregido
    */
   async publishTemplate(userId, templateData) {
-  try {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new Error("Usuario no encontrado");
+    try {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new Error("Usuario no encontrado");
 
-    // 1. Generamos el ID Único para que sea el mismo en DB y GitHub
-    const templateId = `tpl_${uuidv4().substring(0, 8)}`;
+      // 1. Generamos el ID Único para que sea el mismo en DB y GitHub
+      const templateId = `tpl_${crypto.randomUUID().substring(0, 8)}`;
 
-    // 2. Creamos el objeto completo con el ID inyectado
-    const templateToPublish = {
-      ...templateData,
-      id: templateId, // 🚩 IMPORTANTE: Aquí asignamos el ID
-      authorName: user.githubHandle || user.username,
-      authorAvatarUrl: user.avatarUrl,
-      isOfficial: false,
-      isPublic: true,
-      createdAt: new Date().toISOString()
-    };
+      // 2. Creamos el objeto completo con el ID inyectado
+      const templateToPublish = {
+        ...templateData,
+        id: templateId, // 🚩 IMPORTANTE: Aquí asignamos el ID
+        authorName: user.githubHandle || user.username,
+        authorAvatarUrl: user.avatarUrl,
+        isOfficial: false,
+        isPublic: true,
+        createdAt: new Date().toISOString(),
+      };
 
-    // 3. Registro en DB Local
-    await prisma.$transaction(async (tx) => {
-      await tx.assetTemplate.create({
-        data: {
-          id: templateId,
-          name: templateToPublish.name,
-          description: templateToPublish.description,
-          category: templateToPublish.category || "General",
-          authorName: templateToPublish.authorName,
-          authorAvatarUrl: templateToPublish.authorAvatarUrl,
-          fields: templateToPublish.fields, 
-          isOfficial: false,
-          isPublic: true,
-        },
+      // 3. Registro en DB Local
+      await prisma.$transaction(async (tx) => {
+        await tx.assetTemplate.create({
+          data: {
+            id: templateId,
+            name: templateToPublish.name,
+            description: templateToPublish.description,
+            category: templateToPublish.category || "General",
+            authorName: templateToPublish.authorName,
+            authorAvatarUrl: templateToPublish.authorAvatarUrl,
+            fields: templateToPublish.fields,
+            isOfficial: false,
+            isPublic: true,
+          },
+        });
+
+        await tx.userTemplate.create({
+          data: { userId, templateId },
+        });
       });
 
-      await tx.userTemplate.create({
-        data: { userId, templateId },
-      });
-    });
+      // 4. Enviar a GitHub (Ahora enviamos el objeto que YA TIENE el ID)
+      // 🚩 IMPORTANTE: Pasamos templateToPublish, no templateData
+      await this._openGitHubPullRequest(
+        templateToPublish,
+        user.githubHandle,
+        templateId,
+      );
 
-    // 4. Enviar a GitHub (Ahora enviamos el objeto que YA TIENE el ID)
-    // 🚩 IMPORTANTE: Pasamos templateToPublish, no templateData
-    await this._openGitHubPullRequest(
-      templateToPublish, 
-      user.githubHandle, 
-      templateId
-    );
-
-    return { ...templateToPublish, status: "published_pending_index" };
-  } catch (error) {
-    console.error("❌ Error publicación:", error);
-    throw error;
+      return { ...templateToPublish, status: "published_pending_index" };
+    } catch (error) {
+      console.error("❌ Error publicación:", error);
+      throw error;
+    }
   }
-}
 
   async incrementDownloadCount(templateId) {
     const { auth, owner, repo } = this._githubConfig;
@@ -287,9 +287,7 @@ class TemplateService {
     } catch (err) {
       // Manejo de errores específico según el código de estado de GitHub
       if (err.status === 401) {
-        console.error(
-          "❌ ERROR: El GITHUB_TOKEN no es válido o ha expirado.",
-        );
+        console.error("❌ ERROR: El GITHUB_TOKEN no es válido o ha expirado.");
         throw new Error(
           "El servidor no tiene permisos para publicar en GitHub (Auth Error).",
         );

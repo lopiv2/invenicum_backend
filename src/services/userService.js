@@ -1,16 +1,23 @@
 const prisma = require("../middleware/prisma");
-const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const UserDTO = require("../models/UserModel");
-const { encrypt, decrypt } = require("../middleware/cryptoUtils");
+const {
+  encrypt,
+  decrypt,
+  hashPassword,
+  verifyPassword,
+} = require("../middleware/cryptoUtils");
+const crypto = require("crypto");
+const { promisify } = require("util");
+const scrypt = promisify(crypto.scrypt);
 
 class UserService {
   async register(userData) {
     const { email, password, name } = userData;
 
     try {
-      // Verificar si el usuario ya existe
+      // 1. Verificar si el usuario ya existe
       const existingUser = await prisma.user.findUnique({
         where: { email },
       });
@@ -22,10 +29,11 @@ class UserService {
         };
       }
 
-      // Encriptar la contraseña
-      const hashedPassword = await bcrypt.hash(password, 10);
+      // 2. Encriptar con Scrypt nativo
+      // Esto guardará el formato "salt:hash" compatible con tu nuevo Login
+      const hashedPassword = await hashPassword(password);
 
-      // Crear el nuevo usuario
+      // 3. Crear el nuevo usuario
       const newUser = await prisma.user.create({
         data: {
           email,
@@ -44,6 +52,7 @@ class UserService {
         },
       };
     } catch (error) {
+      console.error("[REGISTER ERROR]:", error.message);
       return {
         success: false,
         message: error.message || "Error al registrar usuario",
@@ -165,8 +174,28 @@ class UserService {
         },
       });
 
-      // 2. Validación única de seguridad (evita fugas de información sobre si el email existe o no)
-      if (!user || !(await bcrypt.compare(password, user.password))) {
+      // --- NUEVA LÓGICA DE COMPRACIÓN SCRYPT ---
+      let isPasswordValid = false;
+
+      if (user) {
+        // Separamos el salt y el hash que guardamos en el seed (salt:hash)
+        const [salt, storedHash] = user.password.split(":");
+
+        if (salt && storedHash) {
+          // Generamos el hash de la contraseña recibida usando el mismo salt
+          const derivedKey = await scrypt(password, salt, 64);
+          const hashBuffer = Buffer.from(storedHash, "hex");
+
+          // Comparación segura contra ataques de tiempo
+          if (crypto.timingSafeEqual(hashBuffer, derivedKey)) {
+            isPasswordValid = true;
+          }
+        }
+      }
+      // ----------------------------------------
+
+      // 2. Validación única de seguridad
+      if (!user || !isPasswordValid) {
         return {
           success: false,
           message: "Credenciales incorrectas",
@@ -285,7 +314,7 @@ class UserService {
 
   async changePassword(userId, { currentPassword, newPassword }) {
     try {
-      // 1. Buscar al usuario en la base de datos
+      // 1. Buscar al usuario
       const user = await prisma.user.findUnique({
         where: { id: userId },
       });
@@ -294,8 +323,9 @@ class UserService {
         return { success: false, message: "Usuario no encontrado" };
       }
 
-      // 2. Verificar si la contraseña actual es correcta
-      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      // 2. Verificar la contraseña actual con Scrypt
+      const isMatch = await verifyPassword(currentPassword, user.password);
+
       if (!isMatch) {
         return {
           success: false,
@@ -303,9 +333,8 @@ class UserService {
         };
       }
 
-      // 3. Encriptar la nueva contraseña
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(newPassword, salt);
+      // 3. Encriptar la nueva contraseña (genera un Salt nuevo automáticamente)
+      const hashedPassword = await hashPassword(newPassword);
 
       // 4. Actualizar en la base de datos
       await prisma.user.update({
@@ -313,10 +342,13 @@ class UserService {
         data: { password: hashedPassword },
       });
 
-      return { success: true };
+      return { success: true, message: "Contraseña actualizada correctamente" };
     } catch (error) {
       console.error("Error en userService.changePassword:", error);
-      throw error;
+      return {
+        success: false,
+        message: "Error al cambiar la contraseña",
+      };
     }
   }
 }

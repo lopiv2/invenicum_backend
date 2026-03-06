@@ -128,14 +128,18 @@ class InventoryItemService {
 
     // 2. DESESTRUCTURACIÓN DINÁMICA (Igual que en createItem)
     const {
-      id: _oldId, // Ignoramos el ID del ítem original
+      id: _oldId,
       containerId,
       assetTypeId,
       locationId,
-      images: imagesFromRequest, // Extraemos imágenes para lógica de copia física
+      images: imagesFromRequest,
       customFieldValues,
       barcode,
-      ...restOfData // 🚀 Captura automática de: name, description, barcode, marketValue, currency...
+      totalMarketValue: _tmv, // Lo extraemos para que no caiga en restOfData
+      lastPriceUpdate: _lpu, // Lo mismo si existe
+      createdAt: _ca,
+      updatedAt: _ua,
+      ...restOfData
     } = data;
 
     const cId = parseInt(containerId);
@@ -159,10 +163,7 @@ class InventoryItemService {
         ? quantityInput
         : 1;
     const minStock = parseInt(restOfData.minStock) || 0;
-    const finalBarcode =
-      barcode && barcode.toString().trim() !== "" && barcode !== "null"
-        ? barcode.toString().trim()
-        : null;
+    const finalBarcode = null;
 
     // 4. COPIA FÍSICA DE IMÁGENES EN DISCO
     const allImageRelations = [];
@@ -217,10 +218,7 @@ class InventoryItemService {
           ...restOfData, // 👈 Se clonan automáticamente barcode, marketValue, etc.
           quantity,
           minStock,
-          customFieldValues:
-            typeof customFieldValues === "string"
-              ? JSON.parse(customFieldValues)
-              : customFieldValues || {},
+          customFieldValues: customFieldValues || {},
           container: { connect: { id: cId } },
           assetType: { connect: { id: aTId } },
           location: { connect: { id: lId } },
@@ -983,62 +981,149 @@ class InventoryItemService {
     return result._sum.marketValue || 0;
   }
 
-  async generatePrintLabelPDF(itemId, userId, res) {
+  async generatePrintLabelPDF(itemId, userId, res, queryOptions = {}) {
+    // 1. Buscamos el ítem asegurando que pertenezca al usuario
     const item = await prisma.inventoryItem.findFirst({
-      where: { id: itemId, container: { userId: userId } },
+      where: {
+        id: itemId,
+        container: { userId: userId },
+      },
+      include: { container: true },
     });
 
     if (!item) throw new Error("Ítem no encontrado.");
 
-    const width = 50 * 2.83465;
-    const height = 30 * 2.83465;
+    const containerId = item.containerId;
+    const aTypeId = item.assetTypeId;
+    const id = item.id;
+
+    const baseUrl = process.env.BASE_URL || "http://localhost:5555";
+    const itemUrl = `${baseUrl}/#/container/${containerId}/asset-types/${aTypeId}/assets/${id}`;
+
+    // 1. Configuración de dimensiones
+    const mmWidth = parseFloat(queryOptions.width) || 50;
+    const mmHeight = parseFloat(queryOptions.height) || 30;
+    const isSmall = mmHeight < 20;
+
+    const width = mmWidth * 2.83465;
+    const height = mmHeight * 2.83465;
 
     const doc = new PDFDocument({
       size: [width, height],
-      margins: { top: 5, bottom: 5, left: 5, right: 5 },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
 
     res.setHeader("Content-Type", "application/pdf");
     doc.pipe(res);
 
-    // 1. Generar e insertar QR
+    // 2. Guía de corte
+    doc
+      .rect(0, 0, width, height)
+      .lineWidth(0.5)
+      .strokeColor("#CCCCCC")
+      .stroke();
+
+    // --- 📐 CÁLCULOS DE DISEÑO ---
+    const padding = height * 0.08;
+    const safeWidth = width - padding * 2;
+    const safeHeight = height - padding * 2;
+
+    const colQrWidth = safeWidth * (isSmall ? 0.3 : 0.35);
+    const colTextWidth = safeWidth * (isSmall ? 0.65 : 0.6);
+    const textX = padding + colQrWidth + safeWidth * 0.05;
+
+    // 3. QR Proporcional
+    const qrSize = Math.min(colQrWidth, safeHeight);
     const qrBuffer = await bwipjs.toBuffer({
       bcid: "qrcode",
-      text: `invenicum://asset/${itemId}`,
+      text: itemUrl,
       scale: 4,
     });
-    doc.image(qrBuffer, 8, 8, { width: 45 });
 
-    // 2. Dibujar Nombre y CAPTURAR la posición y final
-    // .text() devuelve el objeto doc, pero podemos consultar doc.y después de llamarlo
+    const qrY = (height - qrSize) / 2;
+    doc.image(qrBuffer, padding, qrY, { width: qrSize, height: qrSize });
+
+    // --- 📝 BLOQUE DE TEXTO DINÁMICO ---
+
+    // El inicio vertical depende de si la etiqueta es pequeña o no
+    let currentY = isSmall ? padding : qrY + qrSize * 0.05;
+
+    const titleFontSize = isSmall
+      ? Math.max(mmHeight * 0.14, 6)
+      : Math.max(mmHeight * 0.16, 7.5);
+
+    // Definimos un límite de altura para el texto (aprox 65% del área segura)
+    const maxTitleHeight = safeHeight * 0.65;
+
+    // 4. Nombre del ítem (Flexible: 1, 2 o 3 líneas)
     doc
       .fillColor("#000000")
-      .fontSize(8)
+      .fontSize(titleFontSize)
       .font("Helvetica-Bold")
-      .text(item.name, 60, 10, { width: 75 });
+      .lineGap(-1.2)
+      .text(item.name.toUpperCase(), textX, currentY, {
+        width: colTextWidth,
+        height: maxTitleHeight,
+        ellipsis: true,
+        align: "left",
+      });
 
-    // Calculamos un pequeño margen después del nombre
-    const currentY = doc.y + 2;
+    // --- POSICIONAMIENTO RELATIVO ---
+    // doc.y se actualiza automáticamente al final del texto anterior
+    const infoFontSize = titleFontSize * 0.8;
+    let dynamicY = doc.y + (isSmall ? 1 : 2);
 
-    // 3. Dibujar ID debajo del nombre (dinámico)
-    doc
-      .fillColor("#444444")
-      .fontSize(7)
-      .font("Helvetica")
-      .text(`ID: #${itemId}`, 60, currentY);
+    // Guardia de seguridad: que el ID no se salga del borde inferior
+    const bottomLimit = height - (infoFontSize + padding);
+    if (dynamicY > bottomLimit) {
+      dynamicY = bottomLimit - 1;
+    }
 
-    // 4. Dibujar el Badge debajo del ID
-    const badgeY = currentY + 10;
+    if (isSmall) {
+      // DISEÑO COMPACTO (S): ID y Medida en una sola línea
+      doc
+        .fillColor("#444444")
+        .fontSize(infoFontSize)
+        .font("Helvetica")
+        .text(
+          `#${itemId} | ${Math.round(mmWidth)}x${Math.round(mmHeight)}mm`,
+          textX,
+          dynamicY,
+          {
+            width: colTextWidth,
+            align: "left",
+          },
+        );
+    } else {
+      // DISEÑO ESTÁNDAR (M/L): Cascada de ID y Badge
+      doc
+        .fillColor("#444444")
+        .fontSize(infoFontSize)
+        .font("Helvetica")
+        .text(`ID: #${itemId}`, textX, dynamicY);
 
-    // Dibujamos el fondo del badge
-    doc.roundedRect(60, badgeY, 65, 10, 2).fill("#F0F0F0");
+      const badgeY = doc.y + 2;
+      const badgeWidth = colTextWidth * 0.9;
+      const badgeHeight = infoFontSize * 1.5;
 
-    // Texto dentro del badge
-    doc
-      .fillColor("#666666")
-      .fontSize(5)
-      .font("Helvetica-Bold")
-      .text("50x30mm Standard", 63, badgeY + 3);
+      // Solo dibujamos el badge si queda espacio suficiente en la etiqueta
+      if (badgeY + badgeHeight < height - padding) {
+        doc
+          .roundedRect(textX, badgeY, badgeWidth, badgeHeight, 2)
+          .fill("#F0F0F0");
+
+        doc
+          .fillColor("#666666")
+          .fontSize(infoFontSize * 0.7)
+          .font("Helvetica-Bold")
+          .text(
+            `${Math.round(mmWidth)}x${Math.round(mmHeight)}mm Standard`,
+            textX,
+            badgeY + badgeHeight * 0.25,
+            { width: badgeWidth, align: "center" },
+          );
+      }
+    }
 
     doc.end();
   }

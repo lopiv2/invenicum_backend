@@ -51,23 +51,39 @@ router.get("/items/:id/print-label", verifyToken, async (req, res) => {
     const itemId = parseInt(req.params.id);
     const userId = req.user.id;
 
+    // 1. Capturamos las dimensiones desde el query string
+    // Ejemplo: /print-label?width=25&height=15
+    const queryOptions = {
+      width: req.query.width,
+      height: req.query.height,
+    };
+
     if (isNaN(itemId)) {
-      return res.status(400).json({ success: false, message: "ID de ítem inválido." });
+      return res
+        .status(400)
+        .json({ success: false, message: "ID de ítem inválido." });
     }
 
-    // 1. Llamamos a un nuevo método en el servicio que genere el PDF
-    // Le pasamos res para que haga el pipe directamente
-    await inventoryItemService.generatePrintLabelPDF(itemId, userId, res);
-
+    // 2. Pasamos las queryOptions al servicio
+    await inventoryItemService.generatePrintLabelPDF(
+      itemId,
+      userId,
+      res,
+      queryOptions,
+    );
   } catch (error) {
-    console.error(`Error generando etiqueta para ítem ${req.params.id}:`, error);
-    
-    if (error.message.includes("not found") || error.message.includes("denegado")) {
+    console.error(
+      `Error generando etiqueta para ítem ${req.params.id}:`,
+      error,
+    );
+
+    if (
+      error.message.includes("not found") ||
+      error.message.includes("denegado")
+    ) {
       return res.status(404).json({ success: false, message: error.message });
     }
-    
-    // Si el error ocurre después de empezar el pipe del PDF, 
-    // Express podría tener problemas enviando un JSON, pero este catch lo previene.
+
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: error.message });
     }

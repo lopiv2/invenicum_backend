@@ -1,10 +1,27 @@
 const crypto = require("crypto");
+const { promisify } = require('util');
+const scrypt = promisify(crypto.scrypt);
 const ALGORITHM = "aes-256-cbc";
 // Aseguramos que la KEY tenga 32 bytes exactos
 const KEY_STRING =
   process.env.ENCRYPTION_KEY || "tu_clave_de_32_chars_exactos_012";
 const KEY = Buffer.from(KEY_STRING).slice(0, 32);
 const IV_LENGTH = 16;
+
+/**
+ * Genera un hash seguro usando el método nativo scrypt de Node.js
+ */
+async function hashPassword(password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const derivedKey = await scrypt(password, salt, 64);
+    return `${salt}:${derivedKey.toString('hex')}`;
+}
+
+async function verifyPassword(password, storedPassword) {
+    const [salt, key] = storedPassword.split(':');
+    const derivedKey = await scrypt(password, salt, 64);
+    return crypto.timingSafeEqual(Buffer.from(key, 'hex'), derivedKey);
+}
 
 const encrypt = (text) => {
   // 🚩 CAMBIO: Eliminamos "text.includes(':')"
@@ -44,4 +61,4 @@ const decrypt = (text) => {
   }
 };
 
-module.exports = { encrypt, decrypt };
+module.exports = { encrypt, decrypt, hashPassword, verifyPassword };
