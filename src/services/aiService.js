@@ -8,6 +8,8 @@ const integrationService = require("./integrationsService");
 class AIService {
   async processChatConversation(userInput, context = {}) {
     const userId = parseInt(context.userId);
+    const locale = context.locale || "es"; // Extraemos el idioma del contexto
+
     if (isNaN(userId)) throw new Error("userId requerido");
     const geminiData = await integrationService.getGeminiApiKey(userId);
 
@@ -21,22 +23,31 @@ class AIService {
         };
       }
 
+      // --- LÓGICA DE INTERCEPTACIÓN DE COMANDO ---
+      let finalInput = userInput;
+      if (userInput === "SAY_HELLO_INITIAL") {
+        finalInput = `Actúa como Veni. Preséntate brevemente y salúdame amigablemente. 
+                      REGLA DE ORO: Debes responder en el idioma "${locale}". 
+                      Dime que estás listo para ayudarme a organizar mis contenedores e inventario.`;
+      }
+
       const dynamicClient = new GoogleGenAI({ apiKey: geminiData.apiKey });
 
-      // Buscamos los contenedores para que Veni conozca los IDs reales
+      // Buscamos los contenedores del usuario
       const containers = await prisma.container.findMany({
-        where: { userId: userId }, // <--- AHORA SÍ ESTÁ FILTRADO
+        where: { userId: userId },
         select: { id: true, name: true },
       });
 
-      // Convertimos la lista de Prisma a un formato que Gemini entienda bien
       const listaContenedores = containers
         .map((c) => `- ${c.name} (ID: ${c.id})`)
         .join("\n");
 
-      const currentContainerId = context.containerId || "default";
-
       const systemPrompt = `Eres Veni, el asistente de Invenicum.
+
+      REGLA DE IDIOMA CRÍTICA:
+      - Debes responder EXCLUSIVAMENTE en el idioma: "${locale}".
+      - Adapta tu tono y saludos a las normas culturales de ese idioma.
       
       INFORMACIÓN REAL DE LA BASE DE DATOS:
       - Contenedores actuales del usuario:
@@ -50,25 +61,25 @@ class AIService {
       - Si pide "Preferencias": usa "NAVIGATE" y data: {"path": "/preferences"}.
       - Si pide escanear: usa "OPEN_SCANNER".
 
-      ACCIONES DE PLANTILLAS (NUEVO):
-      - Si el usuario quiere crear una plantilla (ej: "Ayúdame a organizar mis vinilos" o "Crea una plantilla para herramientas"):
+      ACCIONES DE PLANTILLAS:
+      - Si el usuario quiere crear una plantilla (ej: "Ayúdame a organizar mis vinilos"):
         1. Identifica campos lógicos según el contexto.
         2. Establece "action": "CREATE_TEMPLATE".
         3. En "data", construye este objeto EXACTO:
            {
              "name": "Nombre de la plantilla",
-             "description": "Breve descripción de lo que permite organizar",
-             "category": "Categoría (ej: Multimedia, Herramientas, Ropa)",
+             "description": "Breve descripción",
+             "category": "Categoría",
              "fields": [
                { "name": "Nombre del campo", "type": "text" }
              ]
            }
-        4. REGLA CRÍTICA: "type" SOLO puede ser uno de estos: "text", "number", "date", "dropdown", "price", "boolean", "url". No inventes otros.
+        4. REGLA CRÍTICA: "type" SOLO puede ser: "text", "number", "date", "dropdown", "price", "boolean", "url".
 
       IMPORTANTE: Responde SIEMPRE con un objeto JSON:
       {
         "answer": "Tu respuesta conversacional",
-        "action": "PRODUCT_EXTRACT" | "NAVIGATE" | "OPEN_SCANNER" | null,
+        "action": "PRODUCT_EXTRACT" | "NAVIGATE" | "OPEN_SCANNER" | "CREATE_TEMPLATE" | null,
         "data": {}
       }`;
 
@@ -78,35 +89,34 @@ class AIService {
           {
             role: "user",
             parts: [
-              { text: `${systemPrompt}\n\nMensaje del usuario: ${userInput}` },
+              { text: `${systemPrompt}\n\nMensaje del usuario: ${finalInput}` },
             ],
           },
         ],
         config: { generationConfig: { responseMimeType: "application/json" } },
       });
 
-      // Extraer texto y limpiar
       const rawText = response.candidates[0].content.parts[0].text;
       const result = JSON.parse(rawText.replace(/```json|```/g, "").trim());
 
-      // LÓGICA DE EXTRACCIÓN (Tu función de scraping)
-      // EXTRAER INFO (Pasando la misma clave)
+      // LÓGICA DE EXTRACCIÓN DE PRODUCTO (Tu función original)
       if (result.action === "PRODUCT_EXTRACT" && result.data.url) {
         result.data = await this.extractInfoFromUrl(
           result.data.url,
           ["Nombre", "Precio", "Descripción"],
-          apiKeyToUse,
+          userId, // Usamos el userId para obtener la key dentro de la función
         );
         result.answer =
-          "He analizado el enlace con tu propia clave de Gemini. ¿Quieres guardar los datos?";
+          locale === "es"
+            ? "He analizado el enlace. ¿Quieres guardar los datos?"
+            : "I've analyzed the link. Do you want to save the data?";
       }
 
       return result;
     } catch (error) {
       console.error("❌ Error en AIService:", error.message);
       return {
-        answer:
-          "Lo siento, tuve un problema al consultar tus datos. Inténtalo de nuevo.",
+        answer: "Lo siento, tuve un problema al consultar tus datos.",
         action: null,
         data: {},
       };

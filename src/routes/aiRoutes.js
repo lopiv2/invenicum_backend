@@ -45,7 +45,11 @@ router.post("/chat/veni", verifyToken, async (req, res) => {
     // Esto es lo que te faltaba o estaba fallando
     await aiService.saveMessage(userId, message, true);
 
-    const updatedContext = { ...context, userId: userId };
+    const updatedContext = { 
+      ...context, 
+      userId: userId,
+      locale: context?.locale || 'es' // Fallback a español si no viene
+    };
 
     // 2. PROCESAR CON LA IA
     const result = await aiService.processChatConversation(
