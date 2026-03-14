@@ -11,6 +11,25 @@ router.use((req, res, next) => {
   next();
 });
 
+// GET /api/integrations/barcode/lookup/:barcode
+router.get("/barcode/lookup/:barcode", verifyToken, async (req, res) => {
+  try {
+    const { barcode } = req.params;
+    const userId = req.user.id;
+
+    const inventoryItemDto = await integrationService.lookupBarcode(userId, barcode);
+
+    if (inventoryItemDto) {
+      // 🚩 Usamos el método toJSON del DTO
+      res.status(200).json({ data: inventoryItemDto.toJSON() });
+    } else {
+      res.status(404).json({ message: "Producto no encontrado" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/integrations/test
 router.post("/test", verifyToken, async (req, res) => {
   try {

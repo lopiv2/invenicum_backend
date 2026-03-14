@@ -3,8 +3,9 @@ const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
 const axios = require("axios");
-const {Resend} = require("resend");
-
+const { Resend } = require("resend");
+const InventoryItemDTO = require("../models/inventoryItemModel");
+const { getBase64FromUrl } = require("../middleware/utils");
 
 class IntegrationService {
   /**
@@ -20,7 +21,7 @@ class IntegrationService {
         case "email": {
           const { apiKey, fromEmail } = config;
           const resend = new Resend(apiKey);
-          
+
           try {
             console.log("Intentando enviar mail con Resend...");
 
@@ -401,6 +402,96 @@ class IntegrationService {
       );
       return null;
     }
+  }
+
+  async lookupBarcode(userId, barcode) {
+    // 1. Obtener estados de integración
+    const integrations = await this.getStatuses(userId);
+
+    // 2. Verificar si upcitemdb está activa
+    const upcIntegration = integrations.find((i) => i.type === "upcitemdb");
+    const isUpcActive = upcIntegration?.isActive === true;
+
+    if (isUpcActive) {
+      const fullConfig = await this.getConfig(userId, "upcitemdb");
+
+      // 🚩 EXTRACCIÓN DINÁMICA DE API KEY
+      let apiKey = null;
+      if (fullConfig && fullConfig.config) {
+        // Si config es el string 'id:key', sacamos la segunda parte. Si es objeto, sacamos .apiKey
+        if (typeof fullConfig.config === "string") {
+          const parts = fullConfig.config.split(":");
+          apiKey = parts.length > 1 ? parts[1] : parts[0];
+        } else {
+          apiKey = fullConfig.config.apiKey;
+        }
+      }
+
+      // 🚩 SELECCIÓN DE ENDPOINT
+      // Si tenemos apiKey -> Pro. Si no -> Trial.
+      const isPro = !!apiKey;
+      const baseURL = isPro
+        ? "https://api.upcitemdb.com/prod/v1/lookup"
+        : "https://api.upcitemdb.com/prod/trial/lookup";
+
+      try {
+        const response = await axios.get(baseURL, {
+          params: { upc: barcode },
+          headers: {
+            Accept: "application/json",
+            // Solo incluimos el header si realmente tenemos una key
+            ...(isPro ? { user_key: apiKey, key_type: "free" } : {}),
+          },
+        });
+
+        if (response.data.items && response.data.items.length > 0) {
+          const item = response.data.items[0];
+          let imageUrl =
+            item.images && item.images.length > 0 ? item.images[0] : null;
+
+          // 3. 🚩 LA MAGIA: Convertir a Base64 antes de enviar al DTO
+          // Esto evita el error de pantalla blanca/CORS en Flutter Web
+          if (imageUrl && imageUrl.startsWith("http")) {
+            console.log(
+              "🔄 Convirtiendo imagen de código de barras a Base64...",
+            );
+            imageUrl = await getBase64FromUrl(imageUrl);
+          }
+
+          // Mapeo al DTO (Simulando Prisma)
+          const mockPrismaItem = {
+            id: 0,
+            name: item.title,
+            description: item.description,
+            barcode: barcode,
+            quantity: 1,
+            minStock: 0,
+            marketValue: item.highest_price || 0,
+            currency: "EUR",
+            assetTypeId: 0,
+            containerId: 0,
+            images: imageUrl ? [{ id: 0, url: imageUrl, order: 0 }] : [],
+            customFieldValues: {
+              brand: item.brand,
+              source: isPro ? "upcitemdb_pro" : "upcitemdb_trial",
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+
+          return new InventoryItemDTO(mockPrismaItem);
+        }
+      } catch (err) {
+        console.error(
+          `❌ Error en UPCItemDB (${isPro ? "PRO" : "TRIAL"}):`,
+          err.message,
+        );
+
+        // Si el Pro falla por Key inválida, podrías intentar un fallback a trial aquí si quisieras
+      }
+    }
+
+    return null;
   }
 }
 
