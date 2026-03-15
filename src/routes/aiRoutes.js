@@ -41,9 +41,11 @@ router.post("/chat/veni", verifyToken, async (req, res) => {
     const { message, context } = req.body;
     const userId = req.user.id;
 
-    // 1. GUARDAR MENSAJE DEL USUARIO (Lo que tú escribes)
-    // Esto es lo que te faltaba o estaba fallando
-    await aiService.saveMessage(userId, message, true);
+    // SAY_HELLO_INITIAL es un comando interno — no se guarda en el historial
+    // para que no aparezca al cargar el historial de conversación.
+    if (message !== "SAY_HELLO_INITIAL") {
+      await aiService.saveMessage(userId, message, true);
+    }
 
     const updatedContext = { 
       ...context, 

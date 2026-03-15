@@ -1,6 +1,4 @@
 require("dotenv").config({ path: "../.env" });
-const crypto = require("crypto");
-const { promisify } = require("util");
 const { hashPassword } = require("../../src/middleware/cryptoUtils");
 
 const prisma = require("../../src/middleware/prisma");

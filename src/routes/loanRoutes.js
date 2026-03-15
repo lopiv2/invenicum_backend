@@ -29,7 +29,6 @@ router.get("/loans", async (req, res) => {
 router.get("/containers/:containerId/loans", async (req, res) => {
   try {
     const { containerId } = req.params;
-    console.log("hola contenedor")
     const loans = await loanService.getLoans(containerId);
     res.status(200).json(loans);
   } catch (error) {

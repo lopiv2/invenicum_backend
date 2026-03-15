@@ -8,22 +8,23 @@ const inventoryItemService = require("../services/inventoryItemService");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+// getPublicUrl: fuente de verdad única para construir URLs de imágenes,
+// igual que en assetTypeService. Evita el bug __dirname vs process.cwd().
+const { getPublicUrl } = require("../middleware/upload");
 
-const UPLOAD_DIR = path.join(__dirname, "../uploads/inventory");
+// Usamos process.cwd() (igual que upload.js) para que la ruta de creación
+// de directorio y la de guardado de Multer coincidan siempre.
+const UPLOAD_DIR = path.resolve(process.cwd(), process.env.UPLOAD_FOLDER || "uploads/inventory", "items");
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
 const storage = multer.diskStorage({
-  // 1. Dónde guardar el archivo
   destination: (req, file, cb) => {
     cb(null, UPLOAD_DIR);
   },
-  // 2. Cómo nombrar el archivo (usamos un timestamp para unicidad)
   filename: (req, file, cb) => {
-    // Obtenemos la extensión original
     const ext = path.extname(file.originalname);
-    // Creamos un nombre único (ej: item-1700000000000.jpg)
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(null, "item-" + uniqueSuffix + ext);
   },
@@ -31,7 +32,6 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  // Opcional: Limitar el tamaño de los archivos
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 

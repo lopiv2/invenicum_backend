@@ -100,6 +100,63 @@ class AIService {
       const rawText = response.candidates[0].content.parts[0].text;
       const result = JSON.parse(rawText.replace(/```json|```/g, "").trim());
 
+      // Si Gemini generó una plantilla con dropdowns sin opciones,
+      // hacemos un segundo llamado específico para rellenarlas.
+      if (result.action === "CREATE_TEMPLATE" && result.data?.fields) {
+        const dropdownsWithoutOptions = result.data.fields.filter(
+          (f) =>
+            f.type === "dropdown" && (!f.options || f.options.length === 0),
+        );
+
+        if (dropdownsWithoutOptions.length > 0) {
+          const fieldNames = dropdownsWithoutOptions
+            .map((f) => `"${f.name}"`)
+            .join(", ");
+          const optionsPrompt = `Para una plantilla llamada "${result.data.name}" de categoría "${result.data.category}", 
+sugiere entre 3 y 6 opciones realistas para cada uno de estos campos de tipo dropdown: ${fieldNames}.
+Responde ÚNICAMENTE con un objeto JSON donde cada clave es el nombre exacto del campo y el valor es un array de strings.
+Ejemplo: { "Estado": ["Nuevo", "Usado", "Dañado"] }`;
+
+          try {
+            const optionsResponse = await dynamicClient.models.generateContent({
+              model: geminiData.model || "gemini-2.0-flash",
+              contents: [{ role: "user", parts: [{ text: optionsPrompt }] }],
+              config: {
+                generationConfig: { responseMimeType: "application/json" },
+              },
+            });
+
+            const optionsRaw =
+              optionsResponse.candidates[0].content.parts[0].text;
+            const optionsMap = JSON.parse(
+              optionsRaw.replace(/```json|```/g, "").trim(),
+            );
+
+            // Inyectamos las opciones en los campos correspondientes
+            result.data.fields = result.data.fields.map((f) => {
+              if (f.type === "dropdown" && optionsMap[f.name]) {
+                return { ...f, options: optionsMap[f.name] };
+              }
+              return f;
+            });
+
+            console.log(
+              "[CREATE_TEMPLATE] Opciones inyectadas:",
+              JSON.stringify(
+                result.data.fields.filter((f) => f.type === "dropdown"),
+                null,
+                2,
+              ),
+            );
+          } catch (e) {
+            console.error(
+              "[CREATE_TEMPLATE] Error obteniendo opciones:",
+              e.message,
+            );
+          }
+        }
+      }
+
       // LÓGICA DE EXTRACCIÓN DE PRODUCTO (Tu función original)
       if (result.action === "PRODUCT_EXTRACT" && result.data.url) {
         result.data = await this.extractInfoFromUrl(

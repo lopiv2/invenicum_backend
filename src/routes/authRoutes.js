@@ -12,16 +12,86 @@ router.use((req, res, next) => {
   next();
 });
 
-// Ruta para verificar el token y obtener datos del usuario
+// ─────────────────────────────────────────────────────────────────────────────
+// RUTAS DE PRIMER USO (públicas, sin token)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /auth/first-run
+ * Comprueba si la base de datos tiene usuarios.
+ * El frontend llama a este endpoint al arrancar para decidir si redirige
+ * al wizard de configuración inicial o al login normal.
+ *
+ * Response: { firstRun: true | false }
+ */
+router.get("/first-run", async (req, res) => {
+  try {
+    const firstRun = await userService.isFirstRun();
+    return res.status(200).json({ firstRun });
+  } catch (error) {
+    console.error("[ERROR][FIRST-RUN]:", error.message);
+    // En caso de error (DB caída, etc.) respondemos firstRun: false para
+    // no bloquear el arranque de la app — el login fallará por su cuenta.
+    return res.status(200).json({ firstRun: false });
+  }
+});
+
+/**
+ * POST /auth/setup
+ * Crea el primer usuario administrador.
+ * Está protegido a nivel de servicio: si ya existe algún usuario, rechaza
+ * la petición con 403 para evitar que se llame después del primer arranque.
+ *
+ * Body: { name, email, password }
+ * Response: 201 { success: true, message: "..." }
+ */
+router.post("/setup", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Todos los campos son requeridos: name, email, password",
+      });
+    }
+
+    const result = await userService.createFirstAdmin({ name, email, password });
+
+    if (!result.success) {
+      // El servicio devuelve forbidden: true cuando ya hay usuarios
+      const statusCode = result.forbidden ? 403 : 400;
+      return res.status(statusCode).json({
+        success: false,
+        message: result.message,
+      });
+    }
+
+    console.log(`[SETUP] Primer administrador creado: ${email}`);
+    return res.status(201).json({
+      success: true,
+      message: "Administrador creado correctamente. Ya puedes iniciar sesión.",
+    });
+  } catch (error) {
+    console.error("[ERROR][SETUP]:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error interno al crear el administrador",
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RUTAS EXISTENTES (sin cambios)
+// ─────────────────────────────────────────────────────────────────────────────
+
 router.get("/github/config", (req, res) => {
   res.json({
     success: true,
     clientId: process.env.GITHUB_CLIENT_ID,
-    // No envíes el Client Secret nunca
   });
 });
 
-// --- RUTA GITHUB OAUTH ---
 router.post("/github/complete", verifyToken, async (req, res) => {
   const { code } = req.body;
   const userId = req.user.userId || req.user.id;
@@ -33,7 +103,6 @@ router.post("/github/complete", verifyToken, async (req, res) => {
   }
 
   try {
-    // 1. Intercambiar código por Access Token
     const tokenResponse = await axios.post(
       "https://github.com/login/oauth/access_token",
       {
@@ -51,7 +120,6 @@ router.post("/github/complete", verifyToken, async (req, res) => {
         .json({ success: false, message: "Token de GitHub inválido" });
     }
 
-    // 2. Obtener datos del perfil de GitHub
     const userRes = await axios.get("https://api.github.com/user", {
       headers: {
         Authorization: `token ${accessToken}`,
@@ -59,17 +127,13 @@ router.post("/github/complete", verifyToken, async (req, res) => {
       },
     });
 
-    // 🚩 CORRECCIÓN AQUÍ: Extraemos los datos de userRes.data
     const githubData = userRes.data;
 
-    // 3. Llamar al servicio para actualizar la DB con Prisma
-    // Usamos githubData.login, githubData.id, etc.
     const result = await userService.updateGitHubIdentity(userId, {
       githubHandle: githubData.login,
       githubId: githubData.id.toString(),
       avatarUrl: githubData.avatar_url,
       githubToken: accessToken,
-      // Opcional: solo actualiza el username si el usuario no tiene uno
       username: githubData.login,
     });
 
@@ -77,7 +141,6 @@ router.post("/github/complete", verifyToken, async (req, res) => {
       return res.status(400).json(result);
     }
 
-    // 4. IMPORTANTE: Enviar la respuesta exitosa
     return res.status(200).json({
       success: true,
       message: "GitHub vinculado correctamente",
@@ -92,7 +155,6 @@ router.post("/github/complete", verifyToken, async (req, res) => {
   }
 });
 
-// Ruta para iniciar sesión
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -104,18 +166,14 @@ router.post("/login", async (req, res) => {
 
     const result = await userService.login({ username, password });
 
-    // Si el servicio dice que falló (usuario no existe o clave mal), respondemos 401
     if (!result.success) {
-      console.log(`[LOGIN FAILED]: ${result.message}`); // Aquí sí lo verás en tu consola de Node
+      console.log(`[LOGIN FAILED]: ${result.message}`);
       return res.status(401).json({
         success: false,
-        message: result.message, // Aquí enviamos "Usuario no encontrado"
+        message: result.message,
       });
     }
 
-    // Si tuvo éxito, devolvemos el objeto limpio
-    // Quitamos la envoltura extra de 'data: result'
-    // SI TODO SALIÓ BIEN
     return res.status(200).json({
       success: true,
       token: result.token,
@@ -126,12 +184,10 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Ruta para registrar un nuevo usuario
 router.post("/register", async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
-    // Validación básica
     if (!email || !password || !name) {
       return res.status(400).json({
         success: false,
@@ -159,16 +215,9 @@ router.post("/register", async (req, res) => {
   }
 });
 
-/*
- * RUTA PARA DESCONECTAR GITHUB
- * POST /api/v1/auth/github/disconnect
- * Body: {} (no se necesita enviar nada, el userId viene del token)
- */
 router.post("/github/disconnect", verifyToken, async (req, res) => {
   try {
     const userId = req.user.userId || req.user.id;
-
-    // Llamamos al servicio
     const result = await userService.disconnectGitHub(userId);
 
     if (!result.success) {
@@ -194,7 +243,6 @@ router.get("/me", verifyToken, async (req, res) => {
       return res.status(404).json(result);
     }
 
-    // El result.user ya contiene el themeConfig gracias al include que pusimos en el service
     return res.status(200).json({
       success: true,
       user: result.user,
@@ -211,13 +259,11 @@ router.get("/me", verifyToken, async (req, res) => {
   }
 });
 
-// --- RUTA CAMBIO DE CONTRASEÑA ---
 router.post("/change-password", verifyToken, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.userId || req.user.id;
 
-    // Validación básica de entrada
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
@@ -225,14 +271,12 @@ router.post("/change-password", verifyToken, async (req, res) => {
       });
     }
 
-    // Llamamos al servicio
     const result = await userService.changePassword(userId, {
       currentPassword,
       newPassword,
     });
 
     if (!result.success) {
-      // Si la contraseña actual no coincide, el servicio devolverá success: false
       return res.status(401).json(result);
     }
 
@@ -249,9 +293,7 @@ router.post("/change-password", verifyToken, async (req, res) => {
   }
 });
 
-// Ruta para cerrar sesión
 router.post("/logout", (req, res) => {
-  // Aquí iría la lógica para invalidar el token si estás usando JWT
   res.status(200).json({
     success: true,
     message: "Sesión cerrada exitosamente",

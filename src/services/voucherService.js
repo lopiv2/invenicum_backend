@@ -1,8 +1,11 @@
 const prisma = require("../middleware/prisma");
 const fs = require("fs");
 const path = require("path");
+const { getPublicUrl } = require("../middleware/upload");
 
 const UPLOAD_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
+// process.cwd() para coincidir con voucherRoutes.js y upload.js
+const UPLOAD_DIR_ABSOLUTE = path.resolve(process.cwd(), UPLOAD_FOLDER);
 
 class VoucherService {
   async saveGlobalConfig(template, file) {
@@ -17,7 +20,12 @@ class VoucherService {
     if (file) {
       // Borrar logo anterior si existe
       if (existing?.logoPath) {
-        const oldPath = path.join(__dirname, "..", UPLOAD_FOLDER, existing.logoPath);
+        // process.cwd() en lugar de __dirname para coincidir con voucherRoutes.js
+        const staticPrefix = process.env.STATIC_URL_PREFIX || "/images";
+        const relativePath = existing.logoPath.startsWith(staticPrefix)
+          ? existing.logoPath.slice(staticPrefix.length + 1)
+          : existing.logoPath;
+        const oldPath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
         if (fs.existsSync(oldPath)) {
           try {
             fs.unlinkSync(oldPath);
@@ -27,7 +35,7 @@ class VoucherService {
         }
       }
       // Construir ruta relativa siguiendo tu estándar
-      logoPath = path.join("vouchers", file.filename).replace(/\\/g, "/");
+      logoPath = getPublicUrl(file.path); // ✅ "/images/vouchers/global-logo-xxx.ext"
     }
 
     // 3. Guardar/Actualizar siempre el registro 1

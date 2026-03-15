@@ -6,8 +6,8 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// Configuración de directorio según assetTypeRoutes.js
-const UPLOAD_DIR = path.join(__dirname, "..", 
+// process.cwd() en lugar de __dirname para coincidir con upload.js
+const UPLOAD_DIR = path.resolve(process.cwd(),
     process.env.UPLOAD_FOLDER || "uploads/inventory", "vouchers");
 
 if (!fs.existsSync(UPLOAD_DIR)) {

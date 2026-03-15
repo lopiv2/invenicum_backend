@@ -262,10 +262,18 @@ class TemplateService {
       const githubContent = dto.toJSON ? dto.toJSON() : dto;
 
       // 6. Subir archivo
+      // Nombre: slug del nombre + id → ej: "retrogames-tpl_ed2de3eb.json"
+      const slug = template.name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const filename = `${slug}-${template.id}.json`;
+
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
-        path: `templates/${template.id}.json`,
+        path: `templates/${filename}`,
         message: `✨ Contribution: ${template.name} by @${githubHandle}`,
         content: Buffer.from(JSON.stringify(githubContent, null, 2)).toString(
           "base64",

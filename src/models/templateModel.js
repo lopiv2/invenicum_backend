@@ -43,8 +43,8 @@ class AssetTemplateDTO {
       tags: this.tags,
       author: this.author, 
       authorAvatarUrl: this.authorAvatarUrl,
-      fields: this.fields, 
-      isOfficial: this.isOfficial, // 👈 Única versión que saldrá
+      fields: this.fields.map(f => f.toJSON ? f.toJSON() : f),
+      isOfficial: this.isOfficial,
       isPublic: this.isPublic,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,

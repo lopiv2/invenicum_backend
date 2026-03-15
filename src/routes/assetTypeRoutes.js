@@ -3,68 +3,11 @@
 const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 const containerService = require("../services/containerService");
 const assetTypeService = require("../services/assetTypeService");
-const multer = require("multer");
-const path = require("path");
 const fs = require("fs");
 require("dotenv").config(); // Cargar las variables de entorno
-
-// 💡 RUTAS Y CARPETAS DE SUBIDA
-// 🔑 AJUSTE CLAVE: Usamos las variables de entorno para construir la ruta física
-const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
-const ASSET_TYPES_SUBDIR =
-  process.env.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR || "asset-types";
-
-// La ruta de subida de Asset Types es: ../uploads/inventory/asset-types
-const UPLOAD_DIR = path.join(
-  __dirname,
-  "..",
-  UPLOAD_BASE_FOLDER,
-  ASSET_TYPES_SUBDIR
-);
-
-// Crear el directorio si no existe
-if (!fs.existsSync(UPLOAD_DIR)) {
-  try {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    console.log(`Created asset-types upload directory: ${UPLOAD_DIR}`);
-  } catch (error) {
-    console.error(`Error creating upload directory ${UPLOAD_DIR}:`, error);
-  }
-}
-
-// Configuración de multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // 🔑 USAR LA RUTA AJUSTADA (uploads/inventory/asset-types)
-    cb(null, UPLOAD_DIR);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "asset-type-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB límite por archivo
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif/;
-    const extname = allowedTypes.test(
-      path.extname(file.originalname).toLowerCase()
-    );
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (extname && mimetype) {
-      return cb(null, true);
-    } else {
-      cb(
-        new Error("Solo se permiten archivos de imagen (jpeg, jpg, png, gif)")
-      );
-    }
-  },
-});
 
 // Middleware para logging (opcional)
 router.use((req, res, next) => {
@@ -185,7 +128,6 @@ router.get("/asset-types/:id", verifyToken, async (req, res) => {
 router.patch(
   "/asset-types/:id",
   verifyToken,
-  // El nombre del campo debe coincidir con el que usa Dio en el frontend (files)
   upload.array("files"),
   async (req, res) => {
     // req.files contiene los archivos subidos por Multer (nueva imagen)

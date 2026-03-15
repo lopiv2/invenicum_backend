@@ -267,27 +267,53 @@ class IntegrationService {
    */
   async getGeminiApiKey(userId) {
     try {
-      // 1. Buscamos el registro en la base de datos
+      const parsedId = parseInt(userId);
+
       const record = await prisma.userIntegration.findUnique({
-        where: { userId_type: { userId: parseInt(userId), type: "gemini" } },
+        where: { userId_type: { userId: parsedId, type: "gemini" } },
       });
 
-      // 2. Si no existe o no está activa, devolvemos null
-      if (!record || !record.isActive || !record.config?.data) {
+      // Log detallado para diagnóstico — eliminar en producción
+      if (!record) {
         return null;
       }
 
-      // 3. DESENCRIPTAMOS MANUALMENTE (Igual que haces en getConfig)
-      const decrypted = decrypt(record.config.data);
-      const configObj = JSON.parse(decrypted);
+      if (!record.isActive) {
+        return null;
+      }
 
-      // 4. Devolvemos solo lo necesario para la IA
+      // config viene de Prisma como objeto JSON: { data: "encrypted_string" }
+      // Si config.data existe → está cifrado con nuestro encrypt()
+      // Si no existe → se guardó sin cifrar (directamente el objeto)
+      let apiKey, model;
+
+      if (record.config?.data) {
+        // Caso normal: cifrado
+        const decrypted = decrypt(record.config.data);
+        const configObj = JSON.parse(decrypted);
+        apiKey = configObj.apiKey;
+        model = configObj.model;
+      } else if (record.config?.apiKey) {
+        // Caso fallback: guardado sin cifrar (config = { apiKey: "...", model: "..." })
+        apiKey = record.config.apiKey;
+        model = record.config.model;
+      } else {
+        return null;
+      }
+
+      if (!apiKey) {
+        return null;
+      }
+
       return {
-        apiKey: configObj.apiKey,
-        model: configObj.model || "gemini-3-flash-preview",
+        apiKey,
+        model: model || "gemini-3.0-flash",
       };
     } catch (e) {
-      console.error("❌ Error obtaining/decrypting Gemini API Key:", e.message);
+      console.error(
+        "❌ [Gemini] Error obteniendo/descifrando API Key:",
+        e.message,
+      );
       return null;
     }
   }

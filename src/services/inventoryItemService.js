@@ -8,13 +8,16 @@ const alertService = require("./alertService");
 const PDFDocument = require("pdfkit");
 const bwipjs = require("bwip-js");
 
-// 💡 Ruta Absoluta donde se guardan los archivos
-// Asumimos que la carpeta 'uploads/inventory' está un nivel por encima del archivo de servicio
-const UPLOAD_DIR_ABSOLUTE = path.join(
-  __dirname,
-  "..",
-  process.env.UPLOAD_FOLDER,
+// Usamos process.cwd() para coincidir exactamente con upload.js (que también usa process.cwd()).
+// Si usáramos __dirname y el servidor arrancara desde otro directorio, los archivos
+// se guardarían en un sitio y se buscarían en otro al borrarlos → ENOENT.
+const UPLOAD_DIR_ABSOLUTE = path.resolve(
+  process.cwd(),
+  process.env.UPLOAD_FOLDER || "uploads/inventory"
 );
+
+// getPublicUrl: convierte file.path de Multer en la URL pública correcta.
+const { getPublicUrl } = require("../middleware/upload");
 
 class InventoryItemService {
   async createItem(data) {
@@ -77,10 +80,9 @@ class InventoryItemService {
       throw error;
     }
 
-    // 4. MAPEO DE IMÁGENES
-    const baseImageUrl = process.env.STATIC_URL_PREFIX;
+    // 4. MAPEO DE IMÁGENES — getPublicUrl construye la URL correcta desde file.path
     const imageRelations = files.map((file, index) => ({
-      url: path.join(baseImageUrl, file.filename).replace(/\\/g, "/"),
+      url: getPublicUrl(file.path), // ✅ "/images/items/item-xxx.jpg"
       order: index,
     }));
 
@@ -168,7 +170,10 @@ class InventoryItemService {
     // 4. COPIA FÍSICA DE IMÁGENES EN DISCO
     const allImageRelations = [];
     const newlyCopiedFilenames = [];
-    const baseImageUrl = process.env.STATIC_URL_PREFIX;
+    // Para la copia de archivos necesitamos el prefijo para extraer el filename relativo.
+    // Usamos STATIC_URL_PREFIX como referencia, igual que antes, pero ahora
+    // la URL de la imagen copiada se construye con getPublicUrl(newPath).
+    const baseImageUrl = process.env.STATIC_URL_PREFIX || "/images";
     const cleanBaseImageUrl = baseImageUrl.endsWith("/")
       ? baseImageUrl
       : `${baseImageUrl}/`;
@@ -199,7 +204,7 @@ class InventoryItemService {
             newlyCopiedFilenames.push(newFilename);
 
             allImageRelations.push({
-              url: path.join(baseImageUrl, newFilename).replace(/\\/g, "/"),
+              url: getPublicUrl(newPath), // ✅ URL correcta del archivo copiado
               altText: img.altText || null,
               order: img.order || index + 1,
             });
@@ -617,9 +622,7 @@ class InventoryItemService {
       const startOrder = lastImage ? lastImage.order + 1 : 1;
 
       const newImagesData = filesToUpload.map((file, index) => ({
-        url: path
-          .join(process.env.STATIC_URL_PREFIX, file.filename)
-          .replace(/\\/g, "/"),
+        url: getPublicUrl(file.path), // ✅ URL correcta
         inventoryItemId: itemIdInt,
         order: startOrder + index,
       }));

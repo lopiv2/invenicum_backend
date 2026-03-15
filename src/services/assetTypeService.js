@@ -7,24 +7,23 @@ require("dotenv").config();
 const AssetTypeDTO = require('../models/assetTypeModel');
 const BOOLEAN_TYPE_DB = "sí/no (booleano)";
 
-// 💡 CONFIGURACIÓN DE RUTAS FÍSICAS BASADAS EN .env
-const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
-const ASSET_TYPES_SUBDIR =
-  process.env.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR || "asset-types";
+// 🔑 getPublicUrl es la ÚNICA fuente de verdad para construir URLs de imágenes.
+// Convierte la ruta de disco que devuelve Multer en la URL pública que Express sirve.
+// Ej: "/app/uploads/inventory/asset-types/asset-type-123.jpg" → "/images/asset-types/asset-type-123.jpg"
+const { getPublicUrl } = require("../middleware/upload");
 
-// 🔑 RUTA ABSOLUTA para las imágenes de Asset Types (e.g., ../uploads/inventory/asset-types)
-const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.join(
-  __dirname,
-  "..",
+// Ruta absoluta para borrar archivos físicos de asset-types
+const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
+const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.resolve(
+  process.cwd(),
   UPLOAD_BASE_FOLDER,
-  ASSET_TYPES_SUBDIR,
+  "asset-types"
 );
 
-// 🔑 RUTA ABSOLUTA para las imágenes de Inventory Items (e.g., ../uploads/inventory)
-const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.join(
-  __dirname,
-  "..",
-  UPLOAD_BASE_FOLDER,
+// Ruta absoluta para borrar archivos físicos de inventory items
+const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.resolve(
+  process.cwd(),
+  UPLOAD_BASE_FOLDER
 );
 
 /**
@@ -54,15 +53,10 @@ async function createAssetType(containerId, userId, data) {
     };
   }
 
-  // 1. Preparar imágenes
-  const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
-  const UPLOAD_WEB_PATH =
-    process.env.UPLOAD_WEB_PATH_ASSET_TYPES || "asset-types";
-
+  // 1. Preparar imágenes — getPublicUrl construye la URL correcta a partir
+  // de la ruta de disco que Multer asignó, sin depender de variables de entorno adicionales.
   const imageRelations = files.map((file, index) => ({
-    url: path
-      .join(baseImageUrl, UPLOAD_WEB_PATH, file.filename)
-      .replace(/\\/g, "/"),
+    url: getPublicUrl(file.path),   // ✅ "/images/asset-types/asset-type-xxx.jpg"
     filename: file.filename,
     order: index,
   }));
@@ -226,9 +220,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
       // Si hay archivos nuevos, creamos la relación
       if (filesToUpload?.length > 0) {
         const file = filesToUpload[0];
-        const baseImageUrl = process.env.STATIC_URL_PREFIX || "";
-        const UPLOAD_WEB_PATH = process.env.UPLOAD_WEB_PATH_ASSET_TYPES || "asset-types";
-        const publicUrl = path.join(baseImageUrl, UPLOAD_WEB_PATH, file.filename).replace(/\\/g, "/");
+        const publicUrl = getPublicUrl(file.path); // ✅ URL correcta sin variables de entorno adicionales
 
         await tx.assetTypeImage.create({
           data: {

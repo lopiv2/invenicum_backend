@@ -7,7 +7,7 @@ const path = require("path");
 const fs = require("fs");
 require("dotenv").config(); // Asegúrate de cargar las variables
 
-const authRoutes = require("./routes/auth");
+const authRoutes = require("./routes/authRoutes");
 const containerRoutes = require("./routes/containersRoutes");
 const assetTypeRoutes = require("./routes/assetTypeRoutes");
 const itemRoutes = require("./routes/itemRoutes");
@@ -45,7 +45,9 @@ app.use(
   }),
 );
 
-app.use(express.json());
+// 🔑 Aumenta el límite para soportar Base64 de la IA
+app.use(express.json({ limit: '10mb' })); 
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // 🔑 CONSTANTES DE ENTORNO
 const STATIC_URL_PREFIX = process.env.STATIC_URL_PREFIX || "/images";
@@ -62,13 +64,15 @@ const port = process.env.PORT || 3000;
 // 2. CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS Y DIRECTORIOS
 // ----------------------------------------------------
 
-// 🔑 CAMBIO 2: La ruta física que Express va a servir es la base 'uploads/inventory'
-const UPLOAD_DIR_TO_SERVE = path.join(__dirname, UPLOAD_BASE_FOLDER);
-// La subcarpeta donde Multer guardará físicamente los Asset Types:
-const ASSET_TYPES_DIR = path.join(UPLOAD_DIR_TO_SERVE, ASSET_TYPES_SUBDIR);
+// Usamos path.resolve(process.cwd(), ...) en lugar de path.join(__dirname, ...)
+// para que app.js y upload.js usen EXACTAMENTE la misma ruta base.
+// upload.js ya usa process.cwd() al guardar — si app.js usara __dirname y el
+// servidor se arranca desde un directorio distinto al del proyecto, los archivos
+// se guardarían en un sitio y Express los serviría desde otro → Cannot GET.
+const UPLOAD_DIR_TO_SERVE = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER);
+const ASSET_TYPES_DIR = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER, ASSET_TYPES_SUBDIR);
 
-// 💡 Asegurar que todos los directorios de subida existan
-// 🔑 Cambio 3: Solo verificamos las carpetas que contienen archivos.
+// Asegurar que los directorios existan al arrancar
 [UPLOAD_DIR_TO_SERVE, ASSET_TYPES_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -76,9 +80,9 @@ const ASSET_TYPES_DIR = path.join(UPLOAD_DIR_TO_SERVE, ASSET_TYPES_SUBDIR);
   }
 });
 
-// 🔑 CAMBIO 4: Servir archivos estáticos DESDE UPLOAD_BASE_FOLDER.
-// Esto mapea: URL /images/* -->  FÍSICO path/to/project/uploads/inventory/*
+// Mapeo: GET /images/asset-types/file.png → disco: uploads/inventory/asset-types/file.png
 app.use(STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
+console.log(`[Static] Sirviendo ${STATIC_URL_PREFIX} → ${UPLOAD_DIR_TO_SERVE}`);
 
 // ----------------------------------------------------
 // 3. RUTAS
