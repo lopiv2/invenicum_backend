@@ -707,18 +707,29 @@ class IntegrationService {
     }
 
     // 2. 🧠 Fase Gemini Universal
-    const genAI = new GoogleGenAI(geminiConfig.apiKey);
-    const model = genAI.getGenerativeModel({
+    const client = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
+    const prompt = generateUniversalPrompt(contextHint, rawData, locale);
+
+    const result = await client.models.generateContent({
       model: geminiConfig.model || "gemini-3-flash-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: { 
+        generationConfig: { 
+          responseMimeType: "application/json",
+          temperature: 0.2 // Opcional: para mayor consistencia en el JSON
+        } 
+      },
     });
 
-    const prompt = generateUniversalPrompt(contextHint, rawData, locale);
-    const result = await model.generateContent(prompt);
+    // CORRECCIÓN AQUÍ: Acceso directo a candidates
+    if (!result.candidates || result.candidates.length === 0) {
+      throw new Error("Gemini no generó ninguna respuesta.");
+    }
 
     // Limpieza y Parseo del DTO final
-    const rawText = result.response.text();
+    const rawText = result.candidates[0].content.parts[0].text;
     const cleanJson = JSON.parse(rawText.replace(/```json|```/g, "").trim());
-
+    console.log(rawText);
     // 3. Post-procesado de Imagen (Base64)
     if (cleanJson.images?.[0]?.url?.startsWith("http")) {
       try {
