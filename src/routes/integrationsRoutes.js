@@ -17,7 +17,10 @@ router.get("/barcode/lookup/:barcode", verifyToken, async (req, res) => {
     const { barcode } = req.params;
     const userId = req.user.id;
 
-    const inventoryItemDto = await integrationService.lookupBarcode(userId, barcode);
+    const inventoryItemDto = await integrationService.lookupBarcode(
+      userId,
+      barcode,
+    );
 
     if (inventoryItemDto) {
       // 🚩 Usamos el método toJSON del DTO
@@ -34,9 +37,14 @@ router.get("/barcode/lookup/:barcode", verifyToken, async (req, res) => {
 router.post("/test", verifyToken, async (req, res) => {
   try {
     const { type, config } = req.body;
+    const userId = req.user.id;
 
     // Ejecutamos el test sin guardar nada en BD
-    const result = await integrationService.testConnection(type, config);
+    const result = await integrationService.testConnection(
+      type,
+      config,
+      userId,
+    );
 
     if (result.success) {
       res.status(200).json(result);
@@ -63,6 +71,44 @@ router.get("/status", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("❌ Error obteniendo estados:", error.message);
     res.status(500).json({ error: "Error al obtener estados de integración" });
+  }
+});
+
+// GET /api/integrations/enrich?query=pikachu&source=pokemon&locale=es
+router.get("/enrich", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { query, source, locale } = req.query;
+
+    // Validaciones básicas
+    if (!query) {
+      return res
+        .status(400)
+        .json({ error: "El parámetro 'query' es obligatorio" });
+    }
+
+    // Llamamos a la función universal (por defecto bgg si no viene source)
+    const enrichedItem = await integrationService.getEnrichedItem(
+      userId,
+      query,
+      source || "bgg",
+      locale || "es",
+    );
+
+    // Devolvemos el DTO final generado por Gemini
+    res.status(200).json({
+      success: true,
+      data: enrichedItem,
+    });
+  } catch (error) {
+    console.error(`[ENRICH-ERROR] ${error.message}`);
+
+    // Si es un error de "no encontrado" mandamos 404, si no 500
+    const statusCode = error.message.includes("no encontrado") ? 404 : 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 

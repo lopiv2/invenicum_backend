@@ -4,20 +4,153 @@ const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
 const axios = require("axios");
 const { Resend } = require("resend");
+const DraftItemDTO = require("../models/draftItemModel");
 const InventoryItemDTO = require("../models/inventoryItemModel");
-const { getBase64FromUrl } = require("../middleware/utils");
+const {
+  getBase64FromUrl,
+  generateUniversalPrompt,
+} = require("../middleware/utils");
+require("dotenv").config();
 
 class IntegrationService {
   /**
    * Realiza una prueba de conexión sin guardar datos
    */
-  async testConnection(type, config) {
+  async testConnection(type, config, userId) {
     console.log("Recibida petición de test:");
     console.log("Tipo:", type); // Mira qué imprime aquí (ej: 'telegram' o 'telegram_bot')
     console.log("Config:", config);
     console.log(type);
     try {
       switch (type) {
+        case "bgg": {
+          const { bgg_username } = config;
+
+          // 1. Validaciones básicas de entrada
+          if (!bgg_username) {
+            throw new Error("El nombre de usuario de BGG es requerido.");
+          }
+
+          // 2. Obtención de credenciales maestras del servidor (desde .env)
+          const bggToken = process.env.BGG_APPLICATION_TOKEN;
+          const userAgent = "Invenicum-Backend/1.0 (contact: lopiv2@gmail.com)";
+
+          if (!bggToken) {
+            throw new Error(
+              "El servidor no tiene configurado el Application Token de BGG.",
+            );
+          }
+
+          try {
+            console.log(
+              `🧪 Validando existencia del usuario BGG: ${bgg_username}`,
+            );
+
+            // 3. Petición autorizada a BGG
+            const response = await axios.get(
+              `https://boardgamegeek.com/xmlapi2/user?name=${encodeURIComponent(bgg_username)}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${bggToken}`,
+                  "User-Agent": userAgent,
+                },
+                timeout: 5000,
+              },
+            );
+
+            // BGG devuelve 200 OK aunque el usuario no exista, pero con un id vacío en el XML
+            if (response.data.includes('id=""')) {
+              throw new Error(
+                "El usuario no existe en BoardGameGeek. Revisa el nombre.",
+              );
+            }
+
+            // 4. Verificación de dependencia (Gemini)
+            // Pasamos el userId que debería venir en el contexto de la llamada
+            const geminiConfig = await this.getGeminiApiKey(userId);
+            const geminiWarning = !geminiConfig
+              ? " (Nota: Gemini no está configurado, el auto-completado no funcionará)"
+              : "";
+
+            return {
+              success: true,
+              message: `¡Conexión exitosa! Perfil de ${bgg_username} vinculado${geminiWarning}.`,
+            };
+          } catch (error) {
+            console.error("❌ Error en el Test de BGG:", error.message);
+
+            // Manejo específico de errores de la API de BGG
+            if (error.response?.status === 401) {
+              throw new Error(
+                "Error de servidor: El Token de Aplicación de BGG no es válido.",
+              );
+            }
+            if (error.response?.status === 429) {
+              throw new Error(
+                "BGG está limitando las peticiones temporalmente. Reintenta en un momento.",
+              );
+            }
+
+            throw new Error(
+              error.response
+                ? "Error al contactar con la API de BoardGameGeek"
+                : error.message,
+            );
+          }
+        }
+        case "pokemon": {
+          const pokemon_name = "Pikachu";
+
+          // 1. Validación básica: que no esté vacío
+          if (!pokemon_name) {
+            throw new Error(
+              "El nombre del Pokémon es requerido para la validación.",
+            );
+          }
+
+          try {
+            console.log(`🧪 Validando existencia de Pokémon: ${pokemon_name}`);
+
+            // 2. Intentamos obtener el Pokémon (limpiamos el nombre por si acaso)
+            // PokeAPI solo acepta minúsculas y sin espacios
+            const sanitizedName = pokemon_name
+              .toLowerCase()
+              .trim()
+              .replace(/\s+/g, "-");
+
+            await axios.get(
+              `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(sanitizedName)}`,
+              { timeout: 5000 },
+            );
+
+            // 3. Verificación de Gemini (mantenemos la lógica de BGG para avisar al usuario)
+            // Nota: Asegúrate de que 'userId' esté llegando a la función testConnection
+            const geminiConfig = await this.getGeminiApiKey(userId);
+            const geminiWarning = !geminiConfig
+              ? " (Nota: Gemini no está configurado, la Pokédex no podrá generar descripciones)"
+              : "";
+
+            return {
+              success: true,
+              message: `¡Pokémon ${pokemon_name} localizado!${geminiWarning}.`,
+            };
+          } catch (error) {
+            console.error("❌ Error en el Test de PokeAPI:", error.message);
+
+            // Si la API devuelve 404, es que el nombre está mal escrito
+            if (error.response?.status === 404) {
+              throw new Error(
+                `The Pokémon "${pokemon_name}" does not exist. Please check the spelling.`,
+              );
+            }
+
+            throw new Error(
+              error.response
+                ? "Error al contactar con PokeAPI. Inténtalo más tarde."
+                : error.message,
+            );
+          }
+        }
         case "email": {
           const { apiKey, fromEmail } = config;
           const resend = new Resend(apiKey);
@@ -518,6 +651,88 @@ class IntegrationService {
     }
 
     return null;
+  }
+
+  async getEnrichedItem(userId, query, source, locale = "es") {
+    const geminiConfig = await this.getGeminiApiKey(userId);
+    if (!geminiConfig) throw new Error("Gemini no configurado");
+
+    let rawData = "";
+    let contextHint = "";
+
+    // 1. Fase de Recolección: Cada fuente solo llena rawData y contextHint
+    switch (source) {
+      case "pokemon":
+        contextHint = "un Pokémon de PokeAPI";
+        const pokemonName = query.toLowerCase().trim().replace(/\s+/g, "-");
+        const pokeRes = await axios.get(
+          `https://pokeapi.co/api/v2/pokemon/${pokemonName}`,
+        );
+        rawData = JSON.stringify(pokeRes.data); // Pasamos todo el JSON original
+        break;
+
+      case "bgg": {
+        contextHint = "un juego de mesa de BoardGameGeek";
+        const bggHeaders = {
+          Authorization: `Bearer ${process.env.BGG_APPLICATION_TOKEN}`,
+          "User-Agent": "Invenicum-Backend/1.0",
+        };
+        const searchRes = await axios.get(
+          `https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(query)}&type=boardgame`,
+          { headers: bggHeaders },
+        );
+        const match = searchRes.data.match(/id="(\d+)"/);
+        if (!match) throw new Error("No se encontró ningún juego en BGG.");
+
+        const detailRes = await axios.get(
+          `https://boardgamegeek.com/xmlapi2/thing?id=${match[1]}&stats=1`,
+          { headers: bggHeaders },
+        );
+        rawData = detailRes.data; // XML crudo, Gemini lo entiende igual
+        break;
+      }
+
+      case "books": {
+        contextHint = "un libro de OpenLibrary";
+        const { data } = await axios.get(
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=1`,
+        );
+        if (!data.docs?.length) throw new Error("Libro no encontrado.");
+        rawData = JSON.stringify(data.docs[0]);
+        break;
+      }
+
+      default:
+        throw new Error(`La fuente ${source} no está soportada.`);
+    }
+
+    // 2. 🧠 Fase Gemini Universal
+    const genAI = new GoogleGenAI(geminiConfig.apiKey);
+    const model = genAI.getGenerativeModel({
+      model: geminiConfig.model || "gemini-3-flash-preview",
+    });
+
+    const prompt = generateUniversalPrompt(contextHint, rawData, locale);
+    const result = await model.generateContent(prompt);
+
+    // Limpieza y Parseo del DTO final
+    const rawText = result.response.text();
+    const cleanJson = JSON.parse(rawText.replace(/```json|```/g, "").trim());
+
+    // 3. Post-procesado de Imagen (Base64)
+    if (cleanJson.images?.[0]?.url?.startsWith("http")) {
+      try {
+        cleanJson.images[0].url = await getBase64FromUrl(
+          cleanJson.images[0].url,
+        );
+      } catch (err) {
+        console.error("Fallo al convertir imagen:", err.message);
+      }
+    }
+
+    // 4. ✨ MAPEO A "DRAFT" (Para autorrelleno en Flutter)
+    const draft = new DraftItemDTO(cleanJson);
+    return draft.toJSON();
   }
 }
 
