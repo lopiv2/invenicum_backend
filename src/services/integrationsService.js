@@ -729,7 +729,7 @@ class IntegrationService {
     // Limpieza y Parseo del DTO final
     const rawText = result.candidates[0].content.parts[0].text;
     const cleanJson = JSON.parse(rawText.replace(/```json|```/g, "").trim());
-    console.log(rawText);
+    console.log(rawText)
     // 3. Post-procesado de Imagen (Base64)
     if (cleanJson.images?.[0]?.url?.startsWith("http")) {
       try {
