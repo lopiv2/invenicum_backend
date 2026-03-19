@@ -5,6 +5,7 @@ class InventoryItemDTO {
     this.name = prismaItem.name;
     this.description = prismaItem.description || null;
     this.barcode = prismaItem.barcode || null;
+    this.condition = prismaItem.condition || "loose";
 
     // --- STOCK Y CANTIDADES ---
     this.quantity = parseInt(prismaItem.quantity || 1);
@@ -18,7 +19,6 @@ class InventoryItemDTO {
       ? prismaItem.lastPriceUpdate.toISOString()
       : null;
 
-    // Valor total de este lote (cantidad * precio)
     this.totalMarketValue = parseFloat(
       (this.marketValue * this.quantity).toFixed(2),
     );
@@ -32,14 +32,13 @@ class InventoryItemDTO {
       ? parseInt(prismaItem.locationId)
       : null;
 
-    // 🔑 AQUÍ LA CORRECCIÓN: Capturar el objeto location completo
     this.location = prismaItem.location
       ? {
           id: parseInt(prismaItem.location.id),
           name: prismaItem.location.name,
-          // añade otros campos de location si son necesarios
         }
       : null;
+      
     this.assetTypeId = parseInt(prismaItem.assetTypeId);
     this.containerId = parseInt(prismaItem.containerId);
     this.assignedToUserId = prismaItem.assignedToUserId
@@ -47,7 +46,6 @@ class InventoryItemDTO {
       : null;
 
     // --- METADATOS AGNÓSTICOS ---
-    // Aseguramos que sea un objeto para que Flutter lo parsee como Map<String, dynamic>
     this.customFieldValues = prismaItem.customFieldValues || {};
 
     // --- FECHAS ---
@@ -55,12 +53,11 @@ class InventoryItemDTO {
     this.updatedAt = prismaItem.updatedAt.toISOString();
 
     // --- ASSETS (Imágenes) ---
-    // Si traes las imágenes en el include de Prisma
     this.imageUrl =
       prismaItem.images && prismaItem.images.length > 0
         ? prismaItem.images[0].url
         : null;
-    // 2. AÑADIMOS EL ARRAY COMPLETO PARA LA GALERÍA 👈 ESTO ES LO QUE FALTA
+        
     this.images = prismaItem.images
       ? prismaItem.images.map((img) => ({
           id: img.id,
@@ -76,6 +73,7 @@ class InventoryItemDTO {
       name: this.name,
       description: this.description,
       barcode: this.barcode,
+      condition: this.condition,
       quantity: this.quantity,
       minStock: this.minStock,
       isLowStock: this.isLowStock,

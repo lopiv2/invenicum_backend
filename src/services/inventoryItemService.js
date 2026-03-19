@@ -13,7 +13,7 @@ const bwipjs = require("bwip-js");
 // se guardarían en un sitio y se buscarían en otro al borrarlos → ENOENT.
 const UPLOAD_DIR_ABSOLUTE = path.resolve(
   process.cwd(),
-  process.env.UPLOAD_FOLDER || "uploads/inventory"
+  process.env.UPLOAD_FOLDER || "uploads/inventory",
 );
 
 // getPublicUrl: convierte file.path de Multer en la URL pública correcta.
@@ -127,7 +127,7 @@ class InventoryItemService {
     if (data.files && data.files.length > 0) {
       throw new Error("Cloning operation cannot include new file uploads.");
     }
-
+    console.log(data);
     // 2. DESESTRUCTURACIÓN DINÁMICA (Igual que en createItem)
     const {
       id: _oldId,
@@ -414,7 +414,6 @@ class InventoryItemService {
 
     // 4. Filtrado en Memoria (JS) para campos dinámicos (Custom Fields)
     let filteredItems = allItems;
-
     if (Object.keys(aggregationFilters).length > 0) {
       // Tomamos el primer filtro (puedes extenderlo a múltiples si lo necesitas)
       const fieldId = Object.keys(aggregationFilters)[0].toString();
@@ -469,7 +468,6 @@ class InventoryItemService {
       (acc, item) => acc + (item.totalMarketValue || 0),
       0,
     );
-
     // 8. ESTRUCTURA DE RETORNO (Clave para evitar el error de 'definitions')
     // Retornamos 'items' y 'totals' al primer nivel para que el router los encuentre fácil
     return {
@@ -589,7 +587,10 @@ class InventoryItemService {
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
     const itemUpdateData = {
-      barcode,
+      barcode:
+        data.barcode === "" || data.barcode === null || data.barcode === "null"
+          ? null
+          : data.barcode,
       ...restOfData,
       quantity,
       minStock:
@@ -1129,6 +1130,13 @@ class InventoryItemService {
     }
 
     doc.end();
+  }
+
+  async updateWishlist(itemId, status) {
+    return await prisma.inventoryItem.update({
+      where: { id: parseInt(itemId) },
+      data: { wishlisted: !!status },
+    });
   }
 }
 

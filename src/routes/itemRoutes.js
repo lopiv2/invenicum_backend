@@ -43,6 +43,23 @@ router.use((req, res, next) => {
 });
 
 // ===============================================
+// 🖨️ Actualizar deseado o no
+// PATCH /items/:id/wishlist
+// ===============================================
+router.patch("/:id/wishlist", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { wishlisted } = req.body;
+    
+    await inventoryItemService.updateWishlist(id, wishlisted);
+    
+    res.status(200).json({ success: true, message: "Wishlist updated" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===============================================
 // 🖨️ GENERACIÓN DE ETIQUETA QR PARA IMPRESIÓN
 // GET /items/:id/print-label
 // ===============================================
@@ -282,7 +299,6 @@ router.get(
         userId,
         aggregationFilters,
       });
-
       // 5. RESPUESTA (Corregida para evitar errores de undefined)
       // Ajustamos el mapeo para que Flutter reciba exactamente lo que espera
       res.status(200).json({
