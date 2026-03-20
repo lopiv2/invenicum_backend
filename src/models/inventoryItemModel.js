@@ -5,6 +5,7 @@ class InventoryItemDTO {
     this.name = prismaItem.name;
     this.description = prismaItem.description || null;
     this.barcode = prismaItem.barcode || null;
+    this.serialNumber= prismaItem.serialNumber || null;
     this.condition = prismaItem.condition || "loose";
 
     // --- STOCK Y CANTIDADES ---
@@ -73,6 +74,7 @@ class InventoryItemDTO {
       name: this.name,
       description: this.description,
       barcode: this.barcode,
+      serialNumber: this.serialNumber,
       condition: this.condition,
       quantity: this.quantity,
       minStock: this.minStock,

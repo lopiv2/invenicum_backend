@@ -249,6 +249,8 @@ model InventoryItem {
   description       String?              @db.Text
   condition         String               @default("loose")
   barcode           String?              @unique @map("barcode")
+  // 2. Identificador de Unidad (Solo para objetos seriados)
+  serialNumber      String?              @unique @map("serial_number")
   // --- VALORACIÓN DE MERCADO (Campos Base) ---
   // Añadidos directamente para cálculos globales rápidos
   marketValue       Float?               @default(0) @map("market_value")

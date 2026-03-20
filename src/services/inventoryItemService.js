@@ -30,9 +30,20 @@ class InventoryItemService {
       assetTypeId,
       locationId,
       customFieldValues,
-      files: _, // ignoramos el array original de files
+      files: _,
       barcode,
-      ...restOfData // 🚀 Aquí caen automáticamente: name, barcode, marketValue, currency, description, etc.
+      serialNumber,
+      // Excluimos campos que Prisma no reconoce o que manejamos manualmente
+      id: _id,
+      images: _images,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      totalMarketValue: _tmv,
+      isLowStock: _isLowStock,
+      imageUrl: _imageUrl,
+      location: _location,
+      priceHistory: _ph,
+      ...restOfData
     } = data;
 
     // 2. PARSEO DE IDs Y VALIDACIÓN DE ASSET TYPE
@@ -67,6 +78,11 @@ class InventoryItemService {
         ? barcode.toString().trim()
         : null;
 
+    const finalSerialNumber =
+      serialNumber && serialNumber.toString().trim() !== "" && serialNumber !== "null"
+        ? serialNumber.toString().trim()
+        : null;
+
     let parsedCustomFields = {};
     try {
       parsedCustomFields =
@@ -90,10 +106,11 @@ class InventoryItemService {
       // 5. CREACIÓN EN PRISMA
       const newItem = await prisma.inventoryItem.create({
         data: {
-          ...restOfData, // 👈 Mapeo automático de campos simples del DTO (barcode, marketValue, etc.)
+          ...restOfData,
           quantity,
           minStock,
           barcode: finalBarcode,
+          serialNumber: finalSerialNumber,
           customFieldValues: parsedCustomFields,
           container: { connect: { id: cId } },
           assetType: { connect: { id: aTId } },
@@ -524,6 +541,17 @@ class InventoryItemService {
       locationId: locationIdStr,
       customFieldValues,
       barcode,
+      serialNumber,
+      // Excluimos campos que Prisma no reconoce o que manejamos manualmente
+      id: _id,
+      images: _images,
+      createdAt: _createdAt,
+      updatedAt: _updatedAt,
+      totalMarketValue: _tmv,
+      isLowStock: _isLowStock,
+      imageUrl: _imageUrl,
+      location: _location,
+      priceHistory: _ph,
       ...restOfData
     } = data;
     // 2. CONVERSIÓN DE TIPOS CRÍTICOS
@@ -531,7 +559,6 @@ class InventoryItemService {
     const cId = parseInt(containerIdStr);
     const aTId = parseInt(assetTypeIdStr);
     const lId = parseInt(locationIdStr);
-
     if (isNaN(itemIdInt) || isNaN(cId) || isNaN(aTId)) {
       throw new Error("Invalid ID format provided.");
     }
@@ -604,11 +631,17 @@ class InventoryItemService {
     // ===========================================
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
+    const finalSerialNumber =
+      serialNumber === "" || serialNumber === null || serialNumber === undefined || serialNumber === "null"
+        ? null
+        : serialNumber.toString().trim();
+
     const itemUpdateData = {
       barcode:
-        data.barcode === "" || data.barcode === null || data.barcode === "null"
+        barcode === "" || barcode === null || barcode === undefined || barcode === "null"
           ? null
-          : data.barcode,
+          : barcode,
+      serialNumber: finalSerialNumber,
       ...restOfData,
       quantity,
       minStock:
