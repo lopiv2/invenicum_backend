@@ -178,39 +178,56 @@ class InventoryItemService {
       ? baseImageUrl
       : `${baseImageUrl}/`;
 
+    // Subdirectorio donde se guardan las imágenes de items (relativo a UPLOAD_DIR_ABSOLUTE)
+    const ITEMS_SUBDIR = "items";
+    const ITEMS_DIR_ABSOLUTE = path.join(UPLOAD_DIR_ABSOLUTE, ITEMS_SUBDIR);
+
+    // Aseguramos que el subdirectorio existe antes de copiar
+    if (!fs.existsSync(ITEMS_DIR_ABSOLUTE)) {
+      fs.mkdirSync(ITEMS_DIR_ABSOLUTE, { recursive: true });
+    }
+
     if (Array.isArray(imagesFromRequest)) {
       for (const [index, img] of imagesFromRequest.entries()) {
-        let originalFilename = img.url.replace(/\\/g, "/");
+        // Normalizamos separadores y quitamos el prefijo estático (/images)
+        // para obtener la ruta relativa: "items/item-123.jpg"
+        let relativePath = img.url.replace(/\\/g, "/");
 
-        if (originalFilename.startsWith(cleanBaseImageUrl)) {
-          originalFilename = originalFilename.substring(
-            cleanBaseImageUrl.length,
-          );
+        if (relativePath.startsWith(cleanBaseImageUrl)) {
+          relativePath = relativePath.substring(cleanBaseImageUrl.length);
+        } else if (relativePath.startsWith("/")) {
+          relativePath = relativePath.substring(1);
+          if (relativePath.startsWith("images/")) {
+            relativePath = relativePath.substring("images/".length);
+          }
         } else {
-          originalFilename = path.basename(originalFilename);
+          relativePath = path.basename(relativePath);
         }
 
-        const originalPath = path.join(UPLOAD_DIR_ABSOLUTE, originalFilename);
+        const originalPath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
 
         if (fs.existsSync(originalPath)) {
-          const ext = path.extname(originalFilename);
-          const uniqueSuffix =
-            Date.now() + "-" + Math.round(Math.random() * 1e9);
+          const ext = path.extname(relativePath);
+          const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
           const newFilename = `item-clone-${uniqueSuffix}${ext}`;
-          const newPath = path.join(UPLOAD_DIR_ABSOLUTE, newFilename);
+          // El clon se guarda en el mismo subdirectorio items/ que el original
+          const newPath = path.join(ITEMS_DIR_ABSOLUTE, newFilename);
 
           try {
             fs.copyFileSync(originalPath, newPath);
-            newlyCopiedFilenames.push(newFilename);
+            // Guardamos la ruta relativa para la limpieza en caso de error de DB
+            newlyCopiedFilenames.push(path.join(ITEMS_SUBDIR, newFilename));
 
             allImageRelations.push({
-              url: getPublicUrl(newPath), // ✅ URL correcta del archivo copiado
+              url: getPublicUrl(newPath), // → /images/items/item-clone-xxx.jpg
               altText: img.altText || null,
               order: img.order || index + 1,
             });
           } catch (copyError) {
             console.error(`Error copying file ${originalPath}:`, copyError);
           }
+        } else {
+          console.warn(`[cloneItem] Imagen original no encontrada: ${originalPath}`);
         }
       }
     }
@@ -236,8 +253,9 @@ class InventoryItemService {
       return new InventoryItemDTO(newItem).toJSON();
     } catch (error) {
       // Limpieza de archivos si la DB falla
-      newlyCopiedFilenames.forEach((filename) => {
-        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
+      // newlyCopiedFilenames contiene rutas relativas a UPLOAD_DIR_ABSOLUTE (ej: items/item-clone-xxx.jpg)
+      newlyCopiedFilenames.forEach((relativePath) => {
+        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
         if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
       });
       throw new Error("Failed to clone item.");
@@ -830,21 +848,34 @@ class InventoryItemService {
     }
 
     // 2. BORRAR ARCHIVOS DEL DISCO
+    // Las URLs en DB tienen formato /images/items/item-xxx.jpg
+    // UPLOAD_DIR_ABSOLUTE apunta a uploads/inventory
+    // → hay que quitar el prefijo /images/ para obtener items/item-xxx.jpg
+    //   y unirlo con UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
     if (itemToDelete.images && itemToDelete.images.length > 0) {
+      const staticPrefix = (process.env.STATIC_URL_PREFIX || "/images").replace(/\/+$/, "");
+
       for (const image of itemToDelete.images) {
-        // Asumimos que el campo `filename` o el nombre del archivo está en la DB
-        // Si no está, lo extraemos de la URL:
-        const filename = path.basename(image.url);
-        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
+        let relativePath = image.url;
+
+        // Quitamos el prefijo estático (/images) para quedarnos con items/archivo.jpg
+        if (relativePath.startsWith(staticPrefix + "/")) {
+          relativePath = relativePath.substring(staticPrefix.length + 1);
+        } else if (relativePath.startsWith("/")) {
+          relativePath = relativePath.substring(1);
+        }
+
+        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
 
         try {
           if (fs.existsSync(absolutePath)) {
-            fs.unlinkSync(absolutePath); // 🔑 ¡Borra el archivo físico!
-            console.log(`Successfully deleted file: ${absolutePath}`);
+            fs.unlinkSync(absolutePath);
+            console.log(`[deleteItem] ✅ Imagen borrada: ${absolutePath}`);
+          } else {
+            console.warn(`[deleteItem] ⚠️ Imagen no encontrada en disco: ${absolutePath}`);
           }
         } catch (err) {
-          console.error(`Error deleting file ${absolutePath}:`, err);
-          // Si falla el borrado del archivo, no impedimos la eliminación de la DB.
+          console.error(`[deleteItem] ❌ Error borrando imagen ${absolutePath}:`, err);
         }
       }
     }

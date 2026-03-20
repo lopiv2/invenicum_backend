@@ -184,7 +184,7 @@ Ejemplo: { "Estado": ["Nuevo", "Usado", "Dañado"] }`;
   async extractInfoFromUrl(url, fields, userId) {
     const geminiData = await integrationService.getGeminiApiKey(userId);
     const apiKeyToUse = geminiData.apiKey;
-
+    console.log(fields);
     if (!apiKeyToUse) {
       throw new Error(
         "Se requiere una API Key de usuario para realizar la extracción.",
@@ -280,12 +280,20 @@ Ejemplo: { "Estado": ["Nuevo", "Usado", "Dañado"] }`;
       // --- NUEVA LÓGICA DE CONVERSIÓN ---
       if (result.imageUrl && result.imageUrl.startsWith("http")) {
         console.log("🔄 Convirtiendo imagen a Base64 para evitar CORS...");
-        result.imageUrl = await getBase64FromUrl(result.imageUrl);
+        try {
+          result.imageUrl = await getBase64FromUrl(result.imageUrl);
+          console.log("✅ Imagen convertida. Tamaño:", result.imageUrl?.length ?? 0, "chars");
+        } catch (imgError) {
+          console.error("⚠️ Error convirtiendo imagen, usando URL original:", imgError.message);
+          // No bloqueamos el flujo — devolvemos la URL tal cual
+        }
       }
 
+      console.log("✅ extractInfoFromUrl completado. Campos devueltos:", Object.keys(result));
       return result;
     } catch (error) {
       console.error("❌ Error en extractInfoFromUrl:", error.message);
+      console.error("❌ Stack:", error.stack);
 
       if (error.response?.status === 429 || error.message.includes("429")) {
         throw new Error(

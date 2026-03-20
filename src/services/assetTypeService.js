@@ -4,8 +4,8 @@ const prisma = require("../middleware/prisma");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config();
-const AssetTypeDTO = require('../models/assetTypeModel');
-const BOOLEAN_TYPE_DB = "sí/no (booleano)";
+const AssetTypeDTO = require("../models/assetTypeModel");
+const BOOLEAN_TYPE_DB = "boolean";
 
 // 🔑 getPublicUrl es la ÚNICA fuente de verdad para construir URLs de imágenes.
 // Convierte la ruta de disco que devuelve Multer en la URL pública que Express sirve.
@@ -17,13 +17,13 @@ const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
 const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.resolve(
   process.cwd(),
   UPLOAD_BASE_FOLDER,
-  "asset-types"
+  "asset-types",
 );
 
 // Ruta absoluta para borrar archivos físicos de inventory items
 const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.resolve(
   process.cwd(),
-  UPLOAD_BASE_FOLDER
+  UPLOAD_BASE_FOLDER,
 );
 
 /**
@@ -56,7 +56,7 @@ async function createAssetType(containerId, userId, data) {
   // 1. Preparar imágenes — getPublicUrl construye la URL correcta a partir
   // de la ruta de disco que Multer asignó, sin depender de variables de entorno adicionales.
   const imageRelations = files.map((file, index) => ({
-    url: getPublicUrl(file.path),   // ✅ "/images/asset-types/asset-type-xxx.jpg"
+    url: getPublicUrl(file.path), // ✅ "/images/asset-types/asset-type-xxx.jpg"
     filename: file.filename,
     order: index,
   }));
@@ -206,14 +206,19 @@ async function updateAssetType(assetTypeId, userId, updateData) {
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      
       // --- PASO A: GESTIÓN DE IMÁGENES ---
       // Si se pide borrar o se sube una nueva, eliminamos la anterior
-      if ((removeExistingImage || filesToUpload?.length > 0) && currentAssetType.images.length > 0) {
+      if (
+        (removeExistingImage || filesToUpload?.length > 0) &&
+        currentAssetType.images.length > 0
+      ) {
         const imageToDelete = currentAssetType.images[0];
         await tx.assetTypeImage.delete({ where: { id: imageToDelete.id } });
 
-        const imagePath = path.join(UPLOAD_DIR_ASSET_TYPES_ABSOLUTE, imageToDelete.filename);
+        const imagePath = path.join(
+          UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
+          imageToDelete.filename,
+        );
         if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
       }
 
@@ -249,8 +254,9 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         // 2. Upsert (Actualizar o Crear)
         for (const fd of fieldDefinitions) {
           const type = fd.type.toLowerCase();
-          const isNumeric = type === "number" || type === "price" || type === "currency";
-          
+          const isNumeric =
+            type === "number" || type === "price" || type === "currency";
+
           const fieldData = {
             name: fd.name,
             type: fd.type,
@@ -276,14 +282,26 @@ async function updateAssetType(assetTypeId, userId, updateData) {
       }
 
       // --- PASO C: ACTUALIZAR CAMPOS PRINCIPALES ---
+      // Solo incluimos possessionFieldId y desiredFieldId si vienen explícitamente
+      // en el payload. Si no vienen (undefined), Prisma los deja intactos en la DB.
+      const mainUpdateData = {
+        name: assetTypeUpdates.name,
+        isSerialized: !!assetTypeUpdates.isSerialized,
+      };
+      if (assetTypeUpdates.possessionFieldId !== undefined) {
+        mainUpdateData.possessionFieldId = assetTypeUpdates.possessionFieldId
+          ? parseInt(assetTypeUpdates.possessionFieldId)
+          : null;
+      }
+      if (assetTypeUpdates.desiredFieldId !== undefined) {
+        mainUpdateData.desiredFieldId = assetTypeUpdates.desiredFieldId
+          ? parseInt(assetTypeUpdates.desiredFieldId)
+          : null;
+      }
+
       return await tx.assetType.update({
         where: { id: assetTypeIdInt },
-        data: {
-          name: assetTypeUpdates.name,
-          isSerialized: !!assetTypeUpdates.isSerialized,
-          possessionFieldId: assetTypeUpdates.possessionFieldId ? parseInt(assetTypeUpdates.possessionFieldId) : null,
-          desiredFieldId: assetTypeUpdates.desiredFieldId ? parseInt(assetTypeUpdates.desiredFieldId) : null,
-        },
+        data: mainUpdateData,
         include: {
           fieldDefinitions: { orderBy: { id: "asc" } },
           images: { orderBy: { order: "asc" } },
@@ -297,13 +315,16 @@ async function updateAssetType(assetTypeId, userId, updateData) {
       message: "Tipo de Activo actualizado con éxito.",
       data: new AssetTypeDTO(result).toJSON(),
     };
-
   } catch (error) {
     console.error("Error en updateAssetType:", error);
     if (filesToUpload?.length > 0) {
-      filesToUpload.forEach((file) => { if (fs.existsSync(file.path)) fs.unlinkSync(file.path); });
+      filesToUpload.forEach((file) => {
+        if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      });
     }
-    throw new Error("No se pudo completar la actualización del Tipo de Activo.");
+    throw new Error(
+      "No se pudo completar la actualización del Tipo de Activo.",
+    );
   }
 }
 
@@ -506,7 +527,7 @@ async function updateAssetTypeCollectionFields(
     }
 
     // 5. Validar que sea booleano
-    if (fieldDefinition.type !== BOOLEAN_TYPE_DB) {
+    if (fieldDefinition.type.toLowerCase() !== BOOLEAN_TYPE_DB.toLowerCase()) {
       return {
         success: false,
         message: `El campo de ${fieldName} debe ser de tipo booleano (actualmente es ${fieldDefinition.type}).`,
