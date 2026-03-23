@@ -2,8 +2,11 @@ const prisma = require("../middleware/prisma");
 const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
+const OpenAI = require("openai");
+const Anthropic = require("@anthropic-ai/sdk");
 const axios = require("axios");
 const { Resend } = require("resend");
+const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
 const DraftItemDTO = require("../models/draftItemModel");
 const InventoryItemDTO = require("../models/inventoryItemModel");
 const {
@@ -67,14 +70,14 @@ class IntegrationService {
 
             // 4. Verificación de dependencia (Gemini)
             // Pasamos el userId que debería venir en el contexto de la llamada
-            const geminiConfig = await this.getGeminiApiKey(userId);
-            const geminiWarning = !geminiConfig
-              ? " (Nota: Gemini no está configurado, el auto-completado no funcionará)"
+            const aiClient = await this.getActiveAiClient(userId);
+            const aiWarning = !aiClient
+              ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
               : "";
 
             return {
               success: true,
-              message: `¡Conexión exitosa! Perfil de ${bgg_username} vinculado${geminiWarning}.`,
+              message: `¡Conexión exitosa! Perfil de ${bgg_username} vinculado${aiWarning}.`,
             };
           } catch (error) {
             console.error("❌ Error en el Test de BGG:", error.message);
@@ -125,14 +128,14 @@ class IntegrationService {
 
             // 3. Verificación de Gemini (mantenemos la lógica de BGG para avisar al usuario)
             // Nota: Asegúrate de que 'userId' esté llegando a la función testConnection
-            const geminiConfig = await this.getGeminiApiKey(userId);
-            const geminiWarning = !geminiConfig
-              ? " (Nota: Gemini no está configurado, la Pokédex no podrá generar descripciones)"
+            const aiClient = await this.getActiveAiClient(userId);
+            const aiWarning = !aiClient
+              ? " (Nota: ningún proveedor de IA configurado, las descripciones no funcionarán)"
               : "";
 
             return {
               success: true,
-              message: `¡Pokémon ${pokemon_name} localizado!${geminiWarning}.`,
+              message: `¡Pokémon ${pokemon_name} localizado!${aiWarning}.`,
             };
           } catch (error) {
             console.error("❌ Error en el Test de PokeAPI:", error.message);
@@ -221,8 +224,8 @@ class IntegrationService {
 
           // 1. Inicializamos un cliente temporal con la clave que viene de Flutter
           const tempClient = new GoogleGenAI({ apiKey: config.apiKey });
-          let defaultModel = "gemini-3-flash-preview";
-          if (config.model) defaultModel = config.model;
+          const defaultModel =
+            config.model || DEFAULT_MODELS[AI_PROVIDERS.GEMINI];
 
           // 2. Intentamos una llamada mínima para validar la clave.
           // Usamos el modelo flash por ser más rápido y barato para un test.
@@ -230,7 +233,7 @@ class IntegrationService {
           // Hacemos una petición "vacía" o mínima.
           // Si la clave es falsa, Google devolverá un 401 o 403 aquí.
           const response = await tempClient.models.generateContent({
-            model: defaultModel || "gemini-3-flash-preview",
+            model: defaultModel,
             contents: [
               {
                 role: "user",
@@ -250,6 +253,55 @@ class IntegrationService {
             success: true,
             message: "Conexión con Gemini establecida correctamente",
           };
+        }
+        case "openai": {
+          if (!config.apiKey) throw new Error("API Key requerida");
+          try {
+            const tempClient = new OpenAI({ apiKey: config.apiKey });
+            const testModel =
+              config.model || DEFAULT_MODELS[AI_PROVIDERS.OPENAI];
+            await tempClient.chat.completions.create({
+              model: testModel,
+              messages: [{ role: "user", content: "hi" }],
+              max_tokens: 1,
+            });
+            return {
+              success: true,
+              message: "Conexión con OpenAI establecida correctamente",
+            };
+          } catch (error) {
+            throw new Error(
+              error.message?.includes("401") ||
+                error.message?.includes("Incorrect API key")
+                ? "La API Key de OpenAI no es válida"
+                : `Error de conexión: ${error.message}`,
+            );
+          }
+        }
+        case "claude": {
+          if (!config.apiKey) throw new Error("API Key requerida");
+          try {
+            const tempClient = new Anthropic({ apiKey: config.apiKey });
+            const testModel =
+              config.model || DEFAULT_MODELS[AI_PROVIDERS.CLAUDE];
+            await tempClient.messages.create({
+              model: testModel,
+              max_tokens: 1,
+              messages: [{ role: "user", content: "hi" }],
+            });
+            return {
+              success: true,
+              message:
+                "Conexión con Claude (Anthropic) establecida correctamente",
+            };
+          } catch (error) {
+            throw new Error(
+              error.message?.includes("401") ||
+                error.message?.includes("authentication")
+                ? "La API Key de Anthropic no es válida"
+                : `Error de conexión: ${error.message}`,
+            );
+          }
         }
         case "upcitemdb": {
           const isProTest = !!(
@@ -440,7 +492,7 @@ class IntegrationService {
 
       return {
         apiKey,
-        model: model || "gemini-3.0-flash",
+        model: model || DEFAULT_MODELS[AI_PROVIDERS.GEMINI],
       };
     } catch (e) {
       console.error(
@@ -448,6 +500,108 @@ class IntegrationService {
         e.message,
       );
       return null;
+    }
+  }
+
+  /**
+   * Obtiene la API Key de OpenAI ya desencriptada para uso interno
+   */
+  async getOpenAIApiKey(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId: parseInt(userId), type: "openai" } },
+      });
+      if (!record || !record.isActive) return null;
+
+      let apiKey, model;
+      if (record.config?.data) {
+        const configObj = JSON.parse(decrypt(record.config.data));
+        apiKey = configObj.apiKey;
+        model = configObj.model;
+      } else if (record.config?.apiKey) {
+        apiKey = record.config.apiKey;
+        model = record.config.model;
+      }
+      if (!apiKey) return null;
+
+      return { apiKey, model: model || DEFAULT_MODELS[AI_PROVIDERS.OPENAI] };
+    } catch (e) {
+      console.error("❌ [OpenAI] Error obteniendo API Key:", e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Obtiene la API Key de Anthropic/Claude ya desencriptada para uso interno
+   */
+  async getClaudeApiKey(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: { userId_type: { userId: parseInt(userId), type: "claude" } },
+      });
+      if (!record || !record.isActive) return null;
+
+      let apiKey, model;
+      if (record.config?.data) {
+        const configObj = JSON.parse(decrypt(record.config.data));
+        apiKey = configObj.apiKey;
+        model = configObj.model;
+      } else if (record.config?.apiKey) {
+        apiKey = record.config.apiKey;
+        model = record.config.model;
+      }
+      if (!apiKey) return null;
+
+      return { apiKey, model: model || DEFAULT_MODELS[AI_PROVIDERS.CLAUDE] };
+    } catch (e) {
+      console.error("❌ [Claude] Error obteniendo API Key:", e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Devuelve el cliente de IA activo según las preferencias del usuario.
+   * Usado por getEnrichedItem y los warnings de testConnection.
+   * Retorna { client, model, provider } o null si nada está configurado.
+   */
+  async getActiveAiClient(userId) {
+    const prefs = await prisma.userPreferences.findUnique({
+      where: { userId: parseInt(userId) },
+      select: { aiProvider: true, aiModel: true },
+    });
+
+    const provider = prefs?.aiProvider || AI_PROVIDERS.GEMINI;
+    const preferredModel = prefs?.aiModel || DEFAULT_MODELS[provider];
+
+    switch (provider) {
+      case AI_PROVIDERS.OPENAI: {
+        const data = await this.getOpenAIApiKey(userId);
+        if (!data) return null;
+        return {
+          provider,
+          model: preferredModel || data.model,
+          client: new OpenAI({ apiKey: data.apiKey }),
+        };
+      }
+      case AI_PROVIDERS.CLAUDE: {
+        const data = await this.getClaudeApiKey(userId);
+        if (!data) return null;
+        return {
+          provider,
+          model: preferredModel || data.model,
+          client: new Anthropic({ apiKey: data.apiKey }),
+        };
+      }
+      case AI_PROVIDERS.GEMINI:
+      default: {
+        const data = await this.getGeminiApiKey(userId);
+        if (!data) return null;
+        return {
+          provider,
+          model: preferredModel || data.model,
+          client: new GoogleGenAI({ apiKey: data.apiKey }),
+        };
+      }
     }
   }
 
@@ -654,23 +808,29 @@ class IntegrationService {
   }
 
   async getEnrichedItem(userId, query, source, locale = "es") {
-    const geminiConfig = await this.getGeminiApiKey(userId);
-    if (!geminiConfig) throw new Error("Gemini no configurado");
+    // Obtener el proveedor de IA activo según preferencias del usuario
+    const aiData = await this.getActiveAiClient(userId);
+    if (!aiData)
+      throw new Error(
+        "Ningún proveedor de IA configurado. Ve a Integraciones.",
+      );
+
+    const { client, model, provider } = aiData;
 
     let rawData = "";
     let contextHint = "";
 
     // 1. Fase de Recolección: Cada fuente solo llena rawData y contextHint
     switch (source) {
-      case "pokemon":
+      case "pokemon": {
         contextHint = "un Pokémon de PokeAPI";
         const pokemonName = query.toLowerCase().trim().replace(/\s+/g, "-");
         const pokeRes = await axios.get(
           `https://pokeapi.co/api/v2/pokemon/${pokemonName}`,
         );
-        rawData = JSON.stringify(pokeRes.data); // Pasamos todo el JSON original
+        rawData = JSON.stringify(pokeRes.data);
         break;
-
+      }
       case "bgg": {
         contextHint = "un juego de mesa de BoardGameGeek";
         const bggHeaders = {
@@ -683,15 +843,13 @@ class IntegrationService {
         );
         const match = searchRes.data.match(/id="(\d+)"/);
         if (!match) throw new Error("No se encontró ningún juego en BGG.");
-
         const detailRes = await axios.get(
           `https://boardgamegeek.com/xmlapi2/thing?id=${match[1]}&stats=1`,
           { headers: bggHeaders },
         );
-        rawData = detailRes.data; // XML crudo, Gemini lo entiende igual
+        rawData = detailRes.data;
         break;
       }
-
       case "books": {
         contextHint = "un libro de OpenLibrary";
         const { data } = await axios.get(
@@ -701,36 +859,60 @@ class IntegrationService {
         rawData = JSON.stringify(data.docs[0]);
         break;
       }
-
       default:
         throw new Error(`La fuente ${source} no está soportada.`);
     }
 
-    // 2. 🧠 Fase Gemini Universal
-    const client = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
+    // 2. Fase de IA — usa el proveedor activo del usuario
     const prompt = generateUniversalPrompt(contextHint, rawData, locale);
+    let rawText = "";
 
-    const result = await client.models.generateContent({
-      model: geminiConfig.model || "gemini-3-flash-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: { 
-        generationConfig: { 
-          responseMimeType: "application/json",
-          temperature: 0.2 // Opcional: para mayor consistencia en el JSON
-        } 
-      },
-    });
-
-    // CORRECCIÓN AQUÍ: Acceso directo a candidates
-    if (!result.candidates || result.candidates.length === 0) {
-      throw new Error("Gemini no generó ninguna respuesta.");
+    if (provider === AI_PROVIDERS.GEMINI) {
+      const result = await client.models.generateContent({
+        model,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+          },
+        },
+      });
+      if (!result.candidates?.length)
+        throw new Error("El proveedor de IA no generó respuesta.");
+      rawText = result.candidates[0].content.parts[0].text;
+    } else if (provider === AI_PROVIDERS.OPENAI) {
+      const result = await client.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+      });
+      rawText = result.choices[0].message.content;
+    } else if (provider === AI_PROVIDERS.CLAUDE) {
+      const result = await client.messages.create({
+        model,
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+        system:
+          "Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional ni bloques de código.",
+      });
+      rawText = result.content.find((b) => b.type === "text")?.text ?? "{}";
     }
 
-    // Limpieza y Parseo del DTO final
-    const rawText = result.candidates[0].content.parts[0].text;
-    const cleanJson = JSON.parse(rawText.replace(/```json|```/g, "").trim());
-    console.log(rawText)
-    // 3. Post-procesado de Imagen (Base64)
+    // 3. Parseo del JSON
+    const cleanJson = JSON.parse(
+      rawText.replace(/\`\`\`json|\`\`\`/g, "").trim(),
+    );
+
+    // 4. Post-procesado de imagen a Base64
     if (cleanJson.images?.[0]?.url?.startsWith("http")) {
       try {
         cleanJson.images[0].url = await getBase64FromUrl(
@@ -741,7 +923,7 @@ class IntegrationService {
       }
     }
 
-    // 4. ✨ MAPEO A "DRAFT" (Para autorrelleno en Flutter)
+    // 5. Mapeo al DTO Draft
     const draft = new DraftItemDTO(cleanJson);
     return draft.toJSON();
   }

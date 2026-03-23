@@ -33,7 +33,7 @@ async function runPokeApiTest() {
     
     // Ajustamos los nombres de variables para que coincidan con la llamada a la IA
     const apiKeyToUse = decryptedData.apiKey;
-    const modelToUse = decryptedData.model || "gemini-1.5-flash"; 
+    const modelToUse = decryptedData.model || "gemini-3-flash-preview"; 
 
     // 2. Obtener datos de PokeAPI
     console.log(`📡 Consultando PokeAPI para: ${POKEMON_NAME}...`);

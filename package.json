@@ -16,6 +16,7 @@
   "license": "ISC",
   "keywords": [],
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.38.0",
     "@octokit/rest": "^22.0.1",
     "@prisma/adapter-mariadb": "^7.4.0",
@@ -30,6 +31,7 @@
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "openai": "^6.32.0",
     "pdfkit": "^0.17.2",
     "resend": "^6.9.3",
     "semver": "^7.7.4"

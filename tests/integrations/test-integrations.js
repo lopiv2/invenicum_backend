@@ -13,7 +13,7 @@ async function runIntegrationTest() {
     const TEST_TYPE = "gemini_test";
     const MOCK_CONFIG_OBJECT = {
         apiKey: "AIza_TEST_SECRET_KEY_2026",
-        model: "gemini-3-flash"
+        model: "gemini-3-flash-preview"
     };
 
     try {

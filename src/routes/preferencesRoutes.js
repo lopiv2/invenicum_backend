@@ -2,6 +2,11 @@ const express = require("express");
 const router = express.Router();
 const preferencesService = require("../services/preferencesService");
 const verifyToken = require("../middleware/authMiddleware");
+const {
+  AI_MODELS,
+  AI_PROVIDERS,
+  DEFAULT_MODELS,
+} = require("../config/aiConstants");
 
 // GET /api/v1/preferences
 router.get("/", verifyToken, async (req, res) => {
@@ -193,6 +198,54 @@ router.delete("/custom-themes/:id", verifyToken, async (req, res) => {
     }
 
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET /api/v1/preferences/ai-models
+// Devuelve los modelos disponibles por proveedor para que Flutter
+// construya el selector dinámicamente sin hardcodear nada en el frontend.
+router.get("/ai-models", verifyToken, (req, res) => {
+  res.json({ success: true, data: AI_MODELS });
+});
+
+// PATCH /api/v1/preferences/ai-provider
+router.patch("/ai-provider", verifyToken, async (req, res) => {
+  try {
+    const { aiProvider, aiModel } = req.body;
+    const providerList = Object.values(AI_PROVIDERS);
+
+    // 1. Validar proveedor
+    if (!aiProvider || !providerList.includes(aiProvider)) {
+      return res.status(400).json({
+        success: false,
+        message: `Proveedor inválido. Valores posibles: ${providerList.join(", ")}`,
+      });
+    }
+
+    // 2. Validar que existan modelos para ese proveedor
+    const modelsForProvider = AI_MODELS[aiProvider];
+    if (!modelsForProvider) {
+      throw new Error(
+        `No hay modelos configurados para el proveedor: ${aiProvider}`,
+      );
+    }
+
+    const validModelsIds = modelsForProvider.map((m) => m.id);
+
+    // 3. Determinar el modelo final
+    const finalModel =
+      aiModel && validModelsIds.includes(aiModel)
+        ? aiModel
+        : DEFAULT_MODELS[aiProvider];
+
+    const result = await preferencesService.updatePreferences(req.user.id, {
+      aiProvider,
+      aiModel: finalModel,
+    });
+
+    res.json(result.success ? result : res.status(400).json(result));
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

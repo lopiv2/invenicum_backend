@@ -92,6 +92,8 @@ model UserPreferences {
   language        String   @default("es")   // Código de idioma (es, en, etc.)
   currency        String   @default("USD")
   aiEnabled       Boolean  @default(true) @map("ai_enabled")
+  aiProvider      String   @default("gemini") @map("ai_provider") // "gemini" | "openai" | "claude"
+  aiModel         String   @default("gemini-3-flash-preview") @map("ai_model")
   createdAt       DateTime @default(now())  @map("created_at")
   updatedAt       DateTime @updatedAt       @map("updated_at")
   channelOrder    String  @default("telegram,email") @map("channel_order")
