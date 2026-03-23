@@ -8,9 +8,11 @@ class UserPreferencesDTO {
     this.aiModel = prefs.aiModel;
     this.aiProvider = prefs.aiProvider;
 
-    // 🔔 Construimos el objeto "notifications" para Flutter
+    // --- NUEVOS CAMPOS DE TEMA ---
+    this.useSystemTheme = prefs.useSystemTheme ?? true;
+    this.isDarkMode = prefs.isDarkMode ?? false;
+
     this.notifications = {
-      // 🔄 CONVERSIÓN: De "telegram,email" (DB) a ["telegram", "email"] (Flutter)
       channelOrder:
         typeof prefs.channelOrder === "string"
           ? prefs.channelOrder.split(",")
@@ -25,25 +27,29 @@ class UserPreferencesDTO {
     };
   }
 
-  /**
-   * 🚀 Prepara los datos para Prisma (Mapeo Flutter -> Database)
-   */
   static toPrismaData(body) {
     const prismaData = {};
 
-    // Campos de primer nivel
     if (body.language) prismaData.language = body.language;
     if (body.currency) prismaData.currency = body.currency;
     if (body.aiEnabled !== undefined) prismaData.aiEnabled = body.aiEnabled;
     if (body.aiModel) prismaData.aiModel = body.aiModel;
     if (body.aiProvider) prismaData.aiProvider = body.aiProvider;
 
+    // --- MAPEO DE TEMA A PRISMA ---
+    if (body.useSystemTheme !== undefined) {
+      prismaData.useSystemTheme = body.useSystemTheme;
 
-    // Campos anidados de notificaciones
+      // 🛡️ REGLA DE NEGOCIO: Si activamos el modo automático,
+      // forzamos el modo oscuro manual a false.
+      if (body.useSystemTheme === true) {
+        prismaData.isDarkMode = false;
+      }
+    }
+    if (body.isDarkMode !== undefined) prismaData.isDarkMode = body.isDarkMode;
+
     if (body.notifications) {
       const n = body.notifications;
-
-      // Alertas booleanas
       if (n.alertStockLow !== undefined)
         prismaData.alertStockLow = n.alertStockLow;
       if (n.alertPreSales !== undefined)
@@ -57,7 +63,6 @@ class UserPreferencesDTO {
       if (n.alertPriceChange !== undefined)
         prismaData.alertPriceChange = n.alertPriceChange;
 
-      // 🔄 CONVERSIÓN: De ["telegram", "email"] (Flutter) a "telegram,email" (DB)
       if (n.channelOrder) {
         prismaData.channelOrder = Array.isArray(n.channelOrder)
           ? n.channelOrder.join(",")
@@ -75,6 +80,8 @@ class UserPreferencesDTO {
       aiEnabled: this.aiEnabled,
       aiModel: this.aiModel,
       aiProvider: this.aiProvider,
+      useSystemTheme: this.useSystemTheme, // Añadido
+      isDarkMode: this.isDarkMode, // Añadido
       notifications: this.notifications,
     };
   }

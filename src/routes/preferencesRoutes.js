@@ -106,6 +106,23 @@ router.get("/custom-themes", verifyToken, async (req, res) => {
   }
 });
 
+// PATCH /api/v1/preferences/visual-settings
+router.patch("/visual-settings", verifyToken, async (req, res) => {
+  try {
+    const { useSystemTheme, isDarkMode } = req.body;
+
+    // Usamos el método unificado que ya actualiza la tabla UserPreferences
+    const result = await preferencesService.updatePreferences(req.user.id, {
+      useSystemTheme,
+      isDarkMode,
+    });
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // PUT /api/v1/preferences/theme
 router.put("/theme", verifyToken, async (req, res) => {
   try {
