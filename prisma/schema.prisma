@@ -86,6 +86,31 @@ model CustomTheme {
   @@map("custom_theme")
 }
 
+// Para no repetir la misma búsqueda (ej: "Pikachu" en "es")
+model EnrichedCache {
+  id          String   @id @default(uuid())
+  source      String
+  query       String
+  locale      String
+  data        Json
+  createdAt   DateTime @default(now())
+
+  @@unique([source, query, locale])
+  @@map("enriched_cache")
+}
+
+//Mapeador de Apis para cache
+model ApiMapper {
+  id            String   @id @default(uuid())
+  source        String   // 'pokemon', 'bgg', 'books'
+  structureHash String   @unique 
+  mappingJson   Json     // Instrucciones de mapeo
+  locale        String   @default("es") 
+  createdAt     DateTime @default(now())
+
+  @@map("api_mapper")
+}
+
 // Preferencias generales del usuario (idioma, tema, etc.)
 model UserPreferences {
   id              Int      @id @default(autoincrement())

@@ -23,10 +23,18 @@ async function getBase64FromUrl(imageUrl) {
 }
 
 /**
- * Genera el Prompt Universal para Gemini basado en la fuente
+ * Genera el Prompt Universal optimizado para Mapeo y Enriquecimiento
+ * @param {string} contextHint - Contexto de la fuente (ej: "un Pokémon")
+ * @param {string} rawData - El JSON bruto de la API
+ * @param {string} locale - Código de idioma (es, en, etc.)
+ * @param {boolean} isNewStructure - Si es true, pide a la IA que genere las reglas de mapeo
  */
-function generateUniversalPrompt(contextHint, rawData, locale = "es") {
-  // Mapeo amigable de códigos a nombres de idioma
+function generateUniversalPrompt(
+  contextHint,
+  rawData,
+  locale = "es",
+  isNewStructure = true,
+) {
   const languageMap = {
     es: "Español",
     en: "Inglés",
@@ -37,30 +45,63 @@ function generateUniversalPrompt(contextHint, rawData, locale = "es") {
   };
   const targetLanguage = languageMap[locale] || "Español";
 
+  // Si ya tenemos el mapeo, el prompt es mucho más corto y barato (ahorro de tokens)
+  if (!isNewStructure) {
+    return `
+      Actúa como un Redactor Creativo. 
+      Tu tarea es convertir estos datos técnicos ya filtrados en una ficha atractiva en **${targetLanguage}**.
+
+      DATOS TÉCNICOS:
+      ${rawData}
+
+      REQUERIMIENTOS:
+      1. Redacta una descripción narrativa de 2-3 párrafos basada en los datos.
+      2. Asegúrate de que el nombre y los valores de los campos estén correctamente traducidos.
+      3. Responde ÚNICAMENTE con un objeto JSON que siga esta estructura:
+      {
+        "name": "Nombre traducido",
+        "description": "Descripción redactada",
+        "images": [{"url": "URL original"}],
+        "customFieldValues": { "Campo": "Valor traducido" }
+      }
+    `;
+  }
+
+  // Si la estructura es NUEVA, pedimos el "Mapeo de ADN" de la API
   return `
-    Actúa como un Analista de Datos Universal. Tu tarea es convertir un volcado de datos técnico en una ficha de inventario legible y estructurada.
+    Actúa como un Analista de Datos y Especialista en APIs. 
+    Tu tarea es analizar un volcado de datos de ${contextHint} y crear un mapeo permanente.
 
     REGLAS DE PROCESAMIENTO:
-    1. IDIOMA: Traduce TODA la información al **${targetLanguage}**.
-    2. DESCRIPCIÓN: Redacta una biografía o resumen profesional basado en los datos (máximo 2-3 párrafos). Si no hay datos narrativos, invéntalos basándote en el contexto de ${contextHint}.
-    3. IMÁGENES: Extrae la URL de la imagen con mejor resolución.
-    4. CUSTOM FIELDS: Identifica los 9 o 10 atributos técnicos más importantes de la fuente (ej: tipos, habilidades, estadísticas, autores, dimensiones, peso, año, etc.) y lístalos en el objeto 'customFieldValues'.
+    1. IDIOMA: Traduce toda la información al **${targetLanguage}**.
+    2. DESCRIPCIÓN: Redacta una biografía o resumen profesional (2-3 párrafos). Si no hay datos, invéntalos con coherencia al contexto de ${contextHint}.
+    3. ESTRUCTURA DINÁMICA: Identifica los 9-10 atributos más importantes.
+    4. MAPEAMIENTO (CRÍTICO): Identifica la ruta exacta (JSON path / dot notation) de donde extraes cada dato del "ORIGEN" original.
 
-    ESTRUCTURA DINÁMICA:
-    - En 'customFieldValues', las CLAVES deben ser nombres descriptivos (ej: "Habilidades", "Jugadores", "Tipo", "Peso") y los VALORES deben ser los datos correspondientes traducidos.
-
-    ESQUEMA REQUERIDO:
+    ESQUEMA DE RESPUESTA REQUERIDO:
     {
-      "name": "Nombre o Título principal",
-      "description": "Resumen narrativo en ${targetLanguage}",
-      "images": [{"url": "URL encontrada"}],
-      "customFieldValues": {
-        "external_id": "ID original",
-        "clave_importante_1": "valor_1",
-        "clave_importante_2": "valor_2",
-        "clave_importante_3": "valor_3"
+      "itemData": {
+        "name": "Nombre principal",
+        "description": "Resumen narrativo en ${targetLanguage}",
+        "images": [{"url": "URL con mejor resolución encontrada"}],
+        "customFieldValues": {
+          "Atributo_1": "Valor_1",
+          "Atributo_2": "Valor_2"
+        }
+      },
+      "mappingRules": {
+        "name": "ruta.al.nombre", 
+        "image_url": "ruta.a.la.imagen",
+        "fields": {
+          "Atributo_1": "ruta.al.valor_1",
+          "Atributo_2": "ruta.al.valor_2"
+        }
       }
     }
+
+    EJEMPLO DE MAPPING RULES:
+    Si el nombre está en rawData.result.title, el valor debe ser "result.title". 
+    Si está en una lista como rawData.abilities[0].name, usa "abilities[0].name".
 
     DATOS DE ORIGEN (${contextHint}):
     ${rawData}

@@ -38,7 +38,6 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
       tools: [{ functionDeclarations: toolDefinitions }],
       toolConfig: { functionCallingConfig: { mode: "AUTO" } },
       config: {
-        // Desactivar thinking para que no interfiera con function calling
         thinkingConfig: { thinkingBudget: 0 },
       },
     });

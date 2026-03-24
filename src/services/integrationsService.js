@@ -1,10 +1,12 @@
 const prisma = require("../middleware/prisma");
+const _ = require("lodash");
 const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
 const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const axios = require("axios");
+const crypto = require("crypto");
 const { Resend } = require("resend");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
 const DraftItemDTO = require("../models/draftItemModel");
@@ -807,24 +809,60 @@ class IntegrationService {
     return null;
   }
 
+  /**
+   * Genera un hash único basado en las llaves del JSON (su estructura)
+   */
+  getStructureHash(rawData) {
+    try {
+      const json = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+      const keys = Object.keys(json).sort().join("|");
+      // Esto retorna un STRING hexadecimal
+      return crypto.createHash("md5").update(keys).digest("hex");
+    } catch (e) {
+      console.error("Error parseando JSON para hash:", e);
+      return "default-hash";
+    }
+  }
+
+  applyLocalMapping(sourceJson, mappingRules) {
+    const result = {
+      name: _.get(sourceJson, mappingRules.name, "Sin nombre"),
+      images: [{ url: _.get(sourceJson, mappingRules.image_url, "") }],
+      customFieldValues: {},
+    };
+
+    // Mapear campos dinámicos
+    for (const [label, path] of Object.entries(mappingRules.fields || {})) {
+      result.customFieldValues[label] = _.get(sourceJson, path, "N/A");
+    }
+    return result;
+  }
+
   async getEnrichedItem(userId, query, source, locale = "es") {
-    // Obtener el proveedor de IA activo según preferencias del usuario
+    const normalizedQuery = query.toLowerCase().trim();
+
+    // --- CAPA 1: CACHÉ DE RESULTADO FINAL ---
+    const cachedResult = await prisma.enrichedCache.findUnique({
+      where: {
+        source_query_locale: { source, query: normalizedQuery, locale },
+      },
+    });
+    if (cachedResult) return cachedResult.data;
+
+    // --- CAPA 2: OBTENCIÓN DE DATOS RAW ---
     const aiData = await this.getActiveAiClient(userId);
     if (!aiData)
       throw new Error(
         "Ningún proveedor de IA configurado. Ve a Integraciones.",
       );
 
-    const { client, model, provider } = aiData;
-
     let rawData = "";
     let contextHint = "";
 
-    // 1. Fase de Recolección: Cada fuente solo llena rawData y contextHint
     switch (source) {
       case "pokemon": {
         contextHint = "un Pokémon de PokeAPI";
-        const pokemonName = query.toLowerCase().trim().replace(/\s+/g, "-");
+        const pokemonName = normalizedQuery.replace(/\s+/g, "-");
         const pokeRes = await axios.get(
           `https://pokeapi.co/api/v2/pokemon/${pokemonName}`,
         );
@@ -847,7 +885,7 @@ class IntegrationService {
           `https://boardgamegeek.com/xmlapi2/thing?id=${match[1]}&stats=1`,
           { headers: bggHeaders },
         );
-        rawData = detailRes.data;
+        rawData = detailRes.data; // Nota: Si es XML, convendría pasarlo a JSON antes del hash
         break;
       }
       case "books": {
@@ -863,14 +901,44 @@ class IntegrationService {
         throw new Error(`La fuente ${source} no está soportada.`);
     }
 
-    // 2. Fase de IA — usa el proveedor activo del usuario
-    const prompt = generateUniversalPrompt(contextHint, rawData, locale);
+    // --- CAPA 3: GESTIÓN DE MAPEO (ESTRUCTURA) ---
+    const structureHash = this.getStructureHash(rawData);
+    // Validación de seguridad
+    if (!structureHash) {
+      throw new Error("No se pudo generar el hash de la estructura.");
+    }
+    const existingMapper = await prisma.apiMapper.findUnique({
+      where: { structureHash: structureHash },
+    });
+
+    let finalPrompt = "";
+    let isNewStructure = !existingMapper;
+
+    if (isNewStructure) {
+      // Si la estructura es nueva, pedimos el mapeo y el enriquecimiento completo
+      finalPrompt = generateUniversalPrompt(contextHint, rawData, locale, true);
+    } else {
+      // Si ya conocemos la estructura, extraemos datos y la IA solo traduce/redacta
+      const extractedData = this.applyLocalMapping(
+        JSON.parse(rawData),
+        existingMapper.mappingJson,
+      );
+      finalPrompt = `
+    ENTREGA ÚNICAMENTE UN OBJETO JSON.
+    Basándote en estos datos: ${JSON.stringify(extractedData)}, 
+    genera una ficha en ${locale} con 'name', 'description' (2 párrafos), 
+    'images' (mantén la URL) y 'customFieldValues'.
+  `;
+    }
+
+    // --- FASE DE IA ---
+    const { client, model, provider } = aiData;
     let rawText = "";
 
     if (provider === AI_PROVIDERS.GEMINI) {
       const result = await client.models.generateContent({
         model,
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: [{ text: finalPrompt }] }],
         config: {
           generationConfig: {
             responseMimeType: "application/json",
@@ -878,8 +946,6 @@ class IntegrationService {
           },
         },
       });
-      if (!result.candidates?.length)
-        throw new Error("El proveedor de IA no generó respuesta.");
       rawText = result.candidates[0].content.parts[0].text;
     } else if (provider === AI_PROVIDERS.OPENAI) {
       const result = await client.chat.completions.create({
@@ -887,10 +953,9 @@ class IntegrationService {
         messages: [
           {
             role: "system",
-            content:
-              "Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional.",
+            content: "Responde ÚNICAMENTE con un objeto JSON válido.",
           },
-          { role: "user", content: prompt },
+          { role: "user", content: finalPrompt },
         ],
         temperature: 0.2,
         response_format: { type: "json_object" },
@@ -900,32 +965,81 @@ class IntegrationService {
       const result = await client.messages.create({
         model,
         max_tokens: 2048,
-        messages: [{ role: "user", content: prompt }],
-        system:
-          "Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional ni bloques de código.",
+        messages: [{ role: "user", content: finalPrompt }],
+        system: "Responde ÚNICAMENTE con un objeto JSON válido.",
       });
       rawText = result.content.find((b) => b.type === "text")?.text ?? "{}";
     }
 
-    // 3. Parseo del JSON
-    const cleanJson = JSON.parse(
-      rawText.replace(/\`\`\`json|\`\`\`/g, "").trim(),
-    );
+    let aiResponse;
+    try {
+      // Limpiamos posibles marcas de markdown y buscamos los límites del JSON
+      let sanitizedText = rawText.replace(/```json|```/g, "").trim();
+      const start = sanitizedText.indexOf("{");
+      const end = sanitizedText.lastIndexOf("}");
+      if (start === -1 || end === -1) throw new Error("No se encontró JSON");
 
-    // 4. Post-procesado de imagen a Base64
-    if (cleanJson.images?.[0]?.url?.startsWith("http")) {
+      aiResponse = JSON.parse(sanitizedText.substring(start, end + 1));
+    } catch (e) {
+      console.error(
+        "❌ Error al parsear respuesta de IA. Texto recibido:",
+        rawText,
+      );
+      throw new Error("La IA no devolvió un formato válido.");
+    }
+
+    // --- CAPA 4: ASIGNACIÓN DE DATOS SEGÚN ORIGEN ---
+    let finalData;
+
+    if (isNewStructure) {
+      // Si es nueva, los datos reales vienen dentro de 'itemData'
+      finalData = aiResponse.itemData || aiResponse;
+
+      if (aiResponse.mappingRules) {
+        await prisma.apiMapper
+          .create({
+            data: {
+              source,
+              structureHash,
+              mappingJson: aiResponse.mappingRules,
+            },
+          })
+          .catch((err) =>
+            console.error("⚠️ Error guardando mapeador:", err.message),
+          );
+      }
+    } else {
+      // Si no es nueva, la IA devolvió el objeto directamente
+      finalData = aiResponse;
+    }
+
+    // --- 5. POST-PROCESADO (Imagen y DTO) ---
+    if (finalData.images?.[0]?.url?.startsWith("http")) {
       try {
-        cleanJson.images[0].url = await getBase64FromUrl(
-          cleanJson.images[0].url,
+        // Convertimos la URL a Base64 para que el front no tenga problemas de CORS
+        finalData.images[0].url = await getBase64FromUrl(
+          finalData.images[0].url,
         );
       } catch (err) {
-        console.error("Fallo al convertir imagen:", err.message);
+        console.error("⚠️ Fallo al convertir imagen:", err.message);
       }
     }
 
-    // 5. Mapeo al DTO Draft
-    const draft = new DraftItemDTO(cleanJson);
-    return draft.toJSON();
+    const draft = new DraftItemDTO(finalData).toJSON();
+
+    // Guardar en caché de resultados finales
+    await prisma.enrichedCache
+      .create({
+        data: {
+          source,
+          query: normalizedQuery,
+          locale,
+          data: draft,
+        },
+      })
+      .catch(() => {});
+
+    return draft;
   }
 }
 

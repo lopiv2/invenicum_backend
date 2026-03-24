@@ -25,12 +25,13 @@ const TOOL_DEFINITIONS = [
         path: {
           type: "string",
           description:
-            "Ruta de la app. Ejemplos: /dashboard, /preferences, /integrations, " +
+            "Ruta de la app. Ejemplos: /dashboard, /settings, /integrations, " +
             "/container/{id}/asset-types, /container/{id}/loans",
         },
         reason: {
           type: "string",
-          description: "Breve explicación de por qué navegas aquí (para el mensaje al usuario).",
+          description:
+            "Breve explicación de por qué navegas aquí (para el mensaje al usuario).",
         },
       },
       required: ["path"],
@@ -86,7 +87,10 @@ const TOOL_DEFINITIONS = [
         name: { type: "string", description: "Nombre del activo." },
         description: { type: "string", description: "Descripción opcional." },
         containerId: { type: "number", description: "ID del contenedor." },
-        assetTypeId: { type: "number", description: "ID del tipo de activo (categoría)." },
+        assetTypeId: {
+          type: "number",
+          description: "ID del tipo de activo (categoría).",
+        },
         locationId: { type: "number", description: "ID de la ubicación." },
         quantity: { type: "number", description: "Cantidad (por defecto 1)." },
       },
@@ -121,7 +125,8 @@ const TOOL_DEFINITIONS = [
         description: { type: "string", description: "Descripción opcional." },
         isCollection: {
           type: "boolean",
-          description: "True si es una colección de objetos. Por defecto false.",
+          description:
+            "True si es una colección de objetos. Por defecto false.",
         },
       },
       required: ["name"],
@@ -134,28 +139,63 @@ const TOOL_DEFINITIONS = [
     description:
       "Genera una plantilla de tipo de activo con campos personalizados. " +
       "Úsala cuando el usuario quiera organizar un tipo de colección nueva " +
-      "(vinilos, libros, Funko Pops, herramientas, etc.).",
+      "(vinilos, libros, Funko Pops, herramientas, videojuegos, joyería, etc.). " +
+      "OBLIGATORIO: siempre incluye entre 5 y 8 campos relevantes para ese tipo de objeto. " +
+      "NUNCA invoques esta función con fields vacío [].",
     parameters: {
       type: "object",
       properties: {
         name: { type: "string", description: "Nombre de la plantilla." },
-        description: { type: "string", description: "Breve descripción." },
-        category: { type: "string", description: "Categoría (ej: Música, Libros, Juegos)." },
+        description: {
+          type: "string",
+          description: "Breve descripción de para qué sirve la plantilla.",
+        },
+        category: {
+          type: "string",
+          description: "Categoría (ej: Música, Libros, Juegos, Electrónica).",
+        },
         fields: {
           type: "array",
-          description: "Campos personalizados de la plantilla.",
+          description:
+            "OBLIGATORIO: Lista de campos del objeto. DEBE contener entre 5 y 8 campos relevantes. " +
+            "Ejemplo para videojuegos: [{name:'Plataforma',type:'dropdown',options:['PS5','Xbox','PC','Switch']}, " +
+            "{name:'Género',type:'dropdown',options:['Acción','RPG','Deportes','Estrategia']}, " +
+            "{name:'Estado',type:'dropdown',options:['Nuevo','Usado','Digital']}, " +
+            "{name:'Año de lanzamiento',type:'number'}, " +
+            "{name:'Precio de compra',type:'price'}, " +
+            "{name:'Completado',type:'boolean'}, " +
+            "{name:'Puntuación personal',type:'number'}]. " +
+            "NUNCA dejes este array vacío.",
+          minItems: 4,
           items: {
             type: "object",
             properties: {
-              name: { type: "string" },
+              name: {
+                type: "string",
+                description:
+                  "Nombre descriptivo del campo. Ej: 'Plataforma', 'Año de lanzamiento'.",
+              },
               type: {
                 type: "string",
-                enum: ["text", "number", "date", "dropdown", "price", "boolean", "url"],
+                enum: [
+                  "text",
+                  "number",
+                  "date",
+                  "dropdown",
+                  "price",
+                  "boolean",
+                  "url",
+                ],
+                description:
+                  "Tipo del campo. Usa 'dropdown' para listas cerradas de opciones, " +
+                  "'price' para valores monetarios, 'boolean' para sí/no, 'number' para cantidades.",
               },
               options: {
                 type: "array",
                 items: { type: "string" },
-                description: "Solo para campos dropdown.",
+                description:
+                  "OBLIGATORIO si type es 'dropdown'. Lista de 3-6 opciones posibles. " +
+                  "Ej: ['Nuevo', 'Usado', 'Dañado'].",
               },
             },
             required: ["name", "type"],
@@ -187,7 +227,15 @@ const TOOL_DEFINITIONS = [
 // ---------------------------------------------------------------------------
 
 async function executeTool(toolName, toolArgs, context) {
-  const { userId, locale = "es", geminiClient, geminiModel, aiClient, aiModel, aiProvider } = context;
+  const {
+    userId,
+    locale = "es",
+    geminiClient,
+    geminiModel,
+    aiClient,
+    aiModel,
+    aiProvider,
+  } = context;
 
   switch (toolName) {
     // ── navigate ────────────────────────────────────────────────────────────
@@ -298,7 +346,11 @@ async function executeTool(toolName, toolArgs, context) {
 
     // ── create_template ──────────────────────────────────────────────────────
     case "create_template": {
-      let fields = toolArgs.fields;
+      console.log(
+        "[MCP create_template] toolArgs recibidos:",
+        JSON.stringify(toolArgs, null, 2),
+      );
+      let fields = toolArgs.fields ?? [];
 
       // Si hay campos dropdown sin opciones, hacemos un segundo llamado a Gemini
       // para rellenarlas automáticamente — igual que en el aiService original.
@@ -309,7 +361,9 @@ async function executeTool(toolName, toolArgs, context) {
       const templateClient = geminiClient || aiClient;
       const templateModel = geminiModel || aiModel;
       if (dropdownsWithoutOptions.length > 0 && templateClient) {
-        const fieldNames = dropdownsWithoutOptions.map((f) => `"${f.name}"`).join(", ");
+        const fieldNames = dropdownsWithoutOptions
+          .map((f) => `"${f.name}"`)
+          .join(", ");
         const optionsPrompt =
           `Para una plantilla llamada "${toolArgs.name}" de categoría "${toolArgs.category ?? "General"}", ` +
           `sugiere entre 3 y 6 opciones realistas para cada uno de estos campos dropdown: ${fieldNames}. ` +
@@ -320,11 +374,16 @@ async function executeTool(toolName, toolArgs, context) {
           const optionsResponse = await templateClient.models.generateContent({
             model: templateModel,
             contents: [{ role: "user", parts: [{ text: optionsPrompt }] }],
-            config: { generationConfig: { responseMimeType: "application/json" } },
+            config: {
+              generationConfig: { responseMimeType: "application/json" },
+            },
           });
 
-          const optionsRaw = optionsResponse.candidates[0].content.parts[0].text;
-          const optionsMap = JSON.parse(optionsRaw.replace(/```json|```/g, "").trim());
+          const optionsRaw =
+            optionsResponse.candidates[0].content.parts[0].text;
+          const optionsMap = JSON.parse(
+            optionsRaw.replace(/```json|```/g, "").trim(),
+          );
 
           fields = fields.map((f) => {
             if (f.type === "dropdown" && optionsMap[f.name]) {
@@ -335,10 +394,17 @@ async function executeTool(toolName, toolArgs, context) {
 
           console.log(
             "[MCP create_template] Opciones inyectadas:",
-            JSON.stringify(fields.filter((f) => f.type === "dropdown"), null, 2),
+            JSON.stringify(
+              fields.filter((f) => f.type === "dropdown"),
+              null,
+              2,
+            ),
           );
         } catch (e) {
-          console.error("[MCP create_template] Error obteniendo opciones:", e.message);
+          console.error(
+            "[MCP create_template] Error obteniendo opciones:",
+            e.message,
+          );
           // No bloqueamos — devolvemos la plantilla sin opciones si falla
         }
       }
@@ -367,11 +433,22 @@ async function executeTool(toolName, toolArgs, context) {
       const $ = cheerio.load(html);
       const baseUrl = new URL(toolArgs.url);
 
-      let ogImage = $('meta[property="og:image"]').attr("content");
-      if (ogImage && ogImage.startsWith("/")) {
+      // 1. Extraer metadatos enriquecidos (OpenGraph, Schema.org, JSON-LD)
+      let ogImage =
+        $('meta[property="og:image"]').attr("content") ||
+        $('meta[name="twitter:image"]').attr("content");
+      if (ogImage && ogImage.startsWith("/"))
         ogImage = `${baseUrl.origin}${ogImage}`;
-      }
 
+      // Capturamos bloques JSON-LD (donde suele estar el EAN/Barcode y la Marca)
+      const jsonLdData = [];
+      $('script[type="application/ld+json"]').each((i, el) => {
+        try {
+          jsonLdData.push($(el).html());
+        } catch (_) {}
+      });
+
+      // Limpieza del HTML para el texto visible
       $("script, style, nav, footer, header, aside, noscript").remove();
       const cleanText = $("body")
         .text()
@@ -379,9 +456,6 @@ async function executeTool(toolName, toolArgs, context) {
         .trim()
         .substring(0, 20000);
 
-      // Usamos el cliente del proveedor activo (Gemini, OpenAI o Claude)
-      // Para simplificar, la extracción de producto siempre usa Gemini si está disponible,
-      // ya que necesita analizar HTML — los otros proveedores también funcionan.
       const activeClient = geminiClient || aiClient;
       const activeModel = geminiModel || aiModel;
 
@@ -392,12 +466,27 @@ async function executeTool(toolName, toolArgs, context) {
             role: "user",
             parts: [
               {
-                text: `Extrae del siguiente contenido web los campos: name, description, imageUrl, price.
-URL: ${toolArgs.url}
-Imagen og: ${ogImage ?? "null"}
-Contenido: ${cleanText}
+                text: `Analiza el contenido de esta URL y extrae la mayor cantidad de información técnica del producto.
+        
+        URL: ${toolArgs.url}
+        Imagen sugerida: ${ogImage ?? "null"}
+        Metadatos extra: ${jsonLdData.join(" ")}
+        Texto visible: ${cleanText}
 
-Responde SOLO con JSON: { "name": "...", "description": "...", "imageUrl": "...", "price": null }`,
+        Busca específicamente: nombre, descripción detallada, precio, moneda, imagen (URL), código de barras (EAN/GTIN/UPC), marca (brand), categoría y dimensiones si existen.
+
+        Responde ESTRICTAMENTE con este formato JSON:
+        {
+          "name": "nombre del producto",
+          "description": "descripción resumida",
+          "imageUrl": "URL de la mejor imagen",
+          "price": 0.0,
+          "currency": "EUR/USD/etc",
+          "barcode": "número de código de barras o null",
+          "brand": "marca del producto",
+          "category": "categoría",
+          "specifications": { "campo": "valor" }
+        }`,
               },
             ],
           },
@@ -411,21 +500,18 @@ Responde SOLO con JSON: { "name": "...", "description": "...", "imageUrl": "..."
           .trim(),
       );
 
-      // Normalizar array → objeto
       if (Array.isArray(extracted)) extracted = extracted[0] ?? {};
 
-      // Convertir imagen a Base64
+      // 2. Intentar convertir a Base64 si hay imagen
       if (extracted.imageUrl?.startsWith("http")) {
         try {
           extracted.imageUrl = await getBase64FromUrl(extracted.imageUrl);
-        } catch (_) {
-          // Si falla la conversión, dejamos la URL original
-        }
+        } catch (_) {}
       }
 
       return {
         action: "PRODUCT_EXTRACT",
-        data: extracted,
+        data: extracted, // Ahora contiene barcode, brand, etc.
       };
     }
 

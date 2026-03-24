@@ -157,6 +157,35 @@ class AIService {
           finalData = {};
           answer = answer.replace(/open_scanner\s*\([^)]*\)/gi, "").trim();
         }
+
+        // Fallback para create_template escrito como texto
+        // Ejemplo: create_template(name="Joyería", fields=[...])
+        if (!finalAction) {
+          const ctMatch = answer.match(/create_template\s*\(([\s\S]*?)\)(?:\s*$|\n)/);
+          if (ctMatch) {
+            try {
+              // Intentar extraer name y fields del texto
+              const nameMatch = ctMatch[1].match(/name\s*=\s*["']([^"']+)["']/);
+              const fieldsMatch = ctMatch[1].match(/fields\s*=\s*(\[.*?\])/s);
+              if (nameMatch) {
+                finalAction = "CREATE_TEMPLATE";
+                let parsedFields = [];
+                if (fieldsMatch) {
+                  try {
+                    parsedFields = JSON.parse(fieldsMatch[1].replace(/'/g, '"'));
+                  } catch (_) {}
+                }
+                finalData = {
+                  name: nameMatch[1],
+                  description: "",
+                  category: "",
+                  fields: parsedFields,
+                };
+                answer = answer.replace(ctMatch[0], "").trim();
+              }
+            } catch (_) {}
+          }
+        }
       }
 
       // Eliminar cualquier resto de artefactos del modelo

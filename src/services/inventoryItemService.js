@@ -1016,7 +1016,7 @@ class InventoryItemService {
         data: {
           marketValue: newPrice,
           // Guardamos también los rangos que vienen de UPC por si quieres usarlos en la UI
-          currency: marketData.currency || "EUR",
+          currency: marketData.currency || "USD",
           lastPriceUpdate: new Date(),
         },
         include: {

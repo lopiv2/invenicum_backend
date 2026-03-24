@@ -30,6 +30,7 @@
     "express": "^5.1.0",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.2",
+    "lodash": "^4.17.23",
     "multer": "^2.0.2",
     "openai": "^6.32.0",
     "pdfkit": "^0.17.2",
