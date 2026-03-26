@@ -2,10 +2,11 @@ const express = require("express");
 const router = express.Router();
 const userService = require("../services/userService");
 const verifyToken = require("../middleware/authMiddleware");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware de logging (opcional, si quieres mantener la consistencia con tus otras rutas)
 router.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
   next();
 });

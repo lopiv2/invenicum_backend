@@ -2,10 +2,11 @@ const express = require('express');
 const router = express.Router();
 const verifyToken = require('../middleware/authMiddleware'); // Middleware de autenticación
 const dashboardDataService = require('../services/dashboardDataService'); // 🔑 Importamos el servicio de datos
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware de logging
 router.use((req, res, next) => {
-    const timestamp = new Date().toISOString();
+    const timestamp = Temporal.Now.plainDateISO().toString();
     console.log(`[DashboardRoutes - ${timestamp}] ${req.method} ${req.originalUrl}`);
     next();
 });

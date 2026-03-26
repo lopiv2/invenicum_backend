@@ -1,4 +1,5 @@
 // src/dtos/EbayMarketDataDTO.js
+const { Temporal } = require('@js-temporal/polyfill');
 
 class EbayMarketDataDTO {
   constructor(rawEbayData) {
@@ -23,7 +24,7 @@ class EbayMarketDataDTO {
     }));
 
     this.totalFound = items.length;
-    this.timestamp = new Date().toISOString();
+    this.timestamp = Temporal.Now.plainDateISO().toString();
   }
 
   _calculateAverage(items) {

@@ -10,7 +10,7 @@ router.use(authMiddleware);
 /**
  * GET /api/v1/reports/generate/:containerId
  * Genera un nuevo reporte al vuelo y lo descarga
- * 
+ *
  * Query params:
  * - type: inventory|loans|assets (requerido)
  * - format: pdf|excel (requerido)
@@ -21,6 +21,11 @@ router.get("/generate/:containerId", async (req, res) => {
     const { containerId } = req.params;
     const userId = req.user.id;
     const { type: reportType, format } = req.query;
+    const currency = req.query.currency || "USD";
+    const locale =
+      req.query.locale ||
+      req.headers["accept-language"]?.split(",")[0]?.split("-")[0] ||
+      "es";
 
     // Validar entrada
     if (!reportType || !format) {
@@ -58,7 +63,9 @@ router.get("/generate/:containerId", async (req, res) => {
       userId,
       reportType,
       format,
-      filters
+      filters,
+      locale,
+      currency
     );
 
     // Verificar que el archivo existe

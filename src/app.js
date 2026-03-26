@@ -6,7 +6,7 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config(); // Asegúrate de cargar las variables
-
+const { Temporal } = require('@js-temporal/polyfill');
 const authRoutes = require("./routes/authRoutes");
 const containerRoutes = require("./routes/containersRoutes");
 const assetTypeRoutes = require("./routes/assetTypeRoutes");
@@ -96,14 +96,14 @@ app.get("/", (req, res) => {
 <p>Versión: ${API_VERSION}</p>
 <p>Archivos Estáticos Servidos en: ${STATIC_URL_PREFIX}</p>
   <p>Ruta física servida: ${UPLOAD_DIR_TO_SERVE}</p>
-<p>Timestamp: ${new Date().toISOString()}</p>
+<p>Timestamp: ${Temporal.Now.plainDateISO().toString()}</p>
 `);
 });
 
 // Usar las rutas con la versión de API
 const API_BASE_PATH = "/api/" + API_VERSION;
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log(`[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`);
   console.log(
     `Auth Header: ${req.headers.authorization ? "Presente" : "AUSENTE"}`,
   );

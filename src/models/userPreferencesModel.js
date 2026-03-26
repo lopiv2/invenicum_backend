@@ -74,16 +74,7 @@ class UserPreferencesDTO {
   }
 
   toJSON() {
-    return {
-      language: this.language,
-      currency: this.currency,
-      aiEnabled: this.aiEnabled,
-      aiModel: this.aiModel,
-      aiProvider: this.aiProvider,
-      useSystemTheme: this.useSystemTheme, // Añadido
-      isDarkMode: this.isDarkMode, // Añadido
-      notifications: this.notifications,
-    };
+    return { ...this };
   }
 }
 

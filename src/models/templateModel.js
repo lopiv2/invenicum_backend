@@ -1,4 +1,5 @@
 const FieldDefinitionDTO = require('./fieldDefinitionModel');
+const { Temporal } = require('@js-temporal/polyfill');
 
 class AssetTemplateDTO {
   constructor(data) {
@@ -21,8 +22,8 @@ class AssetTemplateDTO {
     this.isOfficial = !!(data.isOfficial === true || data.is_official === true);
     this.isPublic = !!(data.isPublic === true || data.is_public === true);
 
-    this.createdAt = data.createdAt || data.created_at || new Date().toISOString();
-    this.updatedAt = data.updatedAt || data.updated_at || new Date().toISOString();
+    this.createdAt = data.createdAt || data.created_at || Temporal.Now.plainDateISO().toString();
+    this.updatedAt = data.updatedAt || data.updated_at || Temporal.Now.plainDateISO().toString();
   }
 
   static fromList(list) {

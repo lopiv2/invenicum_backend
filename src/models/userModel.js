@@ -1,59 +1,75 @@
-// models/UserModel.js
+const { Temporal } = require("@js-temporal/polyfill");
+
 class UserDTO {
   constructor(prismaUser) {
-    this.id = parseInt(prismaUser.id);
-    this.email = prismaUser.email;
-    this.name = prismaUser.name;
+    this.id = Number(prismaUser.id);
+    this.email = String(prismaUser.email || "");
+    this.name = String(prismaUser.name || "");
     this.username = prismaUser.username || null;
-    
-    // 🚩 CAMBIO: Guardamos el ID de GitHub para que llegue a Flutter
-    this.githubId = prismaUser.githubId || null; 
+    this.githubId = prismaUser.githubId || null;
 
-    // --- LÓGICA DE EXPIRACIÓN ---
-    const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000;
-    const githubLinkedAt = prismaUser.githubLinkedAt; 
-    const now = new Date();
+    // --- LÓGICA DE EXPIRACIÓN (Versión Ultra-Segura) ---
+    const rawDate = prismaUser.githubLinkedAt;
+    let isGithubValid = false;
 
-    // Comprobamos si es válido
-    const isGithubValid = githubLinkedAt && (now - new Date(githubLinkedAt) < thirtyDaysInMs);
+    if (rawDate) {
+      try {
+        // 1. Convertimos CUALQUIER cosa (String o Date) a un String ISO
+        // Esto es lo más seguro para que Temporal lo entienda siempre.
+        const isoString =
+          rawDate instanceof Date
+            ? rawDate.toISOString()
+            : new Date(rawDate).toISOString();
 
-    // 🚩 CAMBIO SUGERIDO: 
-    // Enviamos el handle y el avatar SIEMPRE si existen, 
-    // pero añadimos un campo booleano para el "tick verde".
-    // Así el avatar no desaparece de la UI aunque pasen 30 días.
+        // 2. Creamos el instante desde el string (esto no falla nunca)
+        const linkedInstant = Temporal.Instant.from(isoString);
+
+        const now = Temporal.Now.instant();
+        const thirtyDays = Temporal.Duration.from({ days: 30 });
+
+        // 3. Calculamos el límite y comparamos
+        const expiryLimit = linkedInstant.add(thirtyDays);
+
+        // Si el resultado es < 0, significa que 'now' es ANTERIOR al límite (Válido)
+        isGithubValid = Temporal.Instant.compare(now, expiryLimit) < 0;
+      } catch (e) {
+        console.error("[DTO DATE ERROR]: Error procesando fecha GitHub", e);
+        isGithubValid = false;
+      }
+    }
+
     this.githubHandle = prismaUser.githubHandle || null;
     this.avatarUrl = prismaUser.avatarUrl || null;
-    this.githubLinkedAt = githubLinkedAt || null;
-    this.isGithubVerified = !!isGithubValid; // Nuevo campo booleano
-    // ------------------------------------------------
 
-    this.themeConfig = prismaUser.themeConfig ? {
-      id: parseInt(prismaUser.themeConfig.id),
-      themeColor: prismaUser.themeConfig.themeColor,
-      themeBrightness: prismaUser.themeConfig.themeBrightness,
-      userId: parseInt(prismaUser.themeConfig.userId)
-    } : null;
+    // Nos aseguramos de enviar un string ISO a Flutter
+    this.githubLinkedAt = rawDate
+      ? typeof rawDate === "string"
+        ? rawDate
+        : rawDate.toISOString()
+      : null;
 
-    this.preferences = prismaUser.preferences ? {
-      id: parseInt(prismaUser.preferences.id),
-      language: prismaUser.preferences.language
-    } : null;
+    this.isGithubVerified = Boolean(isGithubValid);
+
+    // --- CONFIGURACIONES (con Number() para evitar líos) ---
+    this.themeConfig = prismaUser.themeConfig
+      ? {
+          id: Number(prismaUser.themeConfig.id),
+          themeColor: String(prismaUser.themeConfig.themeColor),
+          themeBrightness: String(prismaUser.themeConfig.themeBrightness),
+          userId: Number(prismaUser.themeConfig.userId),
+        }
+      : null;
+
+    this.preferences = prismaUser.preferences
+      ? {
+          id: Number(prismaUser.preferences.id),
+          language: String(prismaUser.preferences.language),
+        }
+      : null;
   }
 
   toJSON() {
-    return {
-      id: this.id,
-      email: this.email,
-      name: this.name,
-      username: this.username,
-      githubId: this.githubId,       // 🚩 No olvides añadirlo aquí
-      githubHandle: this.githubHandle,
-      avatarUrl: this.avatarUrl,
-      githubLinkedAt: this.githubLinkedAt,
-      isGithubVerified: this.isGithubVerified, // 🚩 Útil para el frontend
-      themeConfig: this.themeConfig,
-      preferences: this.preferences,
-    };
+    return { ...this };
   }
 }
 

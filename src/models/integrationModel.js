@@ -26,9 +26,6 @@ class IntegrationDTO {
   toJSON() {
     return {
       ...this,
-      // Aquí podrías filtrar campos sensibles si no quieres que
-      // la API Key cifrada viaje al front por alguna razón,
-      // pero para tu modal de configuración la necesitamos.
     };
   }
 }

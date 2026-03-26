@@ -2,11 +2,12 @@ const express = require("express");
 const router = express.Router();
 const integrationService = require("../services/integrationsService");
 const verifyToken = require("../middleware/authMiddleware");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware de logging
 router.use((req, res, next) => {
   console.log(
-    `[INTEGRATION-LOG] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`,
+    `[INTEGRATION-LOG] ${Temporal.Now.plainDateISO().toString()} ${req.method} ${req.originalUrl}`,
   );
   next();
 });

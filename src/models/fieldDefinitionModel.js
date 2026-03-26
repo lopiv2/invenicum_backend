@@ -24,17 +24,7 @@ class FieldDefinitionDTO {
 
   // Este método es el que genera el JSON que recibe Flutter
   toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      type: this.type,
-      isRequired: this.isRequired, // 👈 Sincronizado
-      isSummable: this.isSummable, // 👈 Sincronizado
-      isCountable: this.isCountable,
-      isMonetary: this.isMonetary,
-      dataListId: this.dataListId,
-      options: this.options
-    };
+    return { ...this };
   }
 }
 

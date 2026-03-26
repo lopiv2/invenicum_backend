@@ -4,6 +4,7 @@ const { Octokit } = require("@octokit/rest");
 const crypto = require("crypto");
 const AssetTemplateDTO = require("../models/templateModel"); // 👈 Importamos el DTO
 require("dotenv").config();
+const { Temporal } = require('@js-temporal/polyfill');
 
 class TemplateService {
   get _githubConfig() {
@@ -127,7 +128,7 @@ class TemplateService {
         authorAvatarUrl: user.avatarUrl,
         isOfficial: false,
         isPublic: true,
-        createdAt: new Date().toISOString(),
+        createdAt: Temporal.Now.plainDateISO().toString(),
       };
 
       // 3. Registro en DB Local

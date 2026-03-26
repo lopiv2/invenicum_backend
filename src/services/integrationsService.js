@@ -6,6 +6,7 @@ const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const axios = require("axios");
+const { Temporal } = require('@js-temporal/polyfill');
 const crypto = require("crypto");
 const { Resend } = require("resend");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
@@ -790,8 +791,8 @@ class IntegrationService {
               brand: item.brand,
               source: isPro ? "upcitemdb_pro" : "upcitemdb_trial",
             },
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            createdAt: Temporal.Now.zonedDateTimeISO(),
+            updatedAt: Temporal.Now.zonedDateTimeISO(),
           };
 
           return new InventoryItemDTO(mockPrismaItem);

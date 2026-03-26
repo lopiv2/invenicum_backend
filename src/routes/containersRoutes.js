@@ -3,10 +3,11 @@ const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const containerService = require("../services/containerService");
 const inventoryItemService = require("../services/inventoryItemService");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware para logging
 router.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
   console.log("Headers:", req.headers);
   if (req.body && Object.keys(req.body).length > 0) {

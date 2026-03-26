@@ -3,6 +3,8 @@ const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
 const path = require("path");
+const { Temporal } = require("@js-temporal/polyfill");
+const translations = require("../i18n/reports.json");
 
 class ReportService {
   constructor() {
@@ -16,7 +18,15 @@ class ReportService {
   /**
    * Genera un reporte del inventario, préstamos o activos al vuelo
    */
-  async generateReport(containerId, userId, reportType, format, filters = {}) {
+  async generateReport(
+    containerId,
+    userId,
+    reportType,
+    format,
+    filters = {},
+    locale,
+    currency
+  ) {
     try {
       const container = await prisma.container.findUnique({
         where: { id: parseInt(containerId) },
@@ -28,7 +38,9 @@ class ReportService {
 
       // Verificar que el usuario es propietario del contenedor
       if (container.userId !== parseInt(userId)) {
-        throw new Error("No tienes permiso para generar reportes de este contenedor");
+        throw new Error(
+          "No tienes permiso para generar reportes de este contenedor",
+        );
       }
 
       // Obtener datos según el tipo de reporte
@@ -50,9 +62,21 @@ class ReportService {
       // Generar el archivo
       let filePath, fileName;
       if (format === "pdf") {
-        ({ filePath, fileName } = await this._generatePDF(reportType, container.name, data));
+        ({ filePath, fileName } = await this._generatePDF(
+          reportType,
+          container.name,
+          data,
+          locale,
+          currency,
+        ));
       } else if (format === "excel") {
-        ({ filePath, fileName } = await this._generateExcel(reportType, container.name, data));
+        ({ filePath, fileName } = await this._generateExcel(
+          reportType,
+          container.name,
+          data,
+          locale,
+          currency,
+        ));
       } else {
         throw new Error(`Formato no soportado: ${format}`);
       }
@@ -79,17 +103,19 @@ class ReportService {
 
     // Aplicar filtros si existen
     if (filters.assetTypeId) {
-      const assetTypeId = typeof filters.assetTypeId === "number" 
-        ? filters.assetTypeId 
-        : parseInt(filters.assetTypeId);
+      const assetTypeId =
+        typeof filters.assetTypeId === "number"
+          ? filters.assetTypeId
+          : parseInt(filters.assetTypeId);
       if (!isNaN(assetTypeId) && assetTypeId > 0) {
         where.assetTypeId = assetTypeId;
       }
     }
     if (filters.locationId) {
-      const locationId = typeof filters.locationId === "number"
-        ? filters.locationId
-        : parseInt(filters.locationId);
+      const locationId =
+        typeof filters.locationId === "number"
+          ? filters.locationId
+          : parseInt(filters.locationId);
       if (!isNaN(locationId) && locationId > 0) {
         where.locationId = locationId;
       }
@@ -108,8 +134,15 @@ class ReportService {
       items,
       summary: {
         totalItems: items.length,
-        totalValue: items.reduce((sum, item) => sum + (item.marketValue || 0), 0),
-        avgValue: items.length > 0 ? items.reduce((sum, item) => sum + (item.marketValue || 0), 0) / items.length : 0,
+        totalValue: items.reduce(
+          (sum, item) => sum + (item.marketValue || 0),
+          0,
+        ),
+        avgValue:
+          items.length > 0
+            ? items.reduce((sum, item) => sum + (item.marketValue || 0), 0) /
+              items.length
+            : 0,
       },
     };
   }
@@ -161,7 +194,10 @@ class ReportService {
       assetTypes,
       summary: {
         totalAssetTypes: assetTypes.length,
-        totalAssets: assetTypes.reduce((sum, at) => sum + at.inventoryItems.length, 0),
+        totalAssets: assetTypes.reduce(
+          (sum, at) => sum + at.inventoryItems.length,
+          0,
+        ),
       },
     };
   }
@@ -169,20 +205,41 @@ class ReportService {
   /**
    * Genera un PDF
    */
-  async _generatePDF(reportType, containerName, data) {
+  async _generatePDF(reportType, containerName, data, locale = "en", currency = "USD") {
+    const t = translations[locale] || translations["en"];
     return new Promise((resolve, reject) => {
       try {
-        const fileName = `reporte_${reportType}_${Date.now()}.pdf`;
+        const timestamp = Temporal.Now.instant().epochMilliseconds;
+        const fileName = `${t.report}_${reportType}_${timestamp}.pdf`;
         const filePath = path.join(this.reportsDir, fileName);
         const doc = new PDFDocument();
         const stream = fs.createWriteStream(filePath);
 
         doc.pipe(stream);
 
+        // 2. Fecha formateada correctamente
+        // Convertimos a String explícitamente para PDFKit
+        const reportDate = Temporal.Now.zonedDateTimeISO().toLocaleString(
+          "es-ES",
+          {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          },
+        );
+
         // Encabezado
-        doc.fontSize(20).font("Helvetica-Bold").text(`Reporte de ${reportType.toUpperCase()}`, 50, 50);
-        doc.fontSize(12).font("Helvetica").text(`Contenedor: ${containerName}`, 50, 90);
-        doc.text(`Fecha: ${new Date().toLocaleDateString("es-ES")}`, 50, 110);
+        doc
+          .fontSize(20)
+          .font("Helvetica-Bold")
+          .text(`${t.report_title} ${reportType.toUpperCase()}`, 50, 50);
+        doc
+          .fontSize(12)
+          .font("Helvetica")
+          .text(`${t.container}: ${containerName}`, 50, 90);
+        doc.text(`${t.date}: ${reportDate}`, 50, 110);
 
         doc.moveTo(50, 140).lineTo(550, 140).stroke();
 
@@ -190,19 +247,38 @@ class ReportService {
         let yPosition = 170;
 
         if (reportType === "inventory") {
-          doc.fontSize(14).font("Helvetica-Bold").text("Resumen de Inventario", 50, yPosition);
+          doc
+            .fontSize(14)
+            .font("Helvetica-Bold")
+            .text(t.inventory_summary, 50, yPosition);
           yPosition += 30;
 
           doc.fontSize(11).font("Helvetica");
-          doc.text(`Total de artículos: ${data.summary.totalItems}`, 50, yPosition);
+          doc.text(
+            `${t.total_items}: ${data.summary.totalItems}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Valor total: €${data.summary.totalValue.toFixed(2)}`, 50, yPosition);
+          const symbol = currency;
+          doc.text(
+            `${t.total_value}: ${symbol}${data.summary.totalValue.toFixed(2)}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Valor promedio: €${data.summary.avgValue.toFixed(2)}`, 50, yPosition);
+          doc.text(
+            `${t.average_value}: €${data.summary.avgValue.toFixed(2)}`,
+            50,
+            yPosition,
+          );
           yPosition += 40;
 
           // Tabla de artículos
-          doc.fontSize(12).font("Helvetica-Bold").text("Artículos", 50, yPosition);
+          doc
+            .fontSize(12)
+            .font("Helvetica-Bold")
+            .text(t.items, 50, yPosition);
           yPosition += 20;
 
           const tableTop = yPosition;
@@ -212,10 +288,10 @@ class ReportService {
           const col4 = 500;
 
           doc.fontSize(10).font("Helvetica-Bold");
-          doc.text("Nombre", col1, tableTop);
-          doc.text("Tipo", col2, tableTop);
-          doc.text("Ubicación", col3, tableTop);
-          doc.text("Valor", col4, tableTop);
+          doc.text(t.item_name, col1, tableTop);
+          doc.text(t.item_type, col2, tableTop);
+          doc.text(t.item_location, col3, tableTop);
+          doc.text(t.item_value, col4, tableTop);
 
           yPosition = tableTop + 20;
           doc.font("Helvetica").fontSize(9);
@@ -228,30 +304,55 @@ class ReportService {
             doc.text(item.name.substring(0, 30), col1, yPosition);
             doc.text(item.assetType.name.substring(0, 20), col2, yPosition);
             doc.text(item.location.name.substring(0, 20), col3, yPosition);
-            doc.text(`€${(item.marketValue || 0).toFixed(2)}`, col4, yPosition);
+            doc.text(`${symbol} ${(item.marketValue || 0).toFixed(2)}`, col4, yPosition);
             yPosition += 15;
           });
 
           if (data.items.length > 20) {
             yPosition += 10;
-            doc.fontSize(9).font("Helvetica-Bold").text(`... y ${data.items.length - 20} más`, 50, yPosition);
+            doc
+              .fontSize(9)
+              .font("Helvetica-Bold")
+              .text(`${t.and} ${data.items.length - 20} ${t.more}`, 50, yPosition);
           }
         } else if (reportType === "loans") {
-          doc.fontSize(14).font("Helvetica-Bold").text("Resumen de Préstamos", 50, yPosition);
+          doc
+            .fontSize(14)
+            .font("Helvetica-Bold")
+            .text(t.loans.summary_title, 50, yPosition);
           yPosition += 30;
 
           doc.fontSize(11).font("Helvetica");
-          doc.text(`Total de préstamos: ${data.summary.totalLoans}`, 50, yPosition);
+          doc.text(
+            `${t.loans.total_loans}: ${data.summary.totalLoans}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Préstamos activos: ${data.summary.activeLoans}`, 50, yPosition);
+          doc.text(
+            `${t.loans.active_loans}: ${data.summary.activeLoans}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Préstamos vencidos: ${data.summary.overdueLoans}`, 50, yPosition);
+          doc.text(
+            `${t.loans.overdue_loans}: ${data.summary.overdueLoans}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Préstamos devueltos: ${data.summary.returnedLoans}`, 50, yPosition);
+          doc.text(
+            `${t.loans.returned_loans}: ${data.summary.returnedLoans}`,
+            50,
+            yPosition,
+          );
           yPosition += 40;
 
           // Tabla de préstamos
-          doc.fontSize(12).font("Helvetica-Bold").text("Préstamos Activos", 50, yPosition);
+          doc
+            .fontSize(12)
+            .font("Helvetica-Bold")
+            .text("Préstamos Activos", 50, yPosition);
           yPosition += 20;
 
           const tableTop = yPosition;
@@ -261,10 +362,10 @@ class ReportService {
           const col4 = 500;
 
           doc.fontSize(10).font("Helvetica-Bold");
-          doc.text("Artículo", col1, tableTop);
-          doc.text("Prestatario", col2, tableTop);
-          doc.text("Fecha Préstamo", col3, tableTop);
-          doc.text("Estado", col4, tableTop);
+          doc.text(t.loans.col_item, col1, tableTop);
+          doc.text(t.loans.col_borrower, col2, tableTop);
+          doc.text(t.loans.col_date, col3, tableTop);
+          doc.text(t.loans.col_status, col4, tableTop);
 
           yPosition = tableTop + 20;
           doc.font("Helvetica").fontSize(9);
@@ -274,24 +375,45 @@ class ReportService {
               doc.addPage();
               yPosition = 50;
             }
+            const dateStr = loan.loanDate
+              ? new Date(loan.loanDate).toLocaleDateString("es-ES")
+              : "N/A";
             doc.text(loan.inventoryItem.name.substring(0, 25), col1, yPosition);
-            doc.text((loan.borrowerName || loan.user.name || "N/A").substring(0, 20), col2, yPosition);
-            doc.text(new Date(loan.loanDate).toLocaleDateString("es-ES"), col3, yPosition);
+            doc.text(
+              (loan.borrowerName || loan.user.name || "N/A").substring(0, 20),
+              col2,
+              yPosition,
+            );
+            doc.text(dateStr, col3, yPosition);
             doc.text(loan.status.toUpperCase(), col4, yPosition);
             yPosition += 15;
           });
         } else if (reportType === "assets") {
-          doc.fontSize(14).font("Helvetica-Bold").text("Resumen de Tipos de Activos", 50, yPosition);
+          doc
+            .fontSize(14)
+            .font("Helvetica-Bold")
+            .text(t.assets.summary_title, 50, yPosition);
           yPosition += 30;
 
           doc.fontSize(11).font("Helvetica");
-          doc.text(`Total de tipos: ${data.summary.totalAssetTypes}`, 50, yPosition);
+          doc.text(
+            `${t.assets.total_types}: ${data.summary.totalAssetTypes}`,
+            50,
+            yPosition,
+          );
           yPosition += 20;
-          doc.text(`Total de activos: ${data.summary.totalAssets}`, 50, yPosition);
+          doc.text(
+            `${t.assets.total_assets}: ${data.summary.totalAssets}`,
+            50,
+            yPosition,
+          );
           yPosition += 40;
 
           // Tabla de tipos de activos
-          doc.fontSize(12).font("Helvetica-Bold").text("Tipos de Activos", 50, yPosition);
+          doc
+            .fontSize(12)
+            .font("Helvetica-Bold")
+            .text(t.assets.active_assets, 50, yPosition);
           yPosition += 20;
 
           const col1 = 50;
@@ -299,9 +421,9 @@ class ReportService {
           const col3 = 450;
 
           doc.fontSize(10).font("Helvetica-Bold");
-          doc.text("Nombre", col1, yPosition);
-          doc.text("Cantidad", col2, yPosition);
-          doc.text("Campos", col3, yPosition);
+          doc.text(t.assets.col_name, col1, yPosition);
+          doc.text(t.assets.col_quantity, col2, yPosition);
+          doc.text(t.assets.col_fields, col3, yPosition);
 
           yPosition += 20;
           doc.font("Helvetica").fontSize(9);
@@ -319,7 +441,10 @@ class ReportService {
         }
 
         // Footer
-        doc.fontSize(9).font("Helvetica").text("Generado automaticamente por Invenicum", 50, 750);
+        doc
+          .fontSize(9)
+          .font("Helvetica")
+          .text(t.generated_by, 50, 750);
 
         doc.end();
         stream.on("finish", () => resolve({ filePath, fileName }));
@@ -333,14 +458,20 @@ class ReportService {
   /**
    * Genera un Excel
    */
-  async _generateExcel(reportType, containerName, data) {
+    
+  async _generateExcel(reportType, containerName, data,locale = "en", currency = "USD") {
+    const t = translations[locale] || translations["en"];
     try {
       const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Reporte");
+      const worksheet = workbook.addWorksheet(t.report);
 
       // Estilos
       const headerStyle = {
-        fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E78" } },
+        fill: {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF1F4E78" },
+        },
         font: { bold: true, color: { argb: "FFFFFFFF" } },
         alignment: { horizontal: "center", vertical: "center" },
       };
@@ -353,44 +484,47 @@ class ReportService {
       // Encabezado
       worksheet.mergeCells("A1:D1");
       const titleCell = worksheet.getCell("A1");
-      titleCell.value = `Reporte de ${reportType.toUpperCase()} - ${containerName}`;
+      titleCell.value = `${t.report_title} ${reportType.toUpperCase()} - ${containerName}`;
       titleCell.style = titleStyle;
 
       worksheet.mergeCells("A2:D2");
       const dateCell = worksheet.getCell("A2");
-      dateCell.value = `Fecha: ${new Date().toLocaleDateString("es-ES")}`;
+      dateCell.value = `${t.date}: ${Temporal.Now.zonedDateTimeISO().toLocaleString("es-ES")}`;
       dateCell.style = { font: { size: 11 } };
 
       let startRow = 4;
 
       if (reportType === "inventory") {
         // Resumen
-        worksheet.getCell(`A${startRow}`).value = "RESUMEN DE INVENTARIO";
-        worksheet.getCell(`A${startRow}`).style = { font: { bold: true, size: 12 } };
+        worksheet.getCell(`A${startRow}`).value = t.inventory_summary.toUpperCase();
+        worksheet.getCell(`A${startRow}`).style = {
+          font: { bold: true, size: 12 },
+        };
         startRow += 2;
 
-        worksheet.getCell(`A${startRow}`).value = "Total de artículos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.total_items}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.totalItems;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Valor total:";
+        worksheet.getCell(`A${startRow}`).value = `${t.total_value}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.totalValue;
-        worksheet.getCell(`B${startRow}`).numFmt = '"€"#,##0.00';
+        worksheet.getCell(`B${startRow}`).numFmt = `"${currency}"#,##0.00`;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Valor promedio:";
+        worksheet.getCell(`A${startRow}`).value = `${t.average_value}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.avgValue;
-        worksheet.getCell(`B${startRow}`).numFmt = '"€"#,##0.00';
+        worksheet.getCell(`B${startRow}`).numFmt = `"${currency}"#,##0.00`;
         startRow += 3;
 
         // Tabla de artículos
-        worksheet.getCell(`A${startRow}`).value = "Nombre";
-        worksheet.getCell(`B${startRow}`).value = "Tipo";
-        worksheet.getCell(`C${startRow}`).value = "Ubicación";
-        worksheet.getCell(`D${startRow}`).value = "Valor";
+        worksheet.getCell(`A${startRow}`).value = t.item_name;
+        worksheet.getCell(`B${startRow}`).value = t.item_type;
+        worksheet.getCell(`C${startRow}`).value = t.item_location;
+        worksheet.getCell(`D${startRow}`).value = t.item_value;
 
         for (let i = 1; i <= 4; i++) {
-          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style = headerStyle;
+          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style =
+            headerStyle;
         }
 
         startRow++;
@@ -400,72 +534,93 @@ class ReportService {
           worksheet.getCell(`B${startRow}`).value = item.assetType.name;
           worksheet.getCell(`C${startRow}`).value = item.location.name;
           worksheet.getCell(`D${startRow}`).value = item.marketValue || 0;
-          worksheet.getCell(`D${startRow}`).numFmt = '"€"#,##0.00';
+          worksheet.getCell(`D${startRow}`).numFmt = `"${currency}"#,##0.00`;
           startRow++;
         });
       } else if (reportType === "loans") {
         // Resumen
-        worksheet.getCell(`A${startRow}`).value = "RESUMEN DE PRÉSTAMOS";
-        worksheet.getCell(`A${startRow}`).style = { font: { bold: true, size: 12 } };
+        worksheet.getCell(`A${startRow}`).value = t.loans.summary_title.toUpperCase();
+        worksheet.getCell(`A${startRow}`).style = {
+          font: { bold: true, size: 12 },
+        };
         startRow += 2;
 
-        worksheet.getCell(`A${startRow}`).value = "Total de préstamos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.loans.total_loans}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.totalLoans;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Activos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.loans.active_loans}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.activeLoans;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Vencidos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.loans.overdue_loans}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.overdueLoans;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Devueltos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.loans.returned_loans}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.returnedLoans;
         startRow += 3;
 
         // Tabla de préstamos
-        worksheet.getCell(`A${startRow}`).value = "Artículo";
-        worksheet.getCell(`B${startRow}`).value = "Prestatario";
-        worksheet.getCell(`C${startRow}`).value = "Fecha Préstamo";
-        worksheet.getCell(`D${startRow}`).value = "Estado";
+        worksheet.getCell(`A${startRow}`).value = t.loans.col_item;
+        worksheet.getCell(`B${startRow}`).value = t.loans.col_borrower;
+        worksheet.getCell(`C${startRow}`).value = t.loans.col_date;
+        worksheet.getCell(`D${startRow}`).value = t.loans.col_status;
 
         for (let i = 1; i <= 4; i++) {
-          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style = headerStyle;
+          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style =
+            headerStyle;
         }
 
         startRow++;
 
         data.loans.forEach((loan) => {
           worksheet.getCell(`A${startRow}`).value = loan.inventoryItem.name;
-          worksheet.getCell(`B${startRow}`).value = loan.borrowerName || loan.user.name || "N/A";
-          worksheet.getCell(`C${startRow}`).value = new Date(loan.loanDate).toLocaleDateString("es-ES");
+          worksheet.getCell(`B${startRow}`).value =
+            loan.borrowerName || loan.user.name || "N/A";
+          const rawDate = loan.loanDateTemporal || loan.loanDate;
+          if (rawDate) {
+            worksheet.getCell(`C${startRow}`).value = rawDate.toLocaleString(
+              "es-ES",
+              {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              },
+            );
+          } else {
+            worksheet.getCell(`C${startRow}`).value = "N/A";
+          }
           worksheet.getCell(`D${startRow}`).value = loan.status;
           startRow++;
         });
       } else if (reportType === "assets") {
         // Resumen
-        worksheet.getCell(`A${startRow}`).value = "RESUMEN DE TIPOS DE ACTIVOS";
-        worksheet.getCell(`A${startRow}`).style = { font: { bold: true, size: 12 } };
+        worksheet.getCell(`A${startRow}`).value = t.assets.summary_title.toUpperCase();
+        worksheet.getCell(`A${startRow}`).style = {
+          font: { bold: true, size: 12 },
+        };
         startRow += 2;
 
-        worksheet.getCell(`A${startRow}`).value = "Total de tipos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.assets.total_types}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.totalAssetTypes;
         startRow++;
 
-        worksheet.getCell(`A${startRow}`).value = "Total de activos:";
+        worksheet.getCell(`A${startRow}`).value = `${t.assets.total_assets}:`;
         worksheet.getCell(`B${startRow}`).value = data.summary.totalAssets;
         startRow += 3;
 
         // Tabla de tipos
-        worksheet.getCell(`A${startRow}`).value = "Nombre";
-        worksheet.getCell(`B${startRow}`).value = "Cantidad";
-        worksheet.getCell(`C${startRow}`).value = "Campos";
-        worksheet.getCell(`D${startRow}`).value = "Serializado";
+        worksheet.getCell(`A${startRow}`).value = t.assets.col_name;
+        worksheet.getCell(`B${startRow}`).value = t.assets.col_quantity;
+        worksheet.getCell(`C${startRow}`).value = t.assets.col_fields;
+        worksheet.getCell(`D${startRow}`).value = t.assets.col_serialized;
 
         for (let i = 1; i <= 4; i++) {
-          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style = headerStyle;
+          worksheet.getCell(`${String.fromCharCode(64 + i)}${startRow}`).style =
+            headerStyle;
         }
 
         startRow++;
@@ -474,7 +629,9 @@ class ReportService {
           worksheet.getCell(`A${startRow}`).value = at.name;
           worksheet.getCell(`B${startRow}`).value = at.inventoryItems.length;
           worksheet.getCell(`C${startRow}`).value = at.fieldDefinitions.length;
-          worksheet.getCell(`D${startRow}`).value = at.isSerialized ? "Sí" : "No";
+          worksheet.getCell(`D${startRow}`).value = at.isSerialized
+            ? t.yes
+            : t.no;
           startRow++;
         });
       }
@@ -488,7 +645,7 @@ class ReportService {
       ];
 
       // Guardar archivo
-      const fileName = `reporte_${reportType}_${Date.now()}.xlsx`;
+      const fileName = `${t.report}_${reportType}_${Temporal.Now.instant().epochMilliseconds}.xlsx`;
       const filePath = path.join(this.reportsDir, fileName);
       await workbook.xlsx.writeFile(filePath);
 
@@ -497,7 +654,6 @@ class ReportService {
       throw error;
     }
   }
-
 }
 
 module.exports = new ReportService();

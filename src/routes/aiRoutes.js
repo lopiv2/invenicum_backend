@@ -4,11 +4,12 @@ const router = express.Router();
 const aiService = require("../services/aiService");
 const templateService = require("../services/templateService");
 const verifyToken = require("../middleware/authMiddleware");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware de logging igual al que tienes en otros archivos
 router.use((req, res, next) => {
   console.log(
-    `[AI-LOG] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`,
+    `[AI-LOG] ${Temporal.Now.plainDateISO().toString()} ${req.method} ${req.originalUrl}`,
   );
   next();
 });
@@ -20,7 +21,7 @@ router.post("/chat/save-template", verifyToken, async (req, res) => {
 
     // Usamos el ID generado o uno nuevo
     const finalTemplate = {
-      id: `tpl_ai_${Date.now()}`,
+      id: `tpl_ai_${Temporal.Now.instant().epochMilliseconds}`,
       ...templateData,
       isOfficial: false,
       author: "Veni AI",

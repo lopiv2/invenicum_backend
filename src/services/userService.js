@@ -1,6 +1,7 @@
 const prisma = require("../middleware/prisma");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
+const { Temporal } = require("@js-temporal/polyfill");
 const UserDTO = require("../models/UserModel");
 const {
   encrypt,
@@ -308,10 +309,10 @@ class UserService {
   }
 
   async updateGitHubIdentity(userId, githubData) {
-    const linkedAt = new Date();
+    const linkedAt = Temporal.Now.zonedDateTimeISO();
 
     try {
-      const githubIdStr = githubData.githubId.toString();
+      const githubIdStr = String(githubData.githubId);
 
       const existingLink = await prisma.user.findUnique({
         where: { githubId: githubIdStr },
@@ -331,12 +332,12 @@ class UserService {
       const updatedUser = await prisma.user.update({
         where: { id: parseInt(userId) },
         data: {
-          githubHandle: githubData.githubHandle,
+          githubHandle: String(githubData.githubHandle),
           githubId: githubIdStr,
           avatarUrl: githubData.avatarUrl,
           githubToken: encryptedToken,
-          githubLinkedAt: linkedAt,
-          username: githubData.githubHandle,
+          githubLinkedAt: linkedAt.toString(),
+          username: String(githubData.githubHandle),
         },
         include: {
           themeConfig: true,

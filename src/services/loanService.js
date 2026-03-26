@@ -1,6 +1,7 @@
 const prisma = require("../middleware/prisma");
 const alertService = require("./alertService");
 const LoanDTO = require("../models/loanModel");
+const { Temporal } = require('@js-temporal/polyfill');
 
 class LoanService {
   /**
@@ -123,7 +124,7 @@ class LoanService {
             borrowerName: loanData.borrowerName || null,
             borrowerEmail: loanData.borrowerEmail || null,
             borrowerPhone: loanData.borrowerPhone || null,
-            loanDate: new Date(), // Fecha actual por defecto
+            loanDate: new Date(Temporal.Now.instant().epochMilliseconds), // Fecha actual por defecto
             expectedReturnDate: expectedReturnDate
               ? new Date(expectedReturnDate)
               : null,
@@ -201,7 +202,7 @@ class LoanService {
               : existingLoan.borrowerPhone,
           notes: notes !== undefined ? notes : existingLoan.notes,
           status: status || existingLoan.status,
-          // Manejo de fechas simplificado: new Date() entiende ISO strings
+          // Manejo de fechas simplificado: Temporal.Now.zonedDateTimeISO() entiende ISO strings
           expectedReturnDate: expectedReturnDate
             ? new Date(expectedReturnDate)
             : existingLoan.expectedReturnDate,
@@ -242,7 +243,7 @@ class LoanService {
           where: { id: loan.id },
           data: {
             status: "returned",
-            actualReturnDate: new Date(),
+            actualReturnDate: new Date(Temporal.Now.instant().epochMilliseconds),
           },
         });
       });

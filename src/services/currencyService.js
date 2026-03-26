@@ -1,19 +1,23 @@
 // backend/services/currencyService.js
 const axios = require('axios');
+const { Temporal } = require('@js-temporal/polyfill');
 
 class CurrencyService {
   constructor() {
     this.rates = null;
     this.lastUpdate = null;
-    // Cache de 12 horas para no exceder límites de APIs gratuitas
-    this.CACHE_DURATION = 12 * 60 * 60 * 1000; 
+    // Cache de 12 horas
+    this.CACHE_DURATION_HOURS = 12; 
   }
 
   async getLatestRates() {
-    const now = new Date();
-
-    if (this.rates && (now - this.lastUpdate < this.CACHE_DURATION)) {
-      return this.rates;
+    const now = Temporal.Now.zonedDateTimeISO();
+    if (this.rates && this.lastUpdate) {
+      const durationSinceUpdate = now.since(this.lastUpdate);
+      
+      if (durationSinceUpdate.hours < this.CACHE_DURATION_HOURS) {
+        return this.rates;
+      }
     }
 
     try {
@@ -22,8 +26,8 @@ class CurrencyService {
       this.lastUpdate = now;
       return this.rates;
     } catch (error) {
-      console.error("Error obteniendo divisas:", error.message);
-      // Retornamos un fallback por si falla la API externa
+      // También aplicamos la regla de interpolación aquí por seguridad
+      console.error(`Error obteniendo divisas: ${error.message}`);
       return this.rates || { "USD": 1, "EUR": 0.92, "GBP": 0.78 };
     }
   }

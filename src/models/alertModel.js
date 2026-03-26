@@ -1,39 +1,39 @@
-// src/dtos/alertDTO.js
+const { Temporal } = require('@js-temporal/polyfill');
 
 class AlertDTO {
   constructor(data) {
-    this.id = data.id;
-    this.title = data.title || "";
-    this.message = data.message || "";
-    this.type = data.type || "info"; // 'info', 'warning', 'critical'
-    this.isRead = !!data.isRead || !!data.is_read; // Soporta ambos formatos
+    this.id = Number(data.id);
+    this.title = String(data.title || "");
+    this.message = String(data.message || "");
+    this.type = String(data.type || "info"); 
     
-    // Lógica de Calendario
-    this.isEvent = !!data.isEvent || !!data.is_event;
+    // Normalización de booleanos
+    this.isRead = Boolean(data.isRead || data.is_read);
+    this.isEvent = Boolean(data.isEvent || data.is_event);
     
-    // Aseguramos que las fechas salgan como String ISO o null
-    this.scheduledAt = data.scheduledAt || data.scheduled_at || null;
-    this.createdAt = data.createdAt || data.created_at || new Date().toISOString();
-    this.notifyAt = data.notifyAt || data.notify_at || null;
+    // --- MANEJO DE FECHAS CON TEMPORAL ---
+    // 1. Usamos el campo de la extensión si existe, si no, fallback seguro a String
+    this.createdAt = data.createdAtTemporal 
+      ? data.createdAtTemporal.toString() 
+      : (data.createdAt ? new Date(data.createdAt).toISOString() : Temporal.Now.instant().toString());
+
+    this.scheduledAt = data.scheduledAtTemporal 
+      ? data.scheduledAtTemporal.toString() 
+      : (data.scheduledAt ? new Date(data.scheduledAt).toISOString() : null);
+
+    this.notifyAt = data.notifyAt 
+      ? new Date(data.notifyAt).toISOString() 
+      : null;
   }
 
   static fromList(list) {
     if (!list || !Array.isArray(list)) return [];
-    return list.map(item => new AlertDTO(item).toJSON());
+    return list.map(item => new AlertDTO(item)); 
   }
 
   toJSON() {
-    return {
-      id: this.id,
-      title: this.title,
-      message: this.message,
-      type: this.type,
-      isRead: this.isRead,
-      isEvent: this.isEvent,
-      scheduledAt: this.scheduledAt,
-      createdAt: this.createdAt,
-      notifyAt: this.notifyAt
-    };
+    // Al usar esparcimiento (...this), ya incluimos todo lo del constructor
+    return { ...this };
   }
 }
 

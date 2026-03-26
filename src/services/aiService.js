@@ -2,7 +2,7 @@
 const prisma = require("../middleware/prisma");
 const { TOOL_DEFINITIONS, executeTool } = require("./mcpServer");
 const { AI_PROVIDERS, DEFAULT_MODELS } = require("../config/aiConstants");
-
+const { Temporal } = require('@js-temporal/polyfill');
 const geminiAdapter = require("../adapters/geminiAdapter");
 const openaiAdapter = require("../adapters/openaiAdapter");
 const claudeAdapter = require("../adapters/claudeAdapter");
@@ -229,7 +229,7 @@ class AIService {
   }
 
   async getRecentHistory(userId) {
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = new Date(Temporal.Now.instant().epochMilliseconds - 24 * 60 * 60 * 1000);
     return await prisma.chatMessage.findMany({
       where: { userId, createdAt: { gte: twentyFourHoursAgo } },
       orderBy: { createdAt: "asc" },

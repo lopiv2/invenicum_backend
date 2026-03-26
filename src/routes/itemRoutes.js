@@ -7,6 +7,7 @@ const containerService = require("../services/containerService");
 const inventoryItemService = require("../services/inventoryItemService");
 const multer = require("multer");
 const path = require("path");
+const { Temporal } = require('@js-temporal/polyfill');
 const fs = require("fs");
 // getPublicUrl: fuente de verdad única para construir URLs de imágenes,
 // igual que en assetTypeService. Evita el bug __dirname vs process.cwd().
@@ -25,7 +26,7 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Temporal.Now.instant().epochMilliseconds + "-" + Math.round(Math.random() * 1e9);
     cb(null, "item-" + uniqueSuffix + ext);
   },
 });
@@ -37,7 +38,7 @@ const upload = multer({
 
 // Middleware de Logging (Opcional, pero útil)
 router.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[ItemRoutes - ${timestamp}] ${req.method} ${req.originalUrl}`);
   next();
 });

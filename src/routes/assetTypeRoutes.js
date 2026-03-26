@@ -8,10 +8,11 @@ const containerService = require("../services/containerService");
 const assetTypeService = require("../services/assetTypeService");
 const fs = require("fs");
 require("dotenv").config(); // Cargar las variables de entorno
+const { Temporal } = require('@js-temporal/polyfill');
 
 // Middleware para logging (opcional)
 router.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(
     `[${timestamp}] AssetTypeRoutes - ${req.method} ${req.originalUrl}`
   );

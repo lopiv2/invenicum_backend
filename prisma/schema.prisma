@@ -322,7 +322,7 @@ model InventoryItem {
 model PriceHistory {
   id              Int           @id @default(autoincrement())
   price           Float
-  currency        String        @default("EUR")
+  currency        String        @default("USD")
   createdAt       DateTime      @default(now())
   
   // Relación con el Item

@@ -5,6 +5,7 @@ const voucherService = require("../services/voucherService");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // process.cwd() en lugar de __dirname para coincidir con upload.js
 const UPLOAD_DIR = path.resolve(process.cwd(),
@@ -17,7 +18,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Temporal.Now.instant().epochMilliseconds + "-" + Math.round(Math.random() * 1e9);
     cb(null, "global-logo-" + uniqueSuffix + path.extname(file.originalname));
   }
 });

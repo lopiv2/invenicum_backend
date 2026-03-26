@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { PrismaClient } = require("@prisma/client");
 const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+const { Temporal } = require("@js-temporal/polyfill");
 
 const adapter = new PrismaMariaDb(
   {
@@ -17,10 +18,83 @@ const adapter = new PrismaMariaDb(
   },
 );
 
-// Cliente base limpio sin extensiones de cifrado
-const prisma = new PrismaClient({
+// 1. Cliente base
+const basePrisma = new PrismaClient({
   adapter,
   log: ["error"],
 });
+
+const prisma = basePrisma.$extends({
+  result: {
+    alert: {
+      createdAtTemporal: {
+        needs: { createdAt: true },
+        compute(a) {
+          return safeTemporal(a.createdAt);
+        },
+      },
+      scheduledAtTemporal: {
+        needs: { scheduledAt: true },
+        compute(a) {
+          return safeTemporal(a.scheduledAt);
+        },
+      },
+      // Añadimos notifyAt que también lo usas en el DTO
+      notifyAtTemporal: {
+        needs: { notifyAt: true },
+        compute(a) {
+          return safeTemporal(a.notifyAt);
+        },
+      },
+    },
+    loan: {
+      loanDateTemporal: {
+        needs: { loanDate: true },
+        compute(l) {
+          return safeTemporal(l.loanDate);
+        },
+      },
+      expectedReturnTemporal: {
+        needs: { expectedReturnDate: true },
+        compute(l) {
+          return safeTemporal(l.expectedReturnDate);
+        },
+      },
+      // ✅ Añadido: actualReturnDate para cerrar el ciclo del préstamo
+      actualReturnTemporal: {
+        needs: { actualReturnDate: true },
+        compute(l) {
+          return safeTemporal(l.actualReturnDate);
+        },
+      },
+    },
+    user: {
+      githubLinkedTemporal: {
+        needs: { githubLinkedAt: true },
+        compute(u) {
+          return safeTemporal(u.githubLinkedAt);
+        },
+      },
+    },
+  },
+});
+
+/**
+ * Función auxiliar para convertir Date/String a Temporal.Instant de forma segura
+ */
+function safeTemporal(dateValue) {
+  if (!dateValue) return null;
+  try {
+    // Si ya es Date, usamos ISO. Si es string, Temporal.from lo entiende.
+    const iso =
+      dateValue instanceof Date
+        ? dateValue.toISOString()
+        : dateValue.toString();
+    return Temporal.Instant.from(iso);
+  } catch (e) {
+    console.error("[PRISMA EXTENSION ERROR]: Fallo al convertir a Temporal", e);
+    return null;
+  }
+}
 
 module.exports = prisma;

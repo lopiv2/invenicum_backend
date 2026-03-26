@@ -3,6 +3,7 @@ const axios = require("axios");
 const { Octokit } = require("@octokit/rest");
 require("dotenv").config();
 const semver = require("semver");
+const { Temporal } = require('@js-temporal/polyfill');
 
 class PluginService {
   // Centralizamos la configuración de GitHub para no repetir código
@@ -187,7 +188,7 @@ class PluginService {
     }
     const octokit = new Octokit({ auth });
 
-    const branchName = `plugin-submission-${plugin.id}-${Date.now()}`;
+    const branchName = `plugin-submission-${plugin.id}-${Temporal.Now.instant().epochMilliseconds}`;
     const path = `plugins/${plugin.id}.json`;
 
     try {
@@ -396,7 +397,7 @@ class PluginService {
     const octokit = new Octokit({ auth });
 
     // 2. Definir nombres de rama y ruta del archivo
-    const branchName = `plugin-update-${id}-${Date.now()}`;
+    const branchName = `plugin-update-${id}-${Temporal.Now.instant().epochMilliseconds}`;
     const path = `plugins/${id}.json`;
 
     try {

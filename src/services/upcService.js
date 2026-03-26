@@ -1,8 +1,4 @@
 const axios = require("axios");
-const prisma = require("../middleware/prisma");
-const cheerio = require("cheerio");
-const IntegrationDTO = require("../models/integrationModel");
-const UpcMarketDataDTO = require("../models/upcMarketDataModel");
 const integrationService = require("../services/integrationsService");
 
 class UpcService {

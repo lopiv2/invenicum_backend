@@ -18,6 +18,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@google/genai": "^1.38.0",
+    "@js-temporal/polyfill": "^0.5.1",
     "@octokit/rest": "^22.0.1",
     "@prisma/adapter-mariadb": "^7.4.0",
     "axios": "^1.13.4",

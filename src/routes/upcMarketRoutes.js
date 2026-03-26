@@ -54,4 +54,50 @@ router.post("/sync-item/:itemId", verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/market/sync-asset-type
+ * Actualiza el valor de mercado de todos los ítems con barcode de un assetType.
+ * Body: { assetTypeId, containerId }
+ *
+ * Respuesta: {
+ *   success: true,
+ *   summary: { total, updated, skipped, errors },
+ *   details: [{ id, name, status, reason? }]
+ * }
+ */
+router.post("/sync-asset-type", verifyToken, async (req, res) => {
+  try {
+    const { assetTypeId, containerId } = req.body;
+    const userId = req.user.id;
+
+    if (!assetTypeId || !containerId) {
+      return res.status(400).json({
+        success: false,
+        message: "Se requieren assetTypeId y containerId",
+      });
+    }
+
+    const results = await inventoryItemService.syncAssetTypeMarketValues(
+      assetTypeId,
+      containerId,
+      userId,
+    );
+
+    res.json({
+      success: true,
+      message: `Sincronización completada: ${results.updated} actualizados, ${results.skipped} sin precio, ${results.errors} errores`,
+      summary: {
+        total:   results.total,
+        updated: results.updated,
+        skipped: results.skipped,
+        errors:  results.errors,
+      },
+      details: results.details,
+    });
+  } catch (error) {
+    const status = error.message.includes("denegado") ? 403 : 500;
+    res.status(status).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

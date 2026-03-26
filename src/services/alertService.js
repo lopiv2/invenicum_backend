@@ -4,6 +4,7 @@ const AlertDTO = require("../models/alertModel");
 const axios = require("axios");
 const { Resend } = require("resend");
 const integrationService = require("../services/integrationsService");
+const { Temporal } = require('@js-temporal/polyfill');
 
 class AlertService {
   /**

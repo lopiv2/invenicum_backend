@@ -2,6 +2,7 @@
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const { Temporal } = require('@js-temporal/polyfill');
 
 // ─── Constantes centralizadas ─────────────────────────────────────────────────
 // Fuente de verdad única para rutas de disco y URLs públicas.
@@ -63,7 +64,7 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Temporal.Now.instant().epochMilliseconds + "-" + Math.round(Math.random() * 1e9);
 
     let prefix = "file-";
     const url = req.originalUrl;

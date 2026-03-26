@@ -69,32 +69,7 @@ class InventoryItemDTO {
   }
 
   toJSON() {
-    return {
-      id: this.id,
-      name: this.name,
-      description: this.description,
-      barcode: this.barcode,
-      serialNumber: this.serialNumber,
-      condition: this.condition,
-      quantity: this.quantity,
-      minStock: this.minStock,
-      isLowStock: this.isLowStock,
-      marketValue: this.marketValue,
-      currency: this.currency,
-      totalMarketValue: this.totalMarketValue,
-      priceHistory: this.priceHistory,
-      lastPriceUpdate: this.lastPriceUpdate,
-      locationId: this.locationId,
-      location: this.location,
-      assetTypeId: this.assetTypeId,
-      containerId: this.containerId,
-      assignedToUserId: this.assignedToUserId,
-      customFieldValues: this.customFieldValues,
-      imageUrl: this.imageUrl,
-      images: this.images,
-      createdAt: this.createdAt,
-      updatedAt: this.updatedAt,
-    };
+    return { ...this };
   }
 }
 

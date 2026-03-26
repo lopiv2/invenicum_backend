@@ -7,6 +7,7 @@ require("dotenv").config();
 const alertService = require("./alertService");
 const PDFDocument = require("pdfkit");
 const bwipjs = require("bwip-js");
+const { Temporal } = require("@js-temporal/polyfill");
 
 // Usamos process.cwd() para coincidir exactamente con upload.js (que también usa process.cwd()).
 // Si usáramos __dirname y el servidor arrancara desde otro directorio, los archivos
@@ -79,7 +80,9 @@ class InventoryItemService {
         : null;
 
     const finalSerialNumber =
-      serialNumber && serialNumber.toString().trim() !== "" && serialNumber !== "null"
+      serialNumber &&
+      serialNumber.toString().trim() !== "" &&
+      serialNumber !== "null"
         ? serialNumber.toString().trim()
         : null;
 
@@ -225,7 +228,10 @@ class InventoryItemService {
 
         if (fs.existsSync(originalPath)) {
           const ext = path.extname(relativePath);
-          const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+          const uniqueSuffix =
+            Temporal.Now.instant().epochMilliseconds +
+            "-" +
+            Math.round(Math.random() * 1e9);
           const newFilename = `item-clone-${uniqueSuffix}${ext}`;
           // El clon se guarda en el mismo subdirectorio items/ que el original
           const newPath = path.join(ITEMS_DIR_ABSOLUTE, newFilename);
@@ -244,7 +250,9 @@ class InventoryItemService {
             console.error(`Error copying file ${originalPath}:`, copyError);
           }
         } else {
-          console.warn(`[cloneItem] Imagen original no encontrada: ${originalPath}`);
+          console.warn(
+            `[cloneItem] Imagen original no encontrada: ${originalPath}`,
+          );
         }
       }
     }
@@ -632,13 +640,19 @@ class InventoryItemService {
     // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
     // ===========================================
     const finalSerialNumber =
-      serialNumber === "" || serialNumber === null || serialNumber === undefined || serialNumber === "null"
+      serialNumber === "" ||
+      serialNumber === null ||
+      serialNumber === undefined ||
+      serialNumber === "null"
         ? null
         : serialNumber.toString().trim();
 
     const itemUpdateData = {
       barcode:
-        barcode === "" || barcode === null || barcode === undefined || barcode === "null"
+        barcode === "" ||
+        barcode === null ||
+        barcode === undefined ||
+        barcode === "null"
           ? null
           : barcode,
       serialNumber: finalSerialNumber,
@@ -886,7 +900,10 @@ class InventoryItemService {
     // → hay que quitar el prefijo /images/ para obtener items/item-xxx.jpg
     //   y unirlo con UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
     if (itemToDelete.images && itemToDelete.images.length > 0) {
-      const staticPrefix = (process.env.STATIC_URL_PREFIX || "/images").replace(/\/+$/, "");
+      const staticPrefix = (process.env.STATIC_URL_PREFIX || "/images").replace(
+        /\/+$/,
+        "",
+      );
 
       for (const image of itemToDelete.images) {
         let relativePath = image.url;
@@ -905,10 +922,15 @@ class InventoryItemService {
             fs.unlinkSync(absolutePath);
             console.log(`[deleteItem] ✅ Imagen borrada: ${absolutePath}`);
           } else {
-            console.warn(`[deleteItem] ⚠️ Imagen no encontrada en disco: ${absolutePath}`);
+            console.warn(
+              `[deleteItem] ⚠️ Imagen no encontrada en disco: ${absolutePath}`,
+            );
           }
         } catch (err) {
-          console.error(`[deleteItem] ❌ Error borrando imagen ${absolutePath}:`, err);
+          console.error(
+            `[deleteItem] ❌ Error borrando imagen ${absolutePath}:`,
+            err,
+          );
         }
       }
     }
@@ -942,9 +964,9 @@ class InventoryItemService {
   }
 
   async syncItemMarketValue(itemId, userId) {
-    // 1. Obtener el ítem actual para sacar el barcode y verificar permisos
+    // 1. Obtener el ítem (Usa Number() en lugar de parseInt para mayor seguridad)
     const item = await prisma.inventoryItem.findUnique({
-      where: { id: parseInt(itemId) },
+      where: { id: Number(itemId) },
       include: { container: true },
     });
 
@@ -956,7 +978,7 @@ class InventoryItemService {
       throw new Error("El ítem no tiene un código de barras asociado");
     }
 
-    // 2. Consultar el servicio de UPC para obtener el precio de mercado
+    // 2. Consultar el servicio de UPC
     const marketData = await upcService.getMarketDataByBarcode(
       userId,
       item.barcode,
@@ -966,58 +988,68 @@ class InventoryItemService {
       throw new Error("La API no devolvió un precio para este producto");
     }
 
-    const newPrice = marketData.suggestedPrice;
+    const newPrice = Number(marketData.suggestedPrice);
 
-    // 3. Transacción para asegurar la integridad de los datos
+    // 3. Transacción para asegurar la integridad
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // 📅 Definimos el rango exacto de HOY
-      const startOfToday = new Date();
-      startOfToday.setHours(0, 0, 0, 0);
+      // --- LÓGICA DE TIEMPO CORRECTA CON TEMPORAL ---
+      const now = Temporal.Now.zonedDateTimeISO();
 
-      const endOfToday = new Date();
-      endOfToday.setHours(23, 59, 59, 999);
+      // Creamos el inicio y fin del día de forma inmutable
+      const startOfToday = now.with({
+        hour: 0,
+        minute: 0,
+        second: 0,
+        millisecond: 0,
+      });
+      const endOfToday = now.with({
+        hour: 23,
+        minute: 59,
+        second: 59,
+        millisecond: 999,
+      });
 
-      // 🔍 Buscamos si existe un registro estrictamente DENTRO de hoy
+      // IMPORTANTE: Convertimos a Date para que Prisma pueda filtrar en la DB
+      const startDate = new Date(startOfToday.epochMilliseconds);
+      const endDate = new Date(endOfToday.epochMilliseconds);
+
+      // 🔍 Buscar registro de hoy
       const existingEntryToday = await tx.priceHistory.findFirst({
         where: {
           inventoryItemId: item.id,
           createdAt: {
-            gte: startOfToday,
-            lte: endOfToday, // 🛡️ Evita que encuentre registros de días futuros
+            gte: startDate,
+            lte: endDate,
           },
         },
       });
 
       if (existingEntryToday) {
-        // 🔄 MISMO DÍA: Actualizar solo si el precio cambió
-        if (parseFloat(existingEntryToday.price) !== parseFloat(newPrice)) {
+        if (Number(existingEntryToday.price) !== newPrice) {
           await tx.priceHistory.update({
             where: { id: existingEntryToday.id },
             data: { price: newPrice },
           });
         }
       } else {
-        // ✨ DÍA DIFERENTE: Crear registro nuevo para hoy
         await tx.priceHistory.create({
           data: {
             price: newPrice,
-            inventoryItem: {
-              connect: { id: item.id },
-            },
-            // Forzamos la fecha a hoy por seguridad
-            createdAt: new Date(),
+            currency: marketData.currency || "USD",
+            inventoryItem: { connect: { id: item.id } },
+            // Enviamos un Date a Prisma
+            createdAt: new Date(now.epochMilliseconds),
           },
         });
       }
 
-      // B. Actualizar el item principal con la media y los rangos
+      // B. Actualizar el ítem principal
       return await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
           marketValue: newPrice,
-          // Guardamos también los rangos que vienen de UPC por si quieres usarlos en la UI
           currency: marketData.currency || "USD",
-          lastPriceUpdate: new Date(),
+          lastPriceUpdate: new Date(now.epochMilliseconds), // Date para Prisma
         },
         include: {
           images: { orderBy: { order: "asc" } },
@@ -1029,9 +1061,79 @@ class InventoryItemService {
         },
       });
     });
-
-    // 4. Devolver mediante DTO para actualización instantánea en la App
+    // 4. Devolver mediante DTO (que ahora usa tus campos .xxxTemporal)
     return new InventoryItemDTO(updatedItem).toJSON();
+  }
+
+  /**
+   * Actualiza el valor de mercado de todos los ítems con código de barras
+   * de un assetType concreto. Procesa en serie para respetar los rate limits
+   * de la API de UPC. Devuelve un resumen con éxitos, skips y errores.
+   */
+  async syncAssetTypeMarketValues(assetTypeId, containerId, userId) {
+    // 1. Verificar que el contenedor pertenece al usuario
+    const container = await prisma.container.findFirst({
+      where: { id: Number(containerId), userId },
+    });
+    if (!container)
+      throw new Error("Contenedor no encontrado o acceso denegado");
+
+    // 2. Obtener todos los ítems del assetType que tengan barcode
+    const items = await prisma.inventoryItem.findMany({
+      where: {
+        assetTypeId: Number(assetTypeId),
+        containerId: Number(containerId),
+        barcode: { not: null },
+      },
+      select: { id: true, name: true, barcode: true },
+    });
+
+    const results = {
+      total: items.length,
+      updated: 0,
+      skipped: 0, // sin precio en la API
+      errors: 0,
+      details: [],
+    };
+
+    if (items.length === 0) return results;
+
+    // 3. Procesar en serie — evita saturar la API de UPC con llamadas paralelas
+    for (const item of items) {
+      try {
+        await this.syncItemMarketValue(item.id, userId);
+        results.updated++;
+        results.details.push({
+          id: item.id,
+          name: item.name,
+          status: "updated",
+        });
+      } catch (err) {
+        // "La API no devolvió un precio" → skip sin error crítico
+        if (err.message.includes("precio") || err.message.includes("price")) {
+          results.skipped++;
+          results.details.push({
+            id: item.id,
+            name: item.name,
+            status: "skipped",
+            reason: err.message,
+          });
+        } else {
+          results.errors++;
+          results.details.push({
+            id: item.id,
+            name: item.name,
+            status: "error",
+            reason: err.message,
+          });
+        }
+      }
+
+      // Pequeña pausa entre llamadas para respetar el rate limit de UPC (trial: 100/día)
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    return results;
   }
 
   async getTotalMarketValue(userId) {

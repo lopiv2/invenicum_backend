@@ -1,59 +1,51 @@
-// models/LoanDTO.js
+const { Temporal } = require("@js-temporal/polyfill");
+
 class LoanDTO {
   constructor(prismaLoan) {
-    this.id = parseInt(prismaLoan.id);
-    this.containerId = parseInt(prismaLoan.containerId);
-    this.inventoryItemId = parseInt(prismaLoan.inventoryItemId);
-    this.userId = parseInt(prismaLoan.userId);
-    
-    // Datos informativos del artículo
-    this.itemName = prismaLoan.itemName;
-    this.quantity = parseInt(prismaLoan.quantity || 1);
-    
-    // Datos del prestatario
+    // 1. Tipado seguro
+    this.id = Number(prismaLoan.id);
+    this.containerId = Number(prismaLoan.containerId);
+    this.inventoryItemId = Number(prismaLoan.inventoryItemId);
+    this.userId = Number(prismaLoan.userId);
+
+    this.itemName = String(prismaLoan.itemName || "");
+    this.quantity = Number(prismaLoan.quantity || 1);
+
     this.borrowerName = prismaLoan.borrowerName || null;
     this.borrowerEmail = prismaLoan.borrowerEmail || null;
     this.borrowerPhone = prismaLoan.borrowerPhone || null;
+
+    // 2. Manejo de Fechas (Súper simple gracias a la Extensión)
+    // Usamos los campos virtuales que inyecta nuestra extensión de Prisma
+    this.loanDate = prismaLoan.loanDateTemporal?.toString() || null;
+    this.expectedReturnDate = prismaLoan.expectedReturnTemporal?.toString() || null;
     
-    // --- LÓGICA DE FECHAS ---
-    // ISOString es más fácil de parsear en Flutter con DateTime.parse()
-    this.loanDate = prismaLoan.loanDate ? prismaLoan.loanDate.toISOString() : null;
-    this.expectedReturnDate = prismaLoan.expectedReturnDate ? prismaLoan.expectedReturnDate.toISOString() : null;
-    this.actualReturnDate = prismaLoan.actualReturnDate ? prismaLoan.actualReturnDate.toISOString() : null;
-    
-    // Estado y Notas
-    this.status = prismaLoan.status || 'active';
+    // Para campos que no extendimos (como actualReturnDate), usamos el fallback seguro
+    this.actualReturnDate = prismaLoan.actualReturnDate 
+      ? new Date(prismaLoan.actualReturnDate).toISOString() 
+      : null;
+
+    this.status = String(prismaLoan.status || "active");
     this.notes = prismaLoan.notes || null;
 
-    // --- LÓGICA DE VENCIMIENTO (Calculada) ---
-    const now = new Date();
-    this.isOverdue = this.status === 'active' && 
-                     prismaLoan.expectedReturnDate && 
-                     new Date(prismaLoan.expectedReturnDate) < now;
-    
-    // Identificador visual formateado (opcional, útil para UI)
-    this.voucherId = `V-${this.id.toString().padEnd(6, '0')}`;
+    // --- LÓGICA DE VENCIMIENTO ---
+    this.isOverdue = false;
+
+    // Ya no necesitamos try/catch complejo ni validaciones de "instanceof Date"
+    // porque expectedReturnTemporal YA ES un objeto Temporal garantizado por la extensión.
+    if (this.status === "active" && prismaLoan.expectedReturnTemporal) {
+      const now = Temporal.Now.instant();
+      
+      // Comparamos directamente usando el campo extendido
+      this.isOverdue = Temporal.Instant.compare(prismaLoan.expectedReturnTemporal, now) < 0;
+    }
+
+    // 3. Voucher ID
+    this.voucherId = `V-${this.id.toString().padStart(6, "0")}`;
   }
 
   toJSON() {
-    return {
-      id: this.id,
-      containerId: this.containerId,
-      inventoryItemId: this.inventoryItemId,
-      userId: this.userId,
-      itemName: this.itemName,
-      quantity: this.quantity,
-      borrowerName: this.borrowerName,
-      borrowerEmail: this.borrowerEmail,
-      borrowerPhone: this.borrowerPhone,
-      loanDate: this.loanDate,
-      expectedReturnDate: this.expectedReturnDate,
-      actualReturnDate: this.actualReturnDate,
-      status: this.status,
-      notes: this.notes,
-      isOverdue: this.isOverdue, // 🚩 Muy útil para poner el texto en rojo en Flutter
-      voucherId: this.voucherId
-    };
+    return { ...this };
   }
 }
 

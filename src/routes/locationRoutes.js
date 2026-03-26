@@ -3,10 +3,11 @@ const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const locationService = require("../services/locationService"); // 🔑 Importamos el nuevo servicio
 const containerService = require("../services/containerService"); // Necesario para verificar propiedad del contenedor
+const { Temporal } = require('@js-temporal/polyfill');
 
 // --- Middleware para Logging (Mantenemos la convención) ---
 router.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
+  const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
   // No loguear headers o body en producción por seguridad, pero lo mantenemos por consistencia
   if (req.body && Object.keys(req.body).length > 0) {
