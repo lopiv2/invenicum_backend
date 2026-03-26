@@ -6,7 +6,7 @@ const { GoogleGenAI } = require("@google/genai");
 const OpenAI = require("openai");
 const Anthropic = require("@anthropic-ai/sdk");
 const axios = require("axios");
-const { Temporal } = require('@js-temporal/polyfill');
+const { Temporal } = require("@js-temporal/polyfill");
 const crypto = require("crypto");
 const { Resend } = require("resend");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
@@ -872,21 +872,48 @@ class IntegrationService {
       }
       case "bgg": {
         contextHint = "un juego de mesa de BoardGameGeek";
-        const bggHeaders = {
-          Authorization: `Bearer ${process.env.BGG_APPLICATION_TOKEN}`,
-          "User-Agent": "Invenicum-Backend/1.0",
-        };
-        const searchRes = await axios.get(
-          `https://boardgamegeek.com/xmlapi2/search?query=${encodeURIComponent(query)}&type=boardgame`,
-          { headers: bggHeaders },
+        // 🚩 Usamos tu nuevo Proxy profesional
+        const PROXY_URL = "https://api.invenicum.com/api/bgg";
+
+        // 1. Buscamos el juego a través del proxy (que ya nos da JSON)
+        const searchRes = await axios.get(PROXY_URL, {
+          params: { action: "search", query: normalizedQuery },
+        });
+
+        const results = searchRes.data.items?.item;
+
+        if (!results) throw new Error("No se encontró ningún juego en BGG.");
+
+        // 2. Gestión de múltiples resultados (Filtrar el mejor "Primary")
+        let selectedId;
+
+        if (Array.isArray(results)) {
+          // Buscamos el que tenga el nombre exacto (case insensitive) y sea 'primary'
+          // Si no hay match exacto, nos quedamos con el primero (que suele ser el más popular)
+          const exactMatch = results.find((item) => {
+            const nameObj = Array.isArray(item.name)
+              ? item.name.find((n) => n.type === "primary")
+              : item.name;
+            return nameObj?.value?.toLowerCase() === normalizedQuery;
+          });
+
+          selectedId = exactMatch ? exactMatch.id : results[0].id;
+        } else {
+          // Si solo hay un resultado, BGG lo devuelve como objeto, no como array
+          selectedId = results.id;
+        }
+
+        console.log(
+          `🎯 Juego seleccionado ID: ${selectedId} de entre ${Array.isArray(results) ? results.length : 1} resultados.`,
         );
-        const match = searchRes.data.match(/id="(\d+)"/);
-        if (!match) throw new Error("No se encontró ningún juego en BGG.");
-        const detailRes = await axios.get(
-          `https://boardgamegeek.com/xmlapi2/thing?id=${match[1]}&stats=1`,
-          { headers: bggHeaders },
-        );
-        rawData = detailRes.data; // Nota: Si es XML, convendría pasarlo a JSON antes del hash
+
+        // 3. Pedimos los detalles completos (thing) al proxy para que la IA tenga toda la info
+        const detailRes = await axios.get(PROXY_URL, {
+          params: { action: "thing", id: selectedId },
+        });
+
+        // Pasamos el JSON a string para que el sistema de hashing y la IA lo procesen
+        rawData = JSON.stringify(detailRes.data);
         break;
       }
       case "books": {
