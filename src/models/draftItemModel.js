@@ -19,8 +19,10 @@ class DraftItemDTO {
     // Valores por defecto para inicializar controladores en el Front
     this.quantity = 1;
     this.minStock = 0;
-    this.marketValue = 0;
-    this.currency = "EUR";
+    // Acepta tanto market_value (clave de IA) como marketValue (camelCase)
+    const rawPrice = aiData.marketValue ?? aiData.market_value ?? 0;
+    this.marketValue = parseFloat(rawPrice) || 0;
+    this.currency = aiData.currency || "EUR";
     
     // IDs nulos porque aún no existen en DB
     this.locationId = null;

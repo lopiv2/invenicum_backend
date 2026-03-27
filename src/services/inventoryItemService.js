@@ -21,6 +21,33 @@ const UPLOAD_DIR_ABSOLUTE = path.resolve(
 const { getPublicUrl } = require("../middleware/upload");
 
 class InventoryItemService {
+  parseNumericInput(value, fallback = 0) {
+    if (value === undefined || value === null || value === "") return fallback;
+    if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+
+    let str = String(value).trim();
+    // Limpiar símbolos monetarios y texto accidental
+    str = str.replace(/[^\d,.-]/g, "");
+
+    const lastComma = str.lastIndexOf(",");
+    const lastDot = str.lastIndexOf(".");
+
+    // Si ambos existen, el separador más a la derecha se considera decimal
+    if (lastComma !== -1 && lastDot !== -1) {
+      if (lastComma > lastDot) {
+        str = str.replace(/\./g, "").replace(",", ".");
+      } else {
+        str = str.replace(/,/g, "");
+      }
+    } else if (lastComma !== -1) {
+      // Solo coma: usarla como decimal
+      str = str.replace(",", ".");
+    }
+
+    const parsed = parseFloat(str);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
   async createItem(data) {
     const files = data.files || [];
 
@@ -47,6 +74,19 @@ class InventoryItemService {
       ...restOfData
     } = data;
 
+    // Extraemos y parseamos marketValue explícitamente (puede llegar como string desde form-data)
+    // isDraft es un campo del DraftItemDTO que Prisma no conoce → lo excluimos
+    const {
+      marketValue: _rawMarketValue,
+      market_value: _rawMarketValueSnake,
+      isDraft: _isDraft,
+      ...cleanRestOfData
+    } = restOfData;
+    const marketValue = this.parseNumericInput(
+      _rawMarketValue ?? _rawMarketValueSnake,
+      0,
+    );
+
     // 2. PARSEO DE IDs Y VALIDACIÓN DE ASSET TYPE
     const cId = parseInt(containerId);
     const aTId = parseInt(assetTypeId);
@@ -66,14 +106,14 @@ class InventoryItemService {
     }
 
     // 3. LÓGICA DE NEGOCIO (Quantity, MinStock y CustomFields)
-    const quantityInput = parseInt(restOfData.quantity) || 1;
+    const quantityInput = parseInt(cleanRestOfData.quantity) || 1;
     const quantity = assetType.isSerialized
       ? 1
       : quantityInput > 0
         ? quantityInput
         : 1;
 
-    const minStock = parseInt(restOfData.minStock) || 0;
+    const minStock = parseInt(cleanRestOfData.minStock) || 0;
     const finalBarcode =
       barcode && barcode.toString().trim() !== "" && barcode !== "null"
         ? barcode.toString().trim()
@@ -109,9 +149,10 @@ class InventoryItemService {
       // 5. CREACIÓN EN PRISMA
       const newItem = await prisma.inventoryItem.create({
         data: {
-          ...restOfData,
+          ...cleanRestOfData,
           quantity,
           minStock,
+                    marketValue,
           barcode: finalBarcode,
           serialNumber: finalSerialNumber,
           customFieldValues: parsedCustomFields,
@@ -595,8 +636,15 @@ class InventoryItemService {
     }
 
     // 🔑 TRUCO: Convertimos marketValue a número si existe en restOfData
-    if (restOfData.marketValue !== undefined) {
-      restOfData.marketValue = parseFloat(restOfData.marketValue) || 0;
+    if (
+      restOfData.marketValue !== undefined ||
+      restOfData.market_value !== undefined
+    ) {
+      restOfData.marketValue = this.parseNumericInput(
+        restOfData.marketValue ?? restOfData.market_value,
+        0,
+      );
+      delete restOfData.market_value;
     }
 
     const updateActions = [];

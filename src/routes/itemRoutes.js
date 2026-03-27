@@ -332,6 +332,14 @@ router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
 
   try {
     const userId = req.user.id;
+    console.log("[POST /items] payload resumen:", {
+      contentType: req.headers["content-type"],
+      bodyKeys: Object.keys(req.body || {}),
+      marketValue: req.body?.marketValue,
+      market_value: req.body?.market_value,
+      filesCount: uploadedFiles.length,
+      userId,
+    });
     // 🔑 Ya no desestructuramos containerId y name aquí para validar,
     // dejamos que el servicio o el flujo de datos lo maneje,
     // o validamos de forma que no choque con el nuevo mapeo automático.
@@ -413,6 +421,15 @@ router.patch(
 
     try {
       const userId = req.user.id;
+      console.log("[PATCH /items/:id] payload resumen:", {
+        itemId,
+        contentType: req.headers["content-type"],
+        bodyKeys: Object.keys(req.body || {}),
+        marketValue: req.body?.marketValue,
+        market_value: req.body?.market_value,
+        filesCount: uploadedFiles.length,
+        userId,
+      });
 
       // 1. EXTRAER Y PRE-VALIDAR
       // Extraemos containerId e imageIdsToDelete para tratarlos específicamente
