@@ -30,49 +30,33 @@ class IntegrationService {
     try {
       switch (type) {
         case "bgg": {
-          const { bgg_username } = config;
-
-          // 1. Validaciones básicas de entrada
-          if (!bgg_username) {
-            throw new Error("El nombre de usuario de BGG es requerido.");
-          }
-
-          // 2. Obtención de credenciales maestras del servidor (desde .env)
-          const bggToken = process.env.BGG_APPLICATION_TOKEN;
-          const userAgent = "Invenicum-Backend/1.0 (contact: lopiv2@gmail.com)";
-
-          if (!bggToken) {
-            throw new Error(
-              "El servidor no tiene configurado el Application Token de BGG.",
-            );
-          }
-
           try {
-            console.log(
-              `🧪 Validando existencia del usuario BGG: ${bgg_username}`,
-            );
-
-            // 3. Petición autorizada a BGG
-            const response = await axios.get(
-              `https://boardgamegeek.com/xmlapi2/user?name=${encodeURIComponent(bgg_username)}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${bggToken}`,
-                  "User-Agent": userAgent,
-                },
-                timeout: 5000,
+            console.log(`🧪 Testing BGG API connection...`);
+            // Test: busca "Catan" como juego conocido para validar que el proxy responde
+            const BGG_PROXY_URL = "https://api.invenicum.com/api/bgg";
+            const response = await axios.get(BGG_PROXY_URL, {
+              params: {
+                action: "search",
+                query: "Catan",
               },
-            );
+              timeout: 10000,
+            });
 
-            // BGG devuelve 200 OK aunque el usuario no exista, pero con un id vacío en el XML
-            if (response.data.includes('id=""')) {
+            // Validar que el proxy devolvió resultados
+            const items = response.data?.items?.item;
+            if (!response.data || !items) {
               throw new Error(
-                "El usuario no existe en BoardGameGeek. Revisa el nombre.",
+                "El proxy de BGG no devolvió datos. Verifica la configuración.",
               );
             }
 
-            // 4. Verificación de dependencia (Gemini)
-            // Pasamos el userId que debería venir en el contexto de la llamada
+            // Extraer cantidad de resultados para mostrar al usuario
+            const totalResults = response.data?.items?.total || 0;
+            const firstGame = Array.isArray(items)
+              ? items[0]?.name?.value || items[0]?.name
+              : items?.name?.value || items?.name;
+
+            // 4. Verificación de dependencia (IA)
             const aiClient = await this.getActiveAiClient(userId);
             const aiWarning = !aiClient
               ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
@@ -80,15 +64,15 @@ class IntegrationService {
 
             return {
               success: true,
-              message: `¡Conexión exitosa! Perfil de ${bgg_username} vinculado${aiWarning}.`,
+              message: `¡Conexión exitosa! Proxy de BGG operativo. Test: se encontraron ${totalResults} resultados para "Catan" (ej: ${firstGame})${aiWarning}.`,
             };
           } catch (error) {
             console.error("❌ Error en el Test de BGG:", error.message);
 
-            // Manejo específico de errores de la API de BGG
+            // Manejo específico de errores del proxy
             if (error.response?.status === 401) {
               throw new Error(
-                "Error de servidor: El Token de Aplicación de BGG no es válido.",
+                "Error de autenticación: La INTERNAL_API_KEY no es válida.",
               );
             }
             if (error.response?.status === 429) {
@@ -99,7 +83,7 @@ class IntegrationService {
 
             throw new Error(
               error.response
-                ? "Error al contactar con la API de BoardGameGeek"
+                ? `Error al conectar con el proxy de BGG: ${error.response.data?.error || error.message}`
                 : error.message,
             );
           }
@@ -153,6 +137,44 @@ class IntegrationService {
             throw new Error(
               error.response
                 ? "Error al contactar con PokeAPI. Inténtalo más tarde."
+                : error.message,
+            );
+          }
+        }
+        case "tcgdex": {
+          try {
+            console.log(`🧪 Testing TCGdex API connection...`);
+
+            const response = await axios.get(
+              "https://api.tcgdex.net/v2/en/cards",
+              {
+                params: { name: "Pikachu" },
+                timeout: 10000,
+              },
+            );
+
+            const cards = response.data;
+            if (!cards || !cards.length) {
+              throw new Error(
+                "TCGdex no devolvió datos. Verifica la conexión.",
+              );
+            }
+
+            const aiClient = await this.getActiveAiClient(userId);
+            const aiWarning = !aiClient
+              ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
+              : "";
+
+            return {
+              success: true,
+              message: `¡Conexión exitosa! TCGdex operativo. Test: se encontraron ${cards.length} cartas de "Pikachu"${aiWarning}.`,
+            };
+          } catch (error) {
+            console.error("❌ Error en el Test de TCGdex:", error.message);
+
+            throw new Error(
+              error.response
+                ? `Error al conectar con TCGdex: ${error.message}`
                 : error.message,
             );
           }
@@ -864,71 +886,233 @@ class IntegrationService {
       case "pokemon": {
         contextHint = "un Pokémon de PokeAPI";
         const pokemonName = normalizedQuery.replace(/\s+/g, "-");
-        const pokeRes = await axios.get(
-          `https://pokeapi.co/api/v2/pokemon/${pokemonName}`,
-        );
-        rawData = JSON.stringify(pokeRes.data);
+
+        // Intentamos búsqueda directa por nombre exacto
+        try {
+          const pokeRes = await axios.get(
+            `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(pokemonName)}`,
+          );
+          rawData = JSON.stringify(pokeRes.data);
+        } catch (directErr) {
+          // Si falla (404), buscamos por listado parcial
+          if (directErr.response?.status === 404) {
+            const searchRes = await axios.get(
+              `https://pokeapi.co/api/v2/pokemon?limit=1302`,
+            );
+            const allPokemon = searchRes.data.results || [];
+            const matches = allPokemon.filter((p) =>
+              p.name.includes(pokemonName),
+            );
+
+            if (!matches.length)
+              throw new Error("No se encontró ningún Pokémon.");
+
+            if (matches.length > 1) {
+              const candidates = matches.slice(0, 20).map((p) => {
+                const urlParts = p.url.split("/").filter(Boolean);
+                return {
+                  id: urlParts[urlParts.length - 1],
+                  name: p.name.charAt(0).toUpperCase() + p.name.slice(1),
+                };
+              });
+              return {
+                multipleResults: true,
+                source: "pokemon",
+                query: normalizedQuery,
+                candidates,
+              };
+            }
+
+            // Un solo match parcial → obtener detalle
+            const pokeRes = await axios.get(matches[0].url);
+            rawData = JSON.stringify(pokeRes.data);
+          } else {
+            throw directErr;
+          }
+        }
         break;
       }
       case "bgg": {
-        contextHint = "un juego de mesa de BoardGameGeek";
-        // 🚩 Usamos tu nuevo Proxy profesional
         const PROXY_URL = "https://api.invenicum.com/api/bgg";
 
-        // 1. Buscamos el juego a través del proxy (que ya nos da JSON)
         const searchRes = await axios.get(PROXY_URL, {
           params: { action: "search", query: normalizedQuery },
         });
 
         const results = searchRes.data.items?.item;
-
         if (!results) throw new Error("No se encontró ningún juego en BGG.");
 
-        // 2. Gestión de múltiples resultados (Filtrar el mejor "Primary")
-        let selectedId;
-
-        if (Array.isArray(results)) {
-          // Buscamos el que tenga el nombre exacto (case insensitive) y sea 'primary'
-          // Si no hay match exacto, nos quedamos con el primero (que suele ser el más popular)
-          const exactMatch = results.find((item) => {
+        if (Array.isArray(results) && results.length > 1) {
+          const candidates = results.map((item) => {
             const nameObj = Array.isArray(item.name)
-              ? item.name.find((n) => n.type === "primary")
+              ? item.name.find((n) => n.type === "primary") || item.name[0]
               : item.name;
-            return nameObj?.value?.toLowerCase() === normalizedQuery;
+            return {
+              id: item.id,
+              name: nameObj?.value || nameObj || "Sin nombre",
+              yearPublished: item.yearpublished?.value || null,
+            };
           });
 
-          selectedId = exactMatch ? exactMatch.id : results[0].id;
-        } else {
-          // Si solo hay un resultado, BGG lo devuelve como objeto, no como array
-          selectedId = results.id;
+          return {
+            multipleResults: true,
+            source: "bgg",
+            query: normalizedQuery,
+            candidates,
+          };
         }
 
-        console.log(
-          `🎯 Juego seleccionado ID: ${selectedId} de entre ${Array.isArray(results) ? results.length : 1} resultados.`,
-        );
+        const selectedId = Array.isArray(results) ? results[0].id : results.id;
+        console.log(`🎯 Juego único seleccionado ID: ${selectedId}`);
 
-        // 3. Pedimos los detalles completos (thing) al proxy para que la IA tenga toda la info
         const detailRes = await axios.get(PROXY_URL, {
           params: { action: "thing", id: selectedId },
         });
 
-        // Pasamos el JSON a string para que el sistema de hashing y la IA lo procesen
         rawData = JSON.stringify(detailRes.data);
+        contextHint = "un juego de mesa de BoardGameGeek";
         break;
       }
       case "books": {
         contextHint = "un libro de OpenLibrary";
         const { data } = await axios.get(
-          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=1`,
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10`,
         );
         if (!data.docs?.length) throw new Error("Libro no encontrado.");
+
+        if (data.docs.length > 1) {
+          const candidates = data.docs.map((doc) => ({
+            id: doc.key,
+            name: doc.title || "Sin título",
+            author: doc.author_name?.[0] || null,
+            yearPublished: doc.first_publish_year?.toString() || null,
+          }));
+
+          return {
+            multipleResults: true,
+            source: "books",
+            query: normalizedQuery,
+            candidates,
+          };
+        }
+
         rawData = JSON.stringify(data.docs[0]);
+        break;
+      }
+      case "tcgdex": {
+        contextHint = "una carta de Pokémon TCG de TCGdex";
+        const TCGDEX_URL = "https://api.tcgdex.net/v2/en/cards";
+
+        const searchRes = await axios.get(TCGDEX_URL, {
+          params: { name: normalizedQuery },
+          timeout: 10000,
+        });
+
+        const results = searchRes.data;
+        if (!results || !results.length)
+          throw new Error("No se encontró ninguna carta en TCGdex.");
+
+        if (results.length > 1) {
+          const candidates = results.slice(0, 30).map((card) => ({
+            id: card.id,
+            name: card.name || "Sin nombre",
+            image: card.image ? `${card.image}/low.webp` : null,
+          }));
+
+          return {
+            multipleResults: true,
+            source: "tcgdex",
+            query: normalizedQuery,
+            candidates,
+          };
+        }
+
+        // Un solo resultado → obtener detalle completo
+        console.log(`🎯 Carta única seleccionada ID: ${results[0].id}`);
+        const detailRes = await axios.get(`${TCGDEX_URL}/${results[0].id}`);
+        rawData = JSON.stringify(detailRes.data);
         break;
       }
       default:
         throw new Error(`La fuente ${source} no está soportada.`);
     }
 
+    // Si llegamos aquí, tenemos rawData de un solo item → procesamos con IA
+    return this._processWithAI(userId, rawData, contextHint, source, normalizedQuery, locale, aiData);
+  }
+
+  /**
+   * Procesa un item seleccionado por el frontend tras elegir de la lista de candidatos.
+   * Obtiene los detalles completos y pasa por Capa 3+ (mapeo + IA + post-procesado).
+   */
+  async processSelectedItem(userId, source, itemId, locale = "es") {
+    const aiData = await this.getActiveAiClient(userId);
+    if (!aiData)
+      throw new Error(
+        "Ningún proveedor de IA configurado. Ve a Integraciones.",
+      );
+
+    let rawData = "";
+    let contextHint = "";
+
+    switch (source) {
+      case "pokemon": {
+        contextHint = "un Pokémon de PokeAPI";
+        console.log(`🎯 Procesando Pokémon seleccionado ID: ${itemId}`);
+
+        const pokeRes = await axios.get(
+          `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(itemId)}`,
+        );
+        rawData = JSON.stringify(pokeRes.data);
+        break;
+      }
+      case "bgg": {
+        contextHint = "un juego de mesa de BoardGameGeek";
+        const PROXY_URL = "https://api.invenicum.com/api/bgg";
+
+        console.log(`🎯 Procesando juego BGG seleccionado ID: ${itemId}`);
+
+        const detailRes = await axios.get(PROXY_URL, {
+          params: { action: "thing", id: itemId },
+        });
+
+        rawData = JSON.stringify(detailRes.data);
+        break;
+      }
+      case "books": {
+        contextHint = "un libro de OpenLibrary";
+        console.log(`🎯 Procesando libro seleccionado: ${itemId}`);
+
+        const bookRes = await axios.get(
+          `https://openlibrary.org/search.json?q=${encodeURIComponent(itemId)}&limit=1`,
+        );
+        if (!bookRes.data.docs?.length) throw new Error("Libro no encontrado.");
+        rawData = JSON.stringify(bookRes.data.docs[0]);
+        break;
+      }
+      case "tcgdex": {
+        contextHint = "una carta de Pokémon TCG de TCGdex";
+        console.log(`🎯 Procesando carta TCGdex seleccionada ID: ${itemId}`);
+
+        const cardRes = await axios.get(
+          `https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(itemId)}`,
+        );
+        rawData = JSON.stringify(cardRes.data);
+        break;
+      }
+      default:
+        throw new Error(`processSelectedItem no soporta la fuente: ${source}`);
+    }
+
+    const cacheKey = `${source}_${itemId}`;
+    return this._processWithAI(userId, rawData, contextHint, source, cacheKey, locale, aiData);
+  }
+
+  /**
+   * CAPA 3+: Mapeo, IA, post-procesado y caché.
+   * Función interna reutilizada por getEnrichedItem y processSelectedItem.
+   */
+  async _processWithAI(userId, rawData, contextHint, source, cacheKey, locale, aiData) {
     // --- CAPA 3: GESTIÓN DE MAPEO (ESTRUCTURA) ---
     const structureHash = this.getStructureHash(rawData);
     // Validación de seguridad
@@ -1060,7 +1244,7 @@ class IntegrationService {
       .create({
         data: {
           source,
-          query: normalizedQuery,
+          query: cacheKey,
           locale,
           data: draft,
         },

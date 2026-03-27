@@ -28,10 +28,10 @@ const verifyToken = (req, res, next) => {
 
         next();
     } catch (error) {
-        console.error("Error al verificar token:", error);
+        console.error("Error validating jwt token:", error);
         return res.status(401).json({ 
             success: false,
-            message: 'Token inválido o expirado'
+            message: 'Invalid or expired token'
         });
     }
 };

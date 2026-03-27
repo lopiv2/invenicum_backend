@@ -113,6 +113,39 @@ router.get("/enrich", verifyToken, async (req, res) => {
   }
 });
 
+// GET /api/integrations/enrich/select?source=bgg&itemId=13&locale=es
+router.get("/enrich/select", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { source, itemId, locale } = req.query;
+
+    if (!source || !itemId) {
+      return res
+        .status(400)
+        .json({ error: "Los parámetros 'source' e 'itemId' son obligatorios" });
+    }
+
+    const enrichedItem = await integrationService.processSelectedItem(
+      userId,
+      source,
+      itemId,
+      locale || "es",
+    );
+
+    res.status(200).json({
+      success: true,
+      data: enrichedItem,
+    });
+  } catch (error) {
+    console.error(`[ENRICH-SELECT-ERROR] ${error.message}`);
+    const statusCode = error.message.includes("no encontrado") ? 404 : 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // GET /api/integrations/:type
 router.get("/:type", verifyToken, async (req, res) => {
   try {
