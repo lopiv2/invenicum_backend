@@ -9,6 +9,7 @@ const multer = require("multer");
 const path = require("path");
 const { Temporal } = require('@js-temporal/polyfill');
 const fs = require("fs");
+const prisma = require("../middleware/prisma");
 // getPublicUrl: fuente de verdad única para construir URLs de imágenes,
 // igual que en assetTypeService. Evita el bug __dirname vs process.cwd().
 const { getPublicUrl } = require("../middleware/upload");
@@ -624,8 +625,11 @@ router.get(
       const quantityInt = parseInt(quantity);
 
       // Obtener el AssetType
-      const assetType = await require("@prisma/client").PrismaClient()
-        .$queryRaw`SELECT id, name, is_serialized FROM asset_type WHERE id = ${assetTypeIdInt}`;
+      const assetType = await prisma.$queryRaw`
+        SELECT id, name, is_serialized
+        FROM asset_type
+        WHERE id = ${assetTypeIdInt}
+      `;
 
       if (!assetType || assetType.length === 0) {
         return res
