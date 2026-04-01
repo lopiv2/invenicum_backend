@@ -3,6 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { Temporal } = require('@js-temporal/polyfill');
+const { AppConstants } = require('../config/appConstants');
 
 // ─── Constantes centralizadas ─────────────────────────────────────────────────
 // Fuente de verdad única para rutas de disco y URLs públicas.
@@ -10,7 +11,7 @@ const { Temporal } = require('@js-temporal/polyfill');
 // la URL que se guarda en DB — nunca construirla a mano.
 
 const BASE_DIR = process.env.UPLOAD_FOLDER || "uploads/inventory";
-const STATIC_URL_PREFIX = process.env.STATIC_URL_PREFIX || "/images";
+const STATIC_URL_PREFIX = AppConstants.STATIC_URL_PREFIX;
 
 /**
  * Convierte la ruta absoluta en disco de un archivo subido por Multer

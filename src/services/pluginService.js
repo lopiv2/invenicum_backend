@@ -4,17 +4,12 @@ const { Octokit } = require("@octokit/rest");
 require("dotenv").config();
 const semver = require("semver");
 const { Temporal } = require('@js-temporal/polyfill');
+const { GitHubConstants } = require("../config/githubConstants");
 
 class PluginService {
   // Centralizamos la configuración de GitHub para no repetir código
   get _githubConfig() {
-    return {
-      auth: process.env.GITHUB_TOKEN,
-      owner: process.env.GITHUB_REPO_OWNER,
-      repo: process.env.GITHUB_REPO_NAME,
-      pluginRepoUrl: process.env.GITHUB_PLUGIN_REPO,
-      pluginTemplateRepoUrl: process.env.GITHUB_TEMPLATE_REPO,
-    };
+    return GitHubConstants.getConfig();
   }
 
   async _incrementPluginDownloadCount(pluginId) {

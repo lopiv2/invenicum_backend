@@ -2,6 +2,7 @@ const prisma = require("../middleware/prisma");
 const fs = require("fs");
 const path = require("path");
 const { getPublicUrl } = require("../middleware/upload");
+const { AppConstants } = require("../config/appConstants");
 
 const UPLOAD_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
 // process.cwd() para coincidir con voucherRoutes.js y upload.js
@@ -21,7 +22,7 @@ class VoucherService {
       // Borrar logo anterior si existe
       if (existing?.logoPath) {
         // process.cwd() en lugar de __dirname para coincidir con voucherRoutes.js
-        const staticPrefix = process.env.STATIC_URL_PREFIX || "/images";
+        const staticPrefix = AppConstants.STATIC_URL_PREFIX;
         const relativePath = existing.logoPath.startsWith(staticPrefix)
           ? existing.logoPath.slice(staticPrefix.length + 1)
           : existing.logoPath;

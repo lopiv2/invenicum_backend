@@ -5,15 +5,11 @@ const crypto = require("crypto");
 const AssetTemplateDTO = require("../models/templateModel"); // 👈 Importamos el DTO
 require("dotenv").config();
 const { Temporal } = require('@js-temporal/polyfill');
+const { GitHubConstants } = require("../config/githubConstants");
 
 class TemplateService {
   get _githubConfig() {
-    return {
-      owner: process.env.GITHUB_REPO_OWNER,
-      auth: process.env.GITHUB_TOKEN,
-      repo: process.env.GITHUB_REPO_NAME,
-      templateRepoUrl: process.env.GITHUB_TEMPLATE_REPO,
-    };
+    return GitHubConstants.getConfig();
   }
 
   /**
@@ -218,8 +214,7 @@ class TemplateService {
   }
 
   async _openGitHubPullRequest(template, githubHandle) {
-    const token = process.env.GITHUB_TOKEN;
-    const { owner, repo } = this._githubConfig;
+    const { auth: token, owner, repo } = this._githubConfig;
 
     // 1. Validación de configuración básica
     if (!token) throw new Error("Configuración incompleta: Falta GITHUB_TOKEN");

@@ -8,6 +8,7 @@ const alertService = require("./alertService");
 const PDFDocument = require("pdfkit");
 const bwipjs = require("bwip-js");
 const { Temporal } = require("@js-temporal/polyfill");
+const { AppConstants } = require("../config/appConstants");
 
 // Usamos process.cwd() para coincidir exactamente con upload.js (que también usa process.cwd()).
 // Si usáramos __dirname y el servidor arrancara desde otro directorio, los archivos
@@ -234,7 +235,7 @@ class InventoryItemService {
     // Para la copia de archivos necesitamos el prefijo para extraer el filename relativo.
     // Usamos STATIC_URL_PREFIX como referencia, igual que antes, pero ahora
     // la URL de la imagen copiada se construye con getPublicUrl(newPath).
-    const baseImageUrl = process.env.STATIC_URL_PREFIX || "/images";
+    const baseImageUrl = AppConstants.STATIC_URL_PREFIX;
     const cleanBaseImageUrl = baseImageUrl.endsWith("/")
       ? baseImageUrl
       : `${baseImageUrl}/`;
@@ -948,10 +949,7 @@ class InventoryItemService {
     // → hay que quitar el prefijo /images/ para obtener items/item-xxx.jpg
     //   y unirlo con UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
     if (itemToDelete.images && itemToDelete.images.length > 0) {
-      const staticPrefix = (process.env.STATIC_URL_PREFIX || "/images").replace(
-        /\/+$/,
-        "",
-      );
+      const staticPrefix = AppConstants.STATIC_URL_PREFIX.replace(/\/+$/, "");
 
       for (const image of itemToDelete.images) {
         let relativePath = image.url;

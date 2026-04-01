@@ -7,6 +7,7 @@ const path = require("path");
 const fs = require("fs");
 require("dotenv").config(); // Asegúrate de cargar las variables
 const { Temporal } = require('@js-temporal/polyfill');
+const { AppConstants } = require("./config/appConstants");
 const authRoutes = require("./routes/authRoutes");
 const containerRoutes = require("./routes/containersRoutes");
 const assetTypeRoutes = require("./routes/assetTypeRoutes");
@@ -50,14 +51,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // 🔑 CONSTANTES DE ENTORNO
-const STATIC_URL_PREFIX = process.env.STATIC_URL_PREFIX || "/images";
+const STATIC_URL_PREFIX = AppConstants.STATIC_URL_PREFIX;
 // 🔑 CAMBIO 1: UPLOAD_FOLDER debe ser la base (uploads/inventory)
 const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
 // Definimos las subrutas dentro de esa base, usando las variables de ENV si las tuvieras:
-const ASSET_TYPES_SUBDIR =
-  process.env.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR || "asset-types";
+const ASSET_TYPES_SUBDIR = AppConstants.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR;
 
-const API_VERSION = process.env.API_VERSION || "v1";
+const API_VERSION = AppConstants.API_VERSION;
 const port = process.env.PORT || 3000;
 
 // ----------------------------------------------------
