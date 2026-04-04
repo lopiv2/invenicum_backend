@@ -38,7 +38,7 @@ function adaptToolDefinitions(toolDefinitions) {
 /**
  * Ejecuta el agentic loop con Claude usando tool use.
  */
-async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, systemPrompt }) {
+async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, systemPrompt, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
   let finalAnswer = null;
   let finalAction = null;
@@ -53,6 +53,9 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
       system: systemPrompt, // Claude separa el system del array de mensajes
       messages,
       tools,
+      ...(forceToolName
+        ? { tool_choice: { type: "tool", name: forceToolName } }
+        : {}),
     });
 
     // Añadimos la respuesta al historial
@@ -63,7 +66,7 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
     if (toolUseBlocks.length === 0 || response.stop_reason === "end_turn") {
       // Respuesta final de texto
       const textBlock = response.content.find((b) => b.type === "text");
-      finalAnswer = textBlock?.text ?? "He completado la acción.";
+      finalAnswer = strictToolMode ? null : textBlock?.text ?? "He completado la acción.";
       break;
     }
 

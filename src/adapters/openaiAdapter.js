@@ -40,7 +40,7 @@ function adaptToolDefinitions(toolDefinitions) {
 /**
  * Ejecuta el agentic loop con OpenAI usando function calling.
  */
-async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall }) {
+async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
   let finalAnswer = null;
   let finalAction = null;
@@ -53,14 +53,14 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
       model,
       messages,
       tools,
-      tool_choice: "auto",
+      tool_choice: forceToolName ? { type: "function", function: { name: forceToolName } } : "auto",
     });
 
     const message = response.choices[0].message;
     messages.push(message);
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      finalAnswer = message.content;
+      finalAnswer = strictToolMode ? null : message.content;
       break;
     }
 

@@ -252,17 +252,28 @@ router.patch("/ai-provider", verifyToken, async (req, res) => {
     const validModelsIds = modelsForProvider.map((m) => m.id);
 
     // 3. Determinar el modelo final
-    const finalModel =
-      aiModel && validModelsIds.includes(aiModel)
-        ? aiModel
-        : DEFAULT_MODELS[aiProvider];
+    // Si el frontend envía aiModel y no es válido, devolvemos 400
+    // para evitar que se guarde silenciosamente otro modelo por defecto.
+    if (aiModel && !validModelsIds.includes(aiModel)) {
+      return res.status(400).json({
+        success: false,
+        message: `Modelo inválido para ${aiProvider}: ${aiModel}`,
+        validModels: validModelsIds,
+      });
+    }
+
+    const finalModel = aiModel || DEFAULT_MODELS[aiProvider];
 
     const result = await preferencesService.updatePreferences(req.user.id, {
       aiProvider,
       aiModel: finalModel,
     });
 
-    res.json(result.success ? result : res.status(400).json(result));
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+
+    return res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

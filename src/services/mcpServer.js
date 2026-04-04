@@ -350,64 +350,71 @@ async function executeTool(toolName, toolArgs, context) {
         "[MCP create_template] toolArgs recibidos:",
         JSON.stringify(toolArgs, null, 2),
       );
-      let fields = toolArgs.fields ?? [];
+      const allowedTypes = new Set([
+        "text",
+        "number",
+        "date",
+        "dropdown",
+        "price",
+        "boolean",
+        "url",
+      ]);
 
-      // Si hay campos dropdown sin opciones, hacemos un segundo llamado a Gemini
-      // para rellenarlas automáticamente — igual que en el aiService original.
-      const dropdownsWithoutOptions = fields.filter(
-        (f) => f.type === "dropdown" && (!f.options || f.options.length === 0),
-      );
-
-      const templateClient = geminiClient || aiClient;
-      const templateModel = geminiModel || aiModel;
-      if (dropdownsWithoutOptions.length > 0 && templateClient) {
-        const fieldNames = dropdownsWithoutOptions
-          .map((f) => `"${f.name}"`)
-          .join(", ");
-        const optionsPrompt =
-          `Para una plantilla llamada "${toolArgs.name}" de categoría "${toolArgs.category ?? "General"}", ` +
-          `sugiere entre 3 y 6 opciones realistas para cada uno de estos campos dropdown: ${fieldNames}. ` +
-          `Responde ÚNICAMENTE con un objeto JSON donde cada clave es el nombre exacto del campo ` +
-          `y el valor es un array de strings. Ejemplo: { "Estado": ["Nuevo", "Usado", "Dañado"] }`;
-
-        try {
-          const optionsResponse = await templateClient.models.generateContent({
-            model: templateModel,
-            contents: [{ role: "user", parts: [{ text: optionsPrompt }] }],
-            config: {
-              generationConfig: { responseMimeType: "application/json" },
-            },
-          });
-
-          const optionsRaw =
-            optionsResponse.candidates[0].content.parts[0].text;
-          const optionsMap = JSON.parse(
-            optionsRaw.replace(/```json|```/g, "").trim(),
-          );
-
-          fields = fields.map((f) => {
-            if (f.type === "dropdown" && optionsMap[f.name]) {
-              return { ...f, options: optionsMap[f.name] };
-            }
-            return f;
-          });
-
-          console.log(
-            "[MCP create_template] Opciones inyectadas:",
-            JSON.stringify(
-              fields.filter((f) => f.type === "dropdown"),
-              null,
-              2,
-            ),
-          );
-        } catch (e) {
-          console.error(
-            "[MCP create_template] Error obteniendo opciones:",
-            e.message,
-          );
-          // No bloqueamos — devolvemos la plantilla sin opciones si falla
-        }
+      if (!Array.isArray(toolArgs.fields)) {
+        throw new Error("create_template requiere el parámetro fields como array.");
       }
+
+      if (toolArgs.fields.length < 5 || toolArgs.fields.length > 8) {
+        throw new Error("create_template requiere entre 5 y 8 campos.");
+      }
+
+      const fields = toolArgs.fields.map((rawField, index) => {
+        if (!rawField || typeof rawField !== "object") {
+          throw new Error(`El campo #${index + 1} no tiene formato válido.`);
+        }
+
+        const name = String(rawField.name ?? "").trim();
+        if (!name) {
+          throw new Error(`El campo #${index + 1} requiere name.`);
+        }
+
+        const type = String(rawField.type ?? "").toLowerCase().trim();
+        if (!allowedTypes.has(type)) {
+          throw new Error(
+            `El campo \"${name}\" tiene type inválido: \"${rawField.type}\".`,
+          );
+        }
+
+        if (type === "dropdown") {
+          if (!Array.isArray(rawField.options)) {
+            throw new Error(
+              `El campo dropdown \"${name}\" requiere options (array).`,
+            );
+          }
+
+          const options = rawField.options
+            .map((o) => String(o ?? "").trim())
+            .filter(Boolean);
+
+          const uniqueOptions = [...new Set(options.map((o) => o.toLowerCase()))];
+          if (uniqueOptions.length < 3 || uniqueOptions.length > 6) {
+            throw new Error(
+              `El campo dropdown \"${name}\" debe tener entre 3 y 6 opciones.`,
+            );
+          }
+
+          return {
+            name,
+            type,
+            options,
+          };
+        }
+
+        return {
+          name,
+          type,
+        };
+      });
 
       return {
         action: "CREATE_TEMPLATE",
@@ -416,6 +423,14 @@ async function executeTool(toolName, toolArgs, context) {
           description: toolArgs.description ?? "",
           category: toolArgs.category ?? "",
           fields,
+          fieldDefinitions: fields,
+          templateData: {
+            name: toolArgs.name,
+            description: toolArgs.description ?? "",
+            category: toolArgs.category ?? "",
+            fields,
+            fieldDefinitions: fields,
+          },
         },
       };
     }

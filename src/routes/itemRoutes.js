@@ -211,6 +211,7 @@ router.post(
       res.status(201).json({
         success: true,
         message: `${result.count} items created successfully.`,
+        assetType: result.assetType,
         details: result.details,
       });
     } catch (error) {

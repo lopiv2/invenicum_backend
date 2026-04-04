@@ -9,9 +9,10 @@ const AI_PROVIDERS = {
 const AI_MODELS = {
   gemini: [
     { id: "gemini-3-flash-preview",   label: "Gemini 3.0 Flash",          default: true  },
+    { id: "gemini-2.5-flash",         label: "Gemini 2.5 Flash",          default: false },
+    { id: "gemini-2.5-flash-lite",    label: "Gemini 2.5 Flash Lite",     default: false },
     { id: "gemini-2.0-flash",         label: "Gemini 2.0 Flash",          default: false  },
-    { id: "gemini-2.0-flash-thinking", label: "Gemini 2.0 Flash Thinking", default: false },
-    { id: "gemini-1.5-pro",            label: "Gemini 1.5 Pro",            default: false },
+    { id: "gemini-2.5-pro",            label: "Gemini 2.5 Pro",            default: false },
   ],
   openai: [
     { id: "gpt-4o",       label: "GPT-4o",       default: true  },

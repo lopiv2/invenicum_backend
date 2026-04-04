@@ -12,6 +12,10 @@ class TemplateService {
     return GitHubConstants.getConfig();
   }
 
+  async _getGithubConfigAsync() {
+    return await GitHubConstants.getConfigWithProxyToken();
+  }
+
   /**
    * Guarda una plantilla en la biblioteca personal del usuario.
    */
@@ -164,7 +168,7 @@ class TemplateService {
   }
 
   async incrementDownloadCount(templateId) {
-    const { auth, owner, repo } = this._githubConfig;
+    const { auth, owner, repo } = await this._getGithubConfigAsync();
     const octokit = new Octokit({ auth });
     const path = "repository_template.json"; // El archivo de índice
 
@@ -214,7 +218,7 @@ class TemplateService {
   }
 
   async _openGitHubPullRequest(template, githubHandle) {
-    const { auth: token, owner, repo } = this._githubConfig;
+    const { auth: token, owner, repo } = await this._getGithubConfigAsync();
 
     // 1. Validación de configuración básica
     if (!token) throw new Error("Configuración incompleta: Falta GITHUB_TOKEN");

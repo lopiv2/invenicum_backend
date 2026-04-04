@@ -12,8 +12,12 @@ class PluginService {
     return GitHubConstants.getConfig();
   }
 
+  async _getGithubConfigAsync() {
+    return await GitHubConstants.getConfigWithProxyToken();
+  }
+
   async _incrementPluginDownloadCount(pluginId) {
-    const { auth, owner, repo, pluginRepoUrl } = this._githubConfig;
+    const { auth, owner, repo, pluginRepoUrl } = await this._getGithubConfigAsync();
     const octokit = new Octokit({ auth });
 
     // Extraemos el nombre del archivo del índice desde la URL (ej: repository_plugin.json)
@@ -175,7 +179,7 @@ class PluginService {
   }
 
   async uploadPluginJson(plugin, authorName, authorAvatar) {
-    const { auth, owner, repo } = this._githubConfig;
+    const { auth, owner, repo } = await this._getGithubConfigAsync();
     if (!semver.valid(plugin.version)) {
       throw new Error(
         `La versión '${plugin.version}' no es un SemVer válido (ej: 1.0.0)`,
@@ -388,7 +392,7 @@ class PluginService {
       select: { githubHandle: true, avatarUrl: true, name: true },
     });
 
-    const { auth, owner, repo } = this._githubConfig;
+    const { auth, owner, repo } = await this._getGithubConfigAsync();
     const octokit = new Octokit({ auth });
 
     // 2. Definir nombres de rama y ruta del archivo
@@ -489,7 +493,7 @@ class PluginService {
     }
 
     if (deleteFromGitHub && plugin.isPublic) {
-      const { auth, owner, repo } = this._githubConfig;
+      const { auth, owner, repo } = await this._getGithubConfigAsync();
       const octokit = new Octokit({ auth });
 
       try {

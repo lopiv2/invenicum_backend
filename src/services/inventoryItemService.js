@@ -835,18 +835,60 @@ class InventoryItemService {
     for (let i = 0; i < itemsData.length; i++) {
       const item = itemsData[i];
 
+      if (
+        item.assetTypeId !== undefined &&
+        parseInt(item.assetTypeId, 10) !== aTId
+      ) {
+        validationErrors.push({
+          row: i + 2,
+          message: "Row assetTypeId does not match batch assetTypeId.",
+        });
+        continue;
+      }
+
+      if (
+        item.containerId !== undefined &&
+        parseInt(item.containerId, 10) !== cId
+      ) {
+        validationErrors.push({
+          row: i + 2,
+          message: "Row containerId does not match batch containerId.",
+        });
+        continue;
+      }
+
       // El frontend ya envió 'name' y 'description', más los campos personalizados.
       const name = item.name;
       const description = item.description || null;
 
+      // LÓGICA DE LOCATION (requerido)
+      const lId = parseInt(item.locationId);
+      if (isNaN(lId)) {
+        validationErrors.push({ row: i + 2, message: "Location is required." });
+        continue;
+      }
+
       // LÓGICA DE CANTIDAD (QUANTITY)
       let quantity;
       if (assetType.isSerialized) {
+        // Los asset types serializados siempre tienen quantity 1
         quantity = 1;
       } else {
+        if (item.quantity === undefined || item.quantity === null || item.quantity === "") {
+          validationErrors.push({ row: i + 2, message: "Quantity is required." });
+          continue;
+        }
+
         const inputQuantity = parseInt(item.quantity, 10);
-        quantity =
-          isNaN(inputQuantity) || inputQuantity < 1 ? 1 : inputQuantity;
+        if (isNaN(inputQuantity) || inputQuantity < 1) {
+          validationErrors.push({
+            row: i + 2,
+            message: "Quantity must be a positive integer.",
+          });
+          continue;
+        }
+
+        quantity = inputQuantity;
       }
 
       // LÓGICA DE MIN_STOCK
@@ -878,6 +920,7 @@ class InventoryItemService {
         itemsToCreate.push({
           containerId: cId,
           assetTypeId: aTId,
+          locationId: lId,
           name: name,
           description: description,
           quantity: quantity,
@@ -917,6 +960,10 @@ class InventoryItemService {
     return {
       count: itemsToCreate.length,
       totalRows: itemsData.length,
+      assetType: {
+        id: assetType.id,
+        isSerialized: !!assetType.isSerialized,
+      },
       details: validationErrors, // Los errores que ocurrieron.
     };
   }

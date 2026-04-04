@@ -3,6 +3,37 @@ const { GoogleGenAI } = require("@google/genai");
 const integrationService = require("../services/integrationsService");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
 
+const RETRIABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetriableGeminiError(error) {
+  const status = error?.status;
+  const msg = String(error?.message || "").toLowerCase();
+  return RETRIABLE_STATUS.has(status) || msg.includes("unavailable") || msg.includes("high demand");
+}
+
+async function generateContentWithRetry(client, payload, label, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await client.models.generateContent(payload);
+    } catch (error) {
+      const retriable = isRetriableGeminiError(error);
+      const shouldRetry = retriable && attempt < maxRetries;
+
+      if (!shouldRetry) throw error;
+
+      const backoffMs = 700 * (attempt + 1);
+      console.warn(
+        `[Gemini] ${label}: error transitorio (status=${error?.status ?? "n/a"}). Reintento ${attempt + 1}/${maxRetries} en ${backoffMs}ms.`,
+      );
+      await sleep(backoffMs);
+    }
+  }
+}
+
 /**
  * Devuelve un cliente y modelo Gemini listos para usar.
  * Lee la API key del sistema de integraciones del usuario.
@@ -25,22 +56,84 @@ async function getGeminiClient(userId, preferredModel) {
 /**
  * Ejecuta el agentic loop con Gemini usando function calling nativo.
  */
-async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall }) {
+async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, systemPrompt, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
   let finalAnswer = null;
   let finalAction = null;
   let finalData = {};
 
-  for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await client.models.generateContent({
+  const activeToolDefinitions = forceToolName
+    ? toolDefinitions.filter((t) => t.name === forceToolName)
+    : toolDefinitions;
+
+  if (forceToolName) {
+    console.log(
+      `[Gemini] Modo forzado activo: tool=${forceToolName}, strictToolMode=${strictToolMode}`,
+    );
+    console.log(
+      `[Gemini] Tools activas en modo forzado: ${activeToolDefinitions.map((t) => t.name).join(", ") || "<none>"}`,
+    );
+  }
+
+  const toolNames = activeToolDefinitions.map((t) => t.name);
+
+  const detectToolNamesInText = (text = "") => {
+    const detected = [];
+    for (const name of toolNames) {
+      const re = new RegExp(`\\b${name}\\s*\\(`, "i");
+      if (re.test(text)) detected.push(name);
+    }
+    return detected;
+  };
+
+  const joinTextParts = (parts = []) =>
+    parts
+      .filter((p) => p.text)
+      .map((p) => p.text)
+      .join("");
+
+  const forceSingleToolCall = async (historyMessages, toolName, baseSystemPrompt, label) => {
+    const forcedResponse = await generateContentWithRetry(client, {
       model,
-      contents: messages,
-      tools: [{ functionDeclarations: toolDefinitions }],
-      toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+      contents: historyMessages,
       config: {
+        tools: [{ functionDeclarations: activeToolDefinitions }],
+        toolConfig: {
+          functionCallingConfig: {
+            mode: "ANY",
+            allowedFunctionNames: [toolName],
+          },
+        },
+        systemInstruction: `${baseSystemPrompt}\n\nCRITICO: No respondas en texto. Debes invocar la función ${toolName} ahora con argumentos válidos.`,
         thinkingConfig: { thinkingBudget: 0 },
       },
-    });
+    }, label);
+
+    const forcedCandidate = forcedResponse?.candidates?.[0];
+    const forcedRawParts = forcedCandidate?.content?.parts ?? [];
+    const forcedParts = forcedRawParts.filter(
+      (p) => !p.thought || p.functionCall || p.functionResponse,
+    );
+    const forcedToolCalls = forcedParts.filter((p) => p.functionCall);
+    const forcedTextParts = forcedParts.filter((p) => p.text);
+    return { forcedCandidate, forcedParts, forcedToolCalls, forcedTextParts };
+  };
+
+  for (let i = 0; i < MAX_ITERATIONS; i++) {
+    const toolCallingConfig = forceToolName
+      ? { mode: "ANY", allowedFunctionNames: [forceToolName] }
+      : { mode: "AUTO" };
+
+    const response = await generateContentWithRetry(client, {
+      model,
+      contents: messages,
+      config: {
+        tools: [{ functionDeclarations: activeToolDefinitions }],
+        toolConfig: { functionCallingConfig: toolCallingConfig },
+        systemInstruction: systemPrompt,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }, "main-loop");
 
     const candidate = response?.candidates?.[0];
     const allParts = candidate?.content?.parts ?? [];
@@ -51,13 +144,95 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
       break;
     }
 
-    // Filtramos partes de pensamiento (thought=true) — no forman parte del historial útil
-    const parts = allParts.filter(p => !p.thought);
-    messages.push({ role: "model", parts });
-
-    const toolCalls = parts.filter((p) => p.functionCall);
-    const textParts = parts.filter(p => p.text);
+    // Filtramos pensamiento, pero conservamos siempre functionCall/functionResponse.
+    // Algunos modelos pueden marcar functionCall con thought=true.
+    let parts = allParts.filter((p) => !p.thought || p.functionCall || p.functionResponse);
+    let toolCalls = parts.filter((p) => p.functionCall);
+    let textParts = parts.filter((p) => p.text);
     console.log(`[Gemini] Iteración ${i+1}: ${toolCalls.length} tool calls, ${textParts.length} texto`);
+
+    if (toolCalls.length === 0) {
+      const textAnswer = joinTextParts(parts);
+      if (strictToolMode && textAnswer) {
+        console.warn(
+          `[Gemini] Iteración ${i + 1}: texto en modo estricto (snippet): ${textAnswer.slice(0, 220).replace(/\s+/g, " ")}`,
+        );
+      }
+      const detectedToolNames = detectToolNamesInText(textAnswer);
+
+      // Si Gemini escribió la tool como texto (ej. create_template(...)),
+      // hacemos un segundo intento forzando function-calling.
+      if (detectedToolNames.length > 0) {
+        console.warn(
+          `[Gemini] Iteración ${i + 1}: detectado texto tipo tool-call (${detectedToolNames.join(", ")}). Reintentando en modo forzado.`,
+        );
+
+        const { forcedCandidate, forcedParts, forcedToolCalls, forcedTextParts } =
+          await forceSingleToolCall(messages, detectedToolNames[0], systemPrompt, "forced-retry");
+        console.log(
+          `[Gemini] Reintento forzado ${i + 1}: ${forcedToolCalls.length} tool calls, ${forcedTextParts.length} texto`,
+        );
+        if (forcedToolCalls.length === 0 && forcedTextParts.length === 0) {
+          console.warn(
+            `[Gemini] Reintento forzado ${i + 1}: sin parts útiles. finishReason=${forcedCandidate?.finishReason ?? "unknown"}`,
+          );
+        }
+
+        if (forcedToolCalls.length > 0) {
+          parts = forcedParts;
+          toolCalls = forcedToolCalls;
+          textParts = forcedTextParts;
+        } else {
+          messages.push({ role: "model", parts });
+          finalAnswer = strictToolMode ? null : textAnswer;
+          console.warn(
+            `[Gemini] Iteración ${i + 1}: reintento forzado sin tool call. strictToolMode=${strictToolMode}`,
+          );
+          break;
+        }
+      } else {
+        if (strictToolMode && forceToolName) {
+          console.warn(
+            `[Gemini] Iteración ${i + 1}: modo estricto sin tool call y sin patrón textual. Forzando segundo intento directo a ${forceToolName}.`,
+          );
+
+          const { forcedCandidate, forcedParts, forcedToolCalls, forcedTextParts } =
+            await forceSingleToolCall(messages, forceToolName, systemPrompt, "forced-strict-no-pattern");
+          console.log(
+            `[Gemini] Forzado estricto ${i + 1}: ${forcedToolCalls.length} tool calls, ${forcedTextParts.length} texto`,
+          );
+
+          if (forcedToolCalls.length > 0) {
+            parts = forcedParts;
+            toolCalls = forcedToolCalls;
+            textParts = forcedTextParts;
+          } else {
+            messages.push({ role: "model", parts });
+            finalAnswer = null;
+            const forcedSnippet = forcedTextParts
+              .map((p) => p.text)
+              .join(" ")
+              .replace(/\s+/g, " ")
+              .slice(0, 220);
+            console.warn(
+              `[Gemini] Forzado estricto ${i + 1} sin tool call. finishReason=${forcedCandidate?.finishReason ?? "unknown"} | textSnippet=${forcedSnippet || "<empty>"}`,
+            );
+            break;
+          }
+        } else {
+          messages.push({ role: "model", parts });
+          finalAnswer = strictToolMode ? null : textAnswer;
+          if (strictToolMode) {
+            console.warn(
+              `[Gemini] Iteración ${i + 1}: modo estricto sin tool call y sin patrón de tool en texto.`,
+            );
+          }
+          break;
+        }
+      }
+    }
+
+    messages.push({ role: "model", parts });
 
     if (toolCalls.length === 0) {
       finalAnswer = parts
@@ -70,12 +245,21 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
     const toolResults = [];
     let shouldBreak = false;
     for (const part of toolCalls) {
-      const { name, args } = part.functionCall;
-      const result = await onToolCall(name, args);
+      const { id, name, args } = part.functionCall || {};
+      if (!name) {
+        console.warn("[Gemini] functionCall inválido: falta name. Se omite part.");
+        continue;
+      }
+
+      const safeArgs = args && typeof args === "object" ? args : {};
+      const result = await onToolCall(name, safeArgs);
       console.log(result.action);
       if (result.action) {
         finalAction = result.action;
         finalData = result.data ?? {};
+        console.log(
+          `[Gemini] Tool ejecutada: ${name} -> action=${result.action}`,
+        );
         // Acciones de navegación/UI no necesitan otra iteración del modelo
         if (["NAVIGATE", "OPEN_SCANNER", "CREATE_TEMPLATE"].includes(result.action)) {
           shouldBreak = true;
@@ -84,6 +268,7 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
 
       toolResults.push({
         functionResponse: {
+          ...(id ? { id } : {}),
           name,
           response: { result: result.toolResult ?? result.data ?? { ok: true } },
         },
@@ -94,6 +279,10 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
     if (shouldBreak) break;
   }
 
+  console.log(
+    `[Gemini] Loop finalizado. finalAction=${finalAction ?? "null"}, finalAnswer=${finalAnswer ? "present" : "empty"}`,
+  );
+
   return { finalAnswer, finalAction, finalData };
 }
 
@@ -101,9 +290,10 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
  * Formato de mensajes inicial para Gemini.
  */
 function buildInitialMessages(systemPrompt, userInput) {
-  return [
-    { role: "user", parts: [{ text: `${systemPrompt}\n\nUsuario: ${userInput}` }] },
-  ];
+  return {
+    messages: [{ role: "user", parts: [{ text: userInput }] }],
+    systemPrompt,
+  };
 }
 
 module.exports = { getGeminiClient, runAgenticLoop, buildInitialMessages };

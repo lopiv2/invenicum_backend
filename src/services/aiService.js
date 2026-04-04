@@ -50,6 +50,53 @@ async function buildSystemPrompt(userId, locale) {
   );
 }
 
+function isCreateTemplateIntent(input = "") {
+  const text = String(input || "").toLowerCase();
+  const mentionsTemplate = /(plantilla|template)/.test(text);
+  const createVerb = /(crear|crea|diseña|disena|genera|arma|haz|construye|build|generate|design|create)/.test(text);
+  return mentionsTemplate && createVerb;
+}
+
+function inferNavigationPathFromInput(input = "") {
+  const text = String(input || "").toLowerCase();
+
+  const directPath = text.match(/\/(dashboard|settings|integrations|templates|scanner|loans|inventory)\b/);
+  if (directPath) return directPath[0];
+
+  if (/integraciones|integration/.test(text)) return "/integrations";
+  if (/dashboard|inicio|home/.test(text)) return "/dashboard";
+  if (/ajustes|configuraci[oó]n|settings|preferencias|preferences/.test(text)) return "/settings";
+  if (/plantillas|templates/.test(text)) return "/templates";
+  if (/esc[aá]ner|scanner/.test(text)) return "/scanner";
+  if (/pr[eé]stamos|prestamos|loans/.test(text)) return "/loans";
+  if (/inventario|inventory/.test(text)) return "/dashboard";
+
+  return null;
+}
+
+function isNavigationIntent(input = "") {
+  const text = String(input || "").toLowerCase();
+  const hasVerb = /(ir|ve|v[eé]|ll[eé]vame|llevar|navega|navegar|abrir|abre|open|go to|take me|navigate)/.test(text);
+  return hasVerb && !!inferNavigationPathFromInput(text);
+}
+
+function modelPromisesNavigation(text = "") {
+  const t = String(text || "").toLowerCase();
+  return /(te llevo|i'?ll take you|i will take you|navigat|go to|llevarte)/.test(t);
+}
+
+function isTransientProviderError(error) {
+  const status = error?.status;
+  const msg = String(error?.message || "").toLowerCase();
+  return [429, 500, 502, 503, 504].includes(status) || msg.includes("unavailable") || msg.includes("high demand");
+}
+
+function buildAnswerSnippet(text, maxLen = 120) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (!value) return "<empty>";
+  return value.length > maxLen ? `${value.slice(0, maxLen)}...` : value;
+}
+
 class AIService {
   async processChatConversation(userInput, context = {}) {
     const userId = parseInt(context.userId);
@@ -79,10 +126,24 @@ class AIService {
     };
 
     let finalInput = userInput;
+    const strictTemplateMode = userInput !== "SAY_HELLO_INITIAL" && isCreateTemplateIntent(userInput);
+    if (strictTemplateMode) {
+      console.log("[AI][TemplateStrict] Modo estricto activado para solicitud de plantilla.");
+    }
     if (userInput === "SAY_HELLO_INITIAL") {
       finalInput =
         `Actúa como Veni, asistente de Invenicum. Preséntate brevemente. ` +
         `Responde en "${locale}". Dime que puedes ayudar con el inventario.`;
+    } else if (strictTemplateMode) {
+      finalInput =
+        `Solicitud del usuario: ${userInput}\n\n` +
+        `Modo estricto de plantillas: debes invocar create_template.` +
+        ` No escribas create_template(...) como texto.` +
+        ` El payload debe cumplir exactamente:` +
+        ` name:string, description:string, category:string, fields:array(5-8).` +
+        ` Cada field requiere name y type en [text, number, date, dropdown, price, boolean, url].` +
+        ` Si type='dropdown', options es obligatorio con 3-6 strings.` +
+        ` Si falta información, asume valores razonables y completa campos útiles.`;
     }
 
     const systemPrompt = await buildSystemPrompt(userId, locale);
@@ -100,12 +161,146 @@ class AIService {
       }
     };
 
-    let { finalAnswer, finalAction, finalData } = await adapter.runAgenticLoop({
-      client, model, messages,
-      toolDefinitions: TOOL_DEFINITIONS,
-      onToolCall,
-      systemPrompt: claudeSystemPrompt ?? systemPrompt,
-    });
+    let finalAnswer;
+    let finalAction;
+    let finalData;
+    try {
+      ({ finalAnswer, finalAction, finalData } = await adapter.runAgenticLoop({
+        client, model, messages,
+        toolDefinitions: TOOL_DEFINITIONS,
+        onToolCall,
+        systemPrompt: claudeSystemPrompt ?? systemPrompt,
+        forceToolName: strictTemplateMode ? "create_template" : null,
+        strictToolMode: strictTemplateMode,
+      }));
+    } catch (error) {
+      if (isTransientProviderError(error)) {
+        console.warn(
+          `[AI][Provider] Error transitorio del proveedor (status=${error?.status ?? "n/a"}) en intento 1.`,
+        );
+        if (strictTemplateMode) {
+          return {
+            answer:
+              "El proveedor de IA está con alta demanda en este momento. Te abro el creador para que no pierdas tiempo.",
+            action: "NAVIGATE",
+            data: { path: "/templates/create", reason: "provider_transient_error" },
+          };
+        } else {
+          return {
+            answer:
+              "El proveedor de IA está temporalmente saturado. Intenta de nuevo en unos segundos.",
+            action: null,
+            data: {},
+          };
+        }
+      }
+      throw error;
+    }
+
+    if (strictTemplateMode) {
+      console.log(
+        `[AI][TemplateStrict] Intento 1 completado. finalAction=${finalAction ?? "null"}`,
+      );
+    }
+
+    if (!strictTemplateMode && !finalAction) {
+      const providerNoAnswer =
+        !finalAnswer ||
+        /no pude procesar la solicitud|respuesta vac[ií]a/i.test(String(finalAnswer));
+
+      const inferredFromUser = isNavigationIntent(userInput)
+        ? inferNavigationPathFromInput(userInput)
+        : null;
+      const inferredFromModel = modelPromisesNavigation(finalAnswer)
+        ? inferNavigationPathFromInput(finalAnswer)
+        : null;
+
+      const inferredPath = inferredFromUser || inferredFromModel;
+
+      if (providerNoAnswer || inferredPath) {
+        console.log(
+          `[AI][NavFallback] inferredFromUser=${inferredFromUser ?? "null"} | inferredFromModel=${inferredFromModel ?? "null"} | providerNoAnswer=${providerNoAnswer}`,
+        );
+        if (inferredPath) {
+          console.warn(
+            `[AI] Respuesta vacía/sin acción del proveedor. Navegación inferida por heurística: ${inferredPath}`,
+          );
+          finalAction = "NAVIGATE";
+          finalData = { path: inferredPath, reason: "provider_empty_response_navigation_fallback" };
+        }
+      }
+    }
+
+    // En modo estricto de plantilla intentamos un segundo pase forzado antes de abortar.
+    if (strictTemplateMode && finalAction !== "CREATE_TEMPLATE") {
+      console.warn(
+        `[AI][TemplateStrict] Intento 1 no logró CREATE_TEMPLATE. finalAnswer=${
+          finalAnswer ? "present" : "empty"
+        }. Iniciando reintento forzado.`,
+      );
+
+      const retryPrompt =
+        `Reintento obligatorio: genera la plantilla solicitada por el usuario y llama create_template ahora.\n` +
+        `Usuario: ${userInput}\n\n` +
+        `Reglas estrictas:\n` +
+        `- NO respondas texto normal.\n` +
+        `- SOLO invoca create_template.\n` +
+        `- fields debe tener entre 5 y 8 campos.\n` +
+        `- Tipos permitidos: text, number, date, dropdown, price, boolean, url.\n` +
+        `- En dropdown, options obligatorio con 3 a 6 opciones.`;
+
+      const retryInitialMessages = adapter.buildInitialMessages(systemPrompt, retryPrompt);
+      const retryMessages = retryInitialMessages.messages ?? retryInitialMessages;
+      const retryClaudeSystemPrompt = retryInitialMessages.systemPrompt;
+
+      let retryResult;
+      try {
+        retryResult = await adapter.runAgenticLoop({
+          client,
+          model,
+          messages: retryMessages,
+          toolDefinitions: TOOL_DEFINITIONS,
+          onToolCall,
+          systemPrompt: retryClaudeSystemPrompt ?? systemPrompt,
+          forceToolName: "create_template",
+          strictToolMode: true,
+        });
+      } catch (error) {
+        if (isTransientProviderError(error)) {
+          console.warn(
+            `[AI][Provider] Error transitorio del proveedor (status=${error?.status ?? "n/a"}) en reintento estricto.`,
+          );
+          return {
+            answer:
+              "El proveedor de IA está con alta demanda en este momento. Te abro el creador para que no pierdas tiempo.",
+            action: "NAVIGATE",
+            data: { path: "/templates/create", reason: "provider_transient_error_retry" },
+          };
+        }
+        throw error;
+      }
+
+      console.log(
+        `[AI][TemplateStrict] Reintento completado. finalAction=${retryResult.finalAction ?? "null"}`,
+      );
+
+      if (retryResult.finalAction === "CREATE_TEMPLATE") {
+        console.log("[AI][TemplateStrict] Reintento exitoso: plantilla creada por tool call.");
+        finalAction = retryResult.finalAction;
+        finalData = retryResult.finalData;
+        finalAnswer = retryResult.finalAnswer;
+      } else {
+        console.warn(
+          "[AI][TemplateStrict] Reintento fallido. Se navega al creador de plantillas.",
+        );
+        return {
+          answer:
+            "No pude construir una plantilla válida automáticamente. Te abro el creador para completarla con campos obligatorios.",
+          action: "NAVIGATE",
+          data: { path: "/templates/create", reason: "strict_template_mode_failed" },
+        };
+      }
+    }
 
     // Limpiar el answer de artefactos que el modelo a veces incluye en el texto
     let answer = finalAnswer;
@@ -158,34 +353,6 @@ class AIService {
           answer = answer.replace(/open_scanner\s*\([^)]*\)/gi, "").trim();
         }
 
-        // Fallback para create_template escrito como texto
-        // Ejemplo: create_template(name="Joyería", fields=[...])
-        if (!finalAction) {
-          const ctMatch = answer.match(/create_template\s*\(([\s\S]*?)\)(?:\s*$|\n)/);
-          if (ctMatch) {
-            try {
-              // Intentar extraer name y fields del texto
-              const nameMatch = ctMatch[1].match(/name\s*=\s*["']([^"']+)["']/);
-              const fieldsMatch = ctMatch[1].match(/fields\s*=\s*(\[.*?\])/s);
-              if (nameMatch) {
-                finalAction = "CREATE_TEMPLATE";
-                let parsedFields = [];
-                if (fieldsMatch) {
-                  try {
-                    parsedFields = JSON.parse(fieldsMatch[1].replace(/'/g, '"'));
-                  } catch (_) {}
-                }
-                finalData = {
-                  name: nameMatch[1],
-                  description: "",
-                  category: "",
-                  fields: parsedFields,
-                };
-                answer = answer.replace(ctMatch[0], "").trim();
-              }
-            } catch (_) {}
-          }
-        }
       }
 
       // Eliminar cualquier resto de artefactos del modelo
@@ -193,6 +360,10 @@ class AIService {
       answer = answer.replace(/\*\*Acción:\*\*[^]*/gi, "");
       // Eliminar líneas que solo contengan llaves o corchetes sueltos
       answer = answer.replace(/^[\s{}[\]]*$/gm, "").trim();
+
+      if (strictTemplateMode && /create_template\s*\(/i.test(answer)) {
+        answer = "";
+      }
     }
 
     // Si la acción es de navegación y no hay respuesta de texto útil,
@@ -205,6 +376,38 @@ class AIService {
       };
       answer = actionMessages[finalAction] ?? "He completado la acción solicitada.";
     }
+
+    if (finalAction === "CREATE_TEMPLATE") {
+      const prefillToken = String(Temporal.Now.instant().epochMilliseconds);
+      const normalizedFields = Array.isArray(finalData?.fieldDefinitions)
+        ? finalData.fieldDefinitions
+        : Array.isArray(finalData?.fields)
+          ? finalData.fields
+          : [];
+
+      finalData = {
+        name: finalData?.name ?? "",
+        description: finalData?.description ?? "",
+        category: finalData?.category ?? "",
+        fields: normalizedFields,
+        fieldDefinitions: normalizedFields,
+        // Ruta con token para forzar refresco de prefill incluso si ya estás en /templates/create.
+        path: `/templates/create?ai_prefill=${prefillToken}`,
+        prefillToken,
+        shouldNavigate: true,
+        templateData: {
+          name: finalData?.name ?? "",
+          description: finalData?.description ?? "",
+          category: finalData?.category ?? "",
+          fields: normalizedFields,
+          fieldDefinitions: normalizedFields,
+        },
+      };
+    }
+
+    console.log(
+      `[AI][Summary] strictTemplateMode=${strictTemplateMode} | finalAction=${finalAction ?? "null"} | finalAnswerSnippet=${buildAnswerSnippet(answer)}`,
+    );
 
     return {
       answer: answer || "He completado la acción solicitada.",
