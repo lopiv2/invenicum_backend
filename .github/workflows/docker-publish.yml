@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -74,6 +76,27 @@ jobs:
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve frontend build context
+        id: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CANDIDATE_SUBPATH="./frontend-src/${FRONTEND_SUBPATH}"
+          CANDIDATE_ROOT="./frontend-src"
+
+          if [[ -f "${CANDIDATE_SUBPATH}/pubspec.yaml" ]]; then
+            FRONTEND_PATH="${CANDIDATE_SUBPATH}"
+          elif [[ -f "${CANDIDATE_ROOT}/pubspec.yaml" ]]; then
+            FRONTEND_PATH="${CANDIDATE_ROOT}"
+          else
+            echo "No se encontro pubspec.yaml en frontend-src ni frontend-src/${FRONTEND_SUBPATH}" >&2
+            find ./frontend-src -maxdepth 3 -type f -name pubspec.yaml || true
+            exit 1
+          fi
+
+          echo "path=${FRONTEND_PATH}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
@@ -82,7 +105,7 @@ jobs:
           push: true
           tags: ${{ steps.vars.outputs.tags }}
           build-contexts: |
-            frontend=./frontend-src/${{ env.FRONTEND_SUBPATH }}
+            frontend=${{ steps.frontend.outputs.path }}
           build-args: |
             API_URL=/api/v1
             APP_VERSION=${{ steps.vars.outputs.app_version }}
