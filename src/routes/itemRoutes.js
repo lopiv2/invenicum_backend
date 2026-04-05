@@ -89,6 +89,7 @@ router.get("/items/:id/print-label", verifyToken, async (req, res) => {
       userId,
       res,
       queryOptions,
+      req,
     );
   } catch (error) {
     console.error(

@@ -1,38 +1,34 @@
 services:
   invenicum:
-    image: ${APP_IMAGE:-ghcr.io/lopiv2/invenicum:latest}
+    image: ghcr.io/lopiv2/invenicum:latest
     container_name: invenicum
     restart: unless-stopped
     ports:
-      - "${HOST_PORT:-3000}:3000"
+      - "3000:3000"
     environment:
       NODE_ENV: production
 
-      # Base URL pública
-      BASE_URL: ${BASE_URL}
-      PORT: 3000
+      # External database (MariaDB/MySQL)
+      DB_HOST: 192.168.1.100
+      DB_PORT: 3306
+      DB_USER: invenicum_user
+      DB_PASSWORD: change_this_password
+      DB_NAME: invenicum
+      DATABASE_URL: mysql://invenicum_user:change_this_password@192.168.1.100:3306/invenicum
 
-      # Base de datos externa (MariaDB/MySQL)
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_NAME: ${DB_NAME}
-      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT:-3306}/${DB_NAME}
+      # JWT security (change to a long unique value)
+      JWT_SECRET: change_this_jwt_secret
+      JWT_EXPIRES_IN: 24h
 
-      # Seguridad
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      # Upload folder
+      UPLOAD_FOLDER: uploads/inventory
 
-      # Archivos subidos
-      UPLOAD_FOLDER: ${UPLOAD_FOLDER:-uploads/inventory}
+      # GitHub OAuth (optional, leave empty if not used)
+      GITHUB_CLIENT_ID: ""
+      GITHUB_CLIENT_SECRET: ""
 
-      # Integraciones opcionales
-      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
-      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
-
-      # Versión mínima soportada por app móvil/web
-      MIN_SUPPORTED_APP_VERSION: ${MIN_SUPPORTED_APP_VERSION:-0.0.0}
+      # Minimum supported client app version
+      MIN_SUPPORTED_APP_VERSION: 0.0.0
     volumes:
       - uploads_data:/app/uploads/inventory
 

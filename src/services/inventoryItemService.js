@@ -1244,7 +1244,7 @@ class InventoryItemService {
     return result._sum.marketValue || 0;
   }
 
-  async generatePrintLabelPDF(itemId, userId, res, queryOptions = {}) {
+  async generatePrintLabelPDF(itemId, userId, res, queryOptions = {}, req = null) {
     // 1. Buscamos el ítem asegurando que pertenezca al usuario
     const item = await prisma.inventoryItem.findFirst({
       where: {
@@ -1260,7 +1260,9 @@ class InventoryItemService {
     const aTypeId = item.assetTypeId;
     const id = item.id;
 
-    const baseUrl = process.env.BASE_URL || "http://localhost:5555";
+    const baseUrl = req
+      ? `${req.protocol}://${req.get("host")}`
+      : "http://localhost:3000";
     const itemUrl = `${baseUrl}/#/container/${containerId}/asset-types/${aTypeId}/assets/${id}`;
 
     // 1. Configuración de dimensiones
