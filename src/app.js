@@ -59,7 +59,7 @@ const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
 const ASSET_TYPES_SUBDIR = AppConstants.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR;
 
 const API_VERSION = AppConstants.API_VERSION;
-const port = process.env.PORT || 3000;
+const port = 3000;
 const WEB_BUILD_DIR = path.resolve(process.cwd(), "public/web");
 const WEB_INDEX_FILE = path.join(WEB_BUILD_DIR, "index.html");
 const HAS_WEB_BUILD = fs.existsSync(WEB_INDEX_FILE);
