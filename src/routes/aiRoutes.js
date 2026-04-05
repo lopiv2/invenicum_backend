@@ -143,4 +143,14 @@ router.get("/chat/history", verifyToken, async (req, res) => {
   }
 });
 
+// 2. Borrar historial de chat del usuario
+router.delete("/chat/history", verifyToken, async (req, res) => {
+  try {
+    await aiService.purgeHistory(req.user.id);
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: "Error al borrar historial" });
+  }
+});
+
 module.exports = router;

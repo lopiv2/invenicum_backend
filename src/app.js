@@ -27,6 +27,7 @@ const ebayRoutes = require("./routes/ebayRoutes");
 const upcMarketRoutes = require("./routes/upcMarketRoutes");
 const templateRoutes = require("./routes/templateRoutes");
 const reportRoutes = require("./routes/reportRoutes");
+const appRoutes = require("./routes/appRoutes");
 
 
 
@@ -59,6 +60,9 @@ const ASSET_TYPES_SUBDIR = AppConstants.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR;
 
 const API_VERSION = AppConstants.API_VERSION;
 const port = process.env.PORT || 3000;
+const WEB_BUILD_DIR = path.resolve(process.cwd(), "public/web");
+const WEB_INDEX_FILE = path.join(WEB_BUILD_DIR, "index.html");
+const HAS_WEB_BUILD = fs.existsSync(WEB_INDEX_FILE);
 
 // ----------------------------------------------------
 // 2. CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS Y DIRECTORIOS
@@ -84,12 +88,21 @@ const ASSET_TYPES_DIR = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER, ASSET_TY
 app.use(STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
 console.log(`[Static] Sirviendo ${STATIC_URL_PREFIX} → ${UPLOAD_DIR_TO_SERVE}`);
 
+if (HAS_WEB_BUILD) {
+  app.use(express.static(WEB_BUILD_DIR));
+  console.log(`[Web] Sirviendo frontend web desde ${WEB_BUILD_DIR}`);
+}
+
 // ----------------------------------------------------
 // 3. RUTAS
 // ----------------------------------------------------
 
 // Ruta raíz
 app.get("/", (req, res) => {
+  if (HAS_WEB_BUILD) {
+    return res.sendFile(WEB_INDEX_FILE);
+  }
+
   res.send(`
 <h1>API de Invenicum</h1>
 ...
@@ -110,6 +123,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(API_BASE_PATH + "/auth", authRoutes);
+app.use(API_BASE_PATH + "/app", appRoutes);
 app.use(API_BASE_PATH + "/", containerRoutes);
 app.use(API_BASE_PATH + "/", assetTypeRoutes);
 app.use(API_BASE_PATH + "/", itemRoutes);
@@ -128,6 +142,17 @@ app.use(API_BASE_PATH + "/ebay", ebayRoutes);
 app.use(API_BASE_PATH + "/market", upcMarketRoutes);
 app.use(API_BASE_PATH + "/templates", templateRoutes);
 app.use(API_BASE_PATH + "/reports", reportRoutes);
+
+if (HAS_WEB_BUILD) {
+  // Fallback para rutas de Flutter Web (SPA)
+  app.get(/.*/, (req, res, next) => {
+    if (req.path.startsWith("/api/") || req.path.startsWith(STATIC_URL_PREFIX)) {
+      return next();
+    }
+
+    return res.sendFile(WEB_INDEX_FILE);
+  });
+}
 
 // ----------------------------------------------------
 // 4. INICIAR EL SERVIDOR

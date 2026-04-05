@@ -2,7 +2,7 @@ const prisma = require("../middleware/prisma");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const { Temporal } = require("@js-temporal/polyfill");
-const UserDTO = require("../models/UserModel");
+const UserDTO = require("../models/userModel");
 const {
   encrypt,
   decrypt,

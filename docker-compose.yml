@@ -49,9 +49,6 @@ services:
       # Imágenes
       UPLOAD_FOLDER: ${UPLOAD_FOLDER:-uploads/inventory}
 
-      # GitHub — gestión de plugins (token secreto obligatorio)
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
-
       # GitHub OAuth (secreto obligatorio)
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}

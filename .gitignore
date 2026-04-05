@@ -4,3 +4,8 @@ node_modules
 
 /src/generated/prisma
 /src/uploads/inventory
+/uploads/
+
+# Docker image exports (if generated locally)
+*.tar
+*.tar.gz

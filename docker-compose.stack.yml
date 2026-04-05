@@ -1,0 +1,40 @@
+services:
+  invenicum:
+    image: ${APP_IMAGE:-ghcr.io/lopiv2/invenicum:latest}
+    container_name: invenicum
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+
+      # Base URL pública
+      BASE_URL: ${BASE_URL}
+      PORT: 3000
+
+      # Base de datos externa (MariaDB/MySQL)
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT:-3306}/${DB_NAME}
+
+      # Seguridad
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+
+      # Archivos subidos
+      UPLOAD_FOLDER: ${UPLOAD_FOLDER:-uploads/inventory}
+
+      # Integraciones opcionales
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+
+      # Versión mínima soportada por app móvil/web
+      MIN_SUPPORTED_APP_VERSION: ${MIN_SUPPORTED_APP_VERSION:-0.0.0}
+    volumes:
+      - uploads_data:/app/uploads/inventory
+
+volumes:
+  uploads_data:

@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1.7
+
+FROM ghcr.io/cirruslabs/flutter:stable AS frontend-build
+
+WORKDIR /frontend
+
+ARG API_URL=/api/v1
+ARG APP_VERSION=0.0.0
+
+COPY --from=frontend pubspec.yaml pubspec.lock ./
+RUN flutter pub get
+
+COPY --from=frontend . .
+
+RUN flutter config --enable-web
+RUN flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=${APP_VERSION}
+
+
+FROM node:20-bookworm-slim AS backend-deps
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+
+COPY package*.json ./
+RUN npm ci
+
+COPY prisma ./prisma
+RUN npx prisma generate
+
+
+FROM node:20-bookworm-slim AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl mariadb-client && rm -rf /var/lib/apt/lists/*
+
+COPY --from=backend-deps /app/node_modules ./node_modules
+COPY prisma ./prisma
+COPY prisma.config.js ./
+COPY src ./src
+COPY --from=frontend-build /frontend/build/web ./public/web
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+
+RUN chmod +x ./docker-entrypoint.sh
+
+EXPOSE 3000
+
+CMD ["./docker-entrypoint.sh"]

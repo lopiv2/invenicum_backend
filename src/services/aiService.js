@@ -440,6 +440,12 @@ class AIService {
     });
   }
 
+  async purgeHistory(userId) {
+    await prisma.chatMessage.deleteMany({
+      where: { userId: parseInt(userId, 10) },
+    });
+  }
+
   async saveMessage(userId, text, isUser) {
     return await prisma.chatMessage.create({
       data: { userId: parseInt(userId), text, isUser },
