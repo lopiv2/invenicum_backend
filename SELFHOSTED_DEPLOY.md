@@ -34,30 +34,6 @@ El repositorio incluye workflow en `.github/workflows/docker-publish.yml` para c
 
 Si el repo frontend es publico, igualmente puedes dejar el secret para mantener un flujo consistente.
 
-## Script recomendado para publicar (PowerShell)
-
-Desde la raiz de `Invenicum_backend`:
-
-```powershell
-.\scripts\release.ps1 -Version 1.2.3
-```
-
-Opciones utiles:
-
-- Publicar solo version fija (sin `latest`):
-
-```powershell
-.\scripts\release.ps1 -Version 1.2.3 -SkipLatest
-```
-
-- Probar solo build sin push:
-
-```powershell
-.\scripts\release.ps1 -Version 1.2.3 -SkipPush
-```
-
-El script construye con `Dockerfile.selfhosted`, etiqueta la imagen y publica en GHCR.
-
 ## 1) Construir imagen para publicar
 
 Desde la raiz de `Invenicum_backend`:
@@ -74,8 +50,6 @@ docker build \
 ```
 
 Sustituye `1.0.0` por la version real de la mejora que vas a publicar.
-
-Si usas el script de arriba, no necesitas ejecutar estos comandos manualmente.
 
 ## 2) Publicar en GHCR
 
