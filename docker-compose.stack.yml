@@ -14,7 +14,6 @@ services:
       DB_USER: invenicum_user
       DB_PASSWORD: change_this_password
       DB_NAME: invenicum
-      DATABASE_URL: mysql://invenicum_user:change_this_password@192.168.1.100:3306/invenicum
 
       # JWT security (change to a long unique value)
       JWT_SECRET: change_this_jwt_secret

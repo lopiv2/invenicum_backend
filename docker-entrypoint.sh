@@ -7,6 +7,8 @@ DB_USER="${DB_USER:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 DB_NAME="${DB_NAME:-}"
 
+export DATABASE_URL="mysql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
 if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
   echo "[Startup] Faltan variables DB_HOST, DB_USER o DB_NAME."
   exit 1
