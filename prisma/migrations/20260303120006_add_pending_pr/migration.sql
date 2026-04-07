@@ -1,3 +1,0 @@
--- AlterTable
-ALTER TABLE `plugin` ADD COLUMN `hasPendingPR` BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN `pendingVersion` DOUBLE NULL;

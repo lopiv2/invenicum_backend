@@ -1,3 +1,0 @@
--- AlterTable
-ALTER TABLE `user_preferences` ADD COLUMN `is_dark_mode` BOOLEAN NOT NULL DEFAULT false,
-    ADD COLUMN `use_system_theme` BOOLEAN NOT NULL DEFAULT true;
