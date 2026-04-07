@@ -16,7 +16,7 @@ const adapter = new PrismaMariaDb(
     allowPublicKeyRetrieval: true,
   },
   {
-    schema: "invenicum",
+    schema: process.env.DB_NAME,
   },
 );
 
