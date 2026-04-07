@@ -1,14 +1,14 @@
 /*
   Warnings:
 
-  - You are about to drop the `inventoryitem` table. If the table is not empty, all the data it contains will be lost.
+  - You are about to drop the `InventoryItem` table. If the table is not empty, all the data it contains will be lost.
 
 */
 -- DropForeignKey
-ALTER TABLE `inventoryitem` DROP FOREIGN KEY `InventoryItem_containerId_fkey`;
+ALTER TABLE `InventoryItem` DROP FOREIGN KEY `InventoryItem_containerId_fkey`;
 
 -- DropTable
-DROP TABLE `inventoryitem`;
+DROP TABLE `InventoryItem`;
 
 -- CreateTable
 CREATE TABLE `inventory_item` (
