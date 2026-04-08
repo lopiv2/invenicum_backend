@@ -9,10 +9,7 @@ const { Temporal } = require('@js-temporal/polyfill');
 router.use((req, res, next) => {
   const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
-  console.log("Headers:", req.headers);
-  if (req.body && Object.keys(req.body).length > 0) {
-    console.log("Body:", req.body);
-  }
+
   next();
 });
 

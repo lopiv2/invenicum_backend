@@ -105,7 +105,7 @@ model ApiMapper {
   source        String   // 'pokemon', 'bgg', 'books'
   structureHash String   @unique 
   mappingJson   Json     // Instrucciones de mapeo
-  locale        String   @default("es") 
+  locale        String   @default("en") 
   createdAt     DateTime @default(now())
 
   @@map("api_mapper")
@@ -114,7 +114,7 @@ model ApiMapper {
 // Preferencias generales del usuario (idioma, tema, etc.)
 model UserPreferences {
   id              Int      @id @default(autoincrement())
-  language        String   @default("es")   // Código de idioma (es, en, etc.)
+  language        String   @default("en")   // Código de idioma (es, en, etc.)
   currency        String   @default("USD")
   // --- CONFIGURACIÓN DE TEMA ---
   useSystemTheme  Boolean  @default(true) @map("use_system_theme")

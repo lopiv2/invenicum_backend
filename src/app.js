@@ -117,9 +117,6 @@ app.get("/", (req, res) => {
 const API_BASE_PATH = "/api/" + API_VERSION;
 app.use((req, res, next) => {
   console.log(`[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`);
-  console.log(
-    `Auth Header: ${req.headers.authorization ? "Present" : "MISSING"}`,
-  );
   next();
 });
 app.use(API_BASE_PATH + "/auth", authRoutes);

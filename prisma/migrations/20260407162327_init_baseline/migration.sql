@@ -85,7 +85,7 @@ CREATE TABLE `api_mapper` (
     `source` VARCHAR(191) NOT NULL,
     `structureHash` VARCHAR(191) NOT NULL,
     `mappingJson` JSON NOT NULL,
-    `locale` VARCHAR(191) NOT NULL DEFAULT 'es',
+    `locale` VARCHAR(191) NOT NULL DEFAULT 'en',
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
     UNIQUE INDEX `api_mapper_structureHash_key`(`structureHash`),
@@ -95,7 +95,7 @@ CREATE TABLE `api_mapper` (
 -- CreateTable
 CREATE TABLE `user_preferences` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
-    `language` VARCHAR(191) NOT NULL DEFAULT 'es',
+    `language` VARCHAR(191) NOT NULL DEFAULT 'en',
     `currency` VARCHAR(191) NOT NULL DEFAULT 'USD',
     `use_system_theme` BOOLEAN NOT NULL DEFAULT true,
     `is_dark_mode` BOOLEAN NOT NULL DEFAULT false,

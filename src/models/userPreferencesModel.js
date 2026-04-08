@@ -2,7 +2,7 @@
   constructor(prismaPreferences) {
     const prefs = prismaPreferences || {};
 
-    this.language = prefs.language || "es";
+    this.language = prefs.language || "en";
     this.currency = prefs.currency || "USD";
     this.aiEnabled = prefs.aiEnabled ?? true;
     this.aiModel = prefs.aiModel;
