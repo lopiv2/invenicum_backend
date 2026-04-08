@@ -17,7 +17,7 @@ const verifyToken = (req, res, next) => {
         //console.log("Token recibido:", token);
 
         // Verify the token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tu-secret-key-temporal');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tu-secret-key');
 
         // Guardar the información del Use en req.Use
         req.user = {

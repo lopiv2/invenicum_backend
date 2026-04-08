@@ -87,15 +87,32 @@ router.post("/setup", async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/github/config", (req, res) => {
+  const hasClientId = Boolean(process.env.GITHUB_CLIENT_ID);
+  const hasClientSecret = Boolean(process.env.GITHUB_CLIENT_SECRET);
+  const missingKeys = [
+    ...(!hasClientId ? ["GITHUB_CLIENT_ID"] : []),
+    ...(!hasClientSecret ? ["GITHUB_CLIENT_SECRET"] : []),
+  ];
+
   res.json({
     success: true,
-    clientId: process.env.GITHUB_CLIENT_ID,
+    clientId: hasClientId ? process.env.GITHUB_CLIENT_ID : null,
+    isConfigured: hasClientId && hasClientSecret,
+    missingKeys,
   });
 });
 
 router.post("/github/complete", verifyToken, async (req, res) => {
   const { code } = req.body;
   const userId = req.user.userId || req.user.id;
+
+  if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
+    return res.status(503).json({
+      success: false,
+      message:
+        "GitHub OAuth no está configurado en el servidor. Faltan GITHUB_CLIENT_ID y/o GITHUB_CLIENT_SECRET.",
+    });
+  }
 
   if (!code) {
     return res
@@ -117,7 +134,7 @@ router.post("/github/complete", verifyToken, async (req, res) => {
     const accessToken = tokenResponse.data.access_token;
     if (!accessToken) {
       return res
-        .status(401)
+        .status(400)
         .json({ success: false, message: "Token de GitHub inválido" });
     }
 

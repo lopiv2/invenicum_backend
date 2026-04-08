@@ -1,7 +1,6 @@
 ﻿const prisma = require("../middleware/prisma");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
-const { Temporal } = require("@js-temporal/polyfill");
 const UserDTO = require("../models/userModel");
 const {
   encrypt,
@@ -308,7 +307,7 @@ class UserService {
   }
 
   async updateGitHubIdentity(userId, githubData) {
-    const linkedAt = Temporal.Now.zonedDateTimeISO();
+    const linkedAt = new Date();
 
     try {
       const githubIdStr = String(githubData.githubId);
@@ -335,7 +334,7 @@ class UserService {
           githubId: githubIdStr,
           avatarUrl: githubData.avatarUrl,
           githubToken: encryptedToken,
-          githubLinkedAt: linkedAt.toString(),
+          githubLinkedAt: linkedAt,
           username: String(githubData.githubHandle),
         },
         include: {

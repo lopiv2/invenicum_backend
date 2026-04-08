@@ -27,7 +27,7 @@ class ContainerService {
     try {
       if (!userId || !data.name) {
         throw new Error(
-          "Se requiere el ID de usuario y el nombre del contenedor",
+          "User ID and container name are required",
         );
       }
 
@@ -48,7 +48,7 @@ class ContainerService {
         data: container,
       };
     } catch (error) {
-      console.error("Error al crear contenedor:", error);
+      console.error("Error creating container:", error);
       return {
         success: false,
         message: error.message || "Error creating container",
@@ -81,16 +81,16 @@ class ContainerService {
         data: containers,
       };
     } catch (error) {
-      console.error("Error al obtener contenedores:", error);
+      console.error("Error fetching containers:", error);
       return {
         success: false,
-        message: error.message || "Error al obtener los contenedores",
+        message: error.message || "Error fetching containers",
       };
     }
   }
 
   /**
-   * gets a container específico por ID, verificando the propiedad.
+  * gets a specific container by ID, verifying ownership.
    * @param {number} id - ID del container.
    * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
@@ -109,7 +109,7 @@ class ContainerService {
       if (!container) {
         return {
           success: false,
-          message: "Contenedor no encontrado o acceso denegado.",
+            message: "Container not found or access denied.",
         };
       }
 
@@ -118,16 +118,16 @@ class ContainerService {
         data: container,
       };
     } catch (error) {
-      console.error("Error al obtener contenedor:", error);
+      console.error("Error fetching container:", error);
       return {
         success: false,
-        message: error.message || "Error al obtener el contenedor",
+        message: error.message || "Error fetching container",
       };
     }
   }
 
   /**
-   * updates a container específico por ID, verificando the propiedad.
+  * updates a specific container by ID, verifying ownership.
    * @param {number} id - ID del container a update.
    * @param {number} userId - ID del Use propietario.
    * @param {object} data - data for update ({name, description}).
@@ -147,7 +147,7 @@ class ContainerService {
       if (Object.keys(updateData).length === 0) {
         return {
           success: false,
-          message: "No se proporcionaron datos válidos para actualizar.",
+          message: "No valid data provided for update.",
         };
       }
 
@@ -162,35 +162,35 @@ class ContainerService {
 
       return {
         success: true,
-        message: "Contenedor actualizado exitosamente",
+        message: "Container updated successfully",
         data: container,
       };
     } catch (error) {
-      console.error("Error al actualizar contenedor:", error);
+      console.error("Error updating container:", error);
 
-      if (error.code === "P2025") {
+        if (error.code === "P2025") {
         return {
           success: false,
-          message: "Contenedor no encontrado o acceso denegado.",
+          message: "Container not found or access denied.",
         };
       }
 
       return {
         success: false,
-        message: error.message || "Error al actualizar el contenedor",
+        message: error.message || "Error updating container",
       };
     }
   }
 
   /**
-   * deletes a container específico por ID, verificando the propiedad.
+  * deletes a specific container by ID, verifying ownership.
    * @param {number} id - ID del container a delete.
    * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async deleteContainer(id, userId) {
     try {
-      // Prisma maneja the eliminaciones en cascada if están configuradas en schema.prisma
+      // Prisma handles cascade deletions if configured in schema.prisma
       const container = await prisma.container.delete({
         where: {
           id: parseInt(id),
@@ -204,23 +204,23 @@ class ContainerService {
         data: container,
       };
     } catch (error) {
-      console.error("Error al eliminar contenedor:", error);
+      console.error("Error deleting container:", error);
 
-      if (error.code === "P2025") {
+        if (error.code === "P2025") {
         return {
           success: false,
-          message: "Contenedor no encontrado o acceso denegado.",
+          message: "Container not found or access denied.",
         };
       }
       return {
         success: false,
-        message: error.message || "Error al eliminar el contenedor",
+        message: error.message || "Error deleting container",
       };
     }
   }
 
   /**
-   * Realiza a búsqueda global de activos for a Use específico.
+  * Performs a global asset search for a specific user.
    * @param {number} userId - ID del Use.
    * @param {string} query - Texto a Search.
    */
@@ -259,7 +259,7 @@ class ContainerService {
         data: formattedAssets,
       };
     } catch (error) {
-      console.error("Error en searchAssets:", error);
+      console.error("Error in searchAssets:", error);
       return { success: false, message: error.message };
     }
   }

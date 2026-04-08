@@ -1,0 +1,50 @@
+{
+  "stock_low": {
+    "en": { "title": "⚠️ Low Stock", "message": "\"{name}\" dropped to {quantity} units (Minimum: {minStock})." },
+    "es": { "title": "⚠️ Stock Bajo", "message": "\"{name}\" bajó a {quantity} unidades (Mínimo: {minStock})." },
+    "it": { "title": "⚠️ Scorte Basse", "message": "\"{name}\" è sceso a {quantity} unità (Minimo: {minStock})." },
+    "de": { "title": "⚠️ Niedriger Bestand", "message": "\"{name}\" ist auf {quantity} Einheiten gefallen (Minimum: {minStock})." },
+    "fr": { "title": "⚠️ Stock Faible", "message": "\"{name}\" est tombé à {quantity} unités (Minimum : {minStock})." },
+    "pt": { "title": "⚠️ Estoque Baixo", "message": "\"{name}\" caiu para {quantity} unidades (Mínimo: {minStock})." }
+  },
+  "email_not_found": {
+    "en": "Destination email not found",
+    "es": "Email de destino no encontrado",
+    "it": "Email di destinazione non trovata",
+    "de": "Ziel-E-Mail nicht gefunden",
+    "fr": "E-mail de destination introuvable",
+    "pt": "E-mail de destino não encontrado"
+  },
+  "alert_list_empty": {
+    "en": "No alerts found.",
+    "es": "No se encontraron alertas.",
+    "it": "Nessun avviso trovato.",
+    "de": "Keine Warnungen gefunden.",
+    "fr": "Aucune alerte trouvée.",
+    "pt": "Nenhum alerta encontrado."
+  },
+  "alert_created": {
+    "en": "Alert created successfully.",
+    "es": "Alerta creada exitosamente.",
+    "it": "Avviso creato con successo.",
+    "de": "Warnung erfolgreich erstellt.",
+    "fr": "Alerte créée avec succès.",
+    "pt": "Alerta criada com sucesso."
+  },
+  "alert_updated": {
+    "en": "Alert updated successfully.",
+    "es": "Alerta actualizada exitosamente.",
+    "it": "Avviso aggiornato con successo.",
+    "de": "Warnung erfolgreich aktualisiert.",
+    "fr": "Alerte mise à jour avec succès.",
+    "pt": "Alerta atualizada com sucesso."
+  },
+  "alert_deleted": {
+    "en": "Alert deleted successfully.",
+    "es": "Alerta eliminada exitosamente.",
+    "it": "Avviso eliminato con successo.",
+    "de": "Warnung erfolgreich gelöscht.",
+    "fr": "Alerte supprimée avec succès.",
+    "pt": "Alerta excluída com sucesso."
+  }
+}
