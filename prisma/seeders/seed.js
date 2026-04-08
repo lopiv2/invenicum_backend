@@ -1,13 +1,13 @@
-require("dotenv").config({ path: "../.env" });
+﻿require("dotenv").config({ path: "../.env" });
 const { hashPassword } = require("../../src/middleware/cryptoUtils");
 
 const prisma = require("../../src/middleware/prisma");
 
 
 
-// npm run db:reset  - Si quieres resetear la base de datos y cargar los datos
-// npm run db:seed  - Si solo quieres cargar los datos
-// npx prisma migrate deploy - Si solo quieres aplicar migraciones sin cargar datos
+// npm run db:reset  - if quieres resetear the base de data and cargar the data
+// npm run db:seed  - if only quieres cargar the data
+// npx prisma migrate deploy - if only quieres aplicar migraciones without cargar data
 
 const defaultUsers = [
   {
@@ -32,16 +32,16 @@ async function seedUsers() {
 
   for (const user of defaultUsers) {
     try {
-      // 1. Generamos el hash siempre para que, si cambias la pass en el array, se actualice en la DB
+      // 1. Generamos the hash siempre so that, if cambias the pass en the array, se actualice en the DB
       const hashedPassword = await hashPassword(user.password);
 
-      // 2. Usamos upsert para crear o actualizar
+      // 2. Use upsert for Create o update
       await prisma.user.upsert({
         where: { email: user.email },
         update: {
           name: user.name,
           password: hashedPassword, // Esto permite que si cambias la pass en el código, se actualice en la DB
-          // Agrega aquí otros campos si quieres que se sobreescriban
+          // Agrega aquí otros campos if quieres que se sobreescriban
         },
         create: {
           email: user.email,

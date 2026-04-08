@@ -1,4 +1,4 @@
-// services/alertService.js
+﻿// services/alertService.js
 const prisma = require("../middleware/prisma");
 const AlertDTO = require("../models/alertModel");
 const axios = require("axios");
@@ -8,8 +8,8 @@ const { Temporal } = require('@js-temporal/polyfill');
 
 class AlertService {
   /**
-   * 🚀 Lógica de Envío por Prioridad (Telegram / Email)
-   * Recorre los canales en el orden recibido desde Flutter.
+   * 🚀 Priority Sending Logic (Telegram / Email)
+   * Goes through the channels in the order received from Flutter.
    */
   async dispatchExternalNotification(userId, content, channels) {
     if (!channels || !Array.isArray(channels)) return { sentVia: "none" };
@@ -20,7 +20,7 @@ class AlertService {
           const config = await integrationService.getTelegramConfig(userId);
           if (config && config.botToken && config.chatId) {
             await this._sendTelegram(config, content);
-            return { sentVia: "telegram" }; // Éxito: detenemos la cadena
+            return { sentVia: "telegram" }; // Success: stop the chain
           }
         }
 
@@ -28,23 +28,23 @@ class AlertService {
           const config = await integrationService.getResendConfig(userId);
           if (config && config.apiKey && config.fromEmail) {
             await this._sendEmail(config, content, userId);
-            return { sentVia: "email" }; // Éxito: detenemos la cadena
+            return { sentVia: "email" }; // Success: stop the chain
           }
         }
       } catch (error) {
-        console.error(`❌ Falló envío por ${channel}:`, error.message);
-        // El bucle continúa al siguiente canal si este falla
+        console.error(`❌ Failed to send via ${channel}:`, error.message);
+        // the loop continues to the next channel if this one fails
       }
     }
 
     return {
       sentVia: "none",
-      message: "No se pudo notificar por ningún canal configurado",
+      message: "Could not notify through any configured channel",
     };
   }
 
   /**
-   * Envío interno a Telegram
+   * Internal sending to Telegram
    */
   async _sendTelegram(config, { title, message, type }) {
     const icons = {
@@ -67,53 +67,73 @@ class AlertService {
   }
 
   /**
-   * Evalúa el stock de un item y genera una alerta si es necesario.
-   * @param {number} userId - ID del dueño del item.
-   * @param {Object} item - El objeto InventoryItem (debe tener name, quantity y minStock).
+   * Evaluates the stock of an item and generates an alert if necessary.
+   * @param {number} userId - Item owner's ID.
+   * @param {Object} item - InventoryItem object (must have name, quantity and minStock).
    */
   async checkAndNotifyLowStock(userId, item) {
     const minStock = item.minStock || 1;
 
-    // Lógica de evaluación
+    // Evaluation logic
     if (item.quantity < minStock) {
-      console.log(`[STOCK CHECK] Generando alerta para ${item.name}. Stock: ${item.quantity}`);
-      
+      console.log(`[STOCK CHECK] Generating alert for ${item.name}. Stock: ${item.quantity}`);
+
+      // Load i18n translations
+      const alertsI18n = require("../i18n/alerts.json");
+      // You may want to get the user's language from preferences or context; fallback to 'en'
+      const prefs = await prisma.userPreferences.findUnique({
+        where: { userId: parseInt(userId) },
+        select: { language: true },
+      });
+      const lang = prefs?.language || "en";
+      const stockLow = alertsI18n.stock_low[lang] || alertsI18n.stock_low["en"];
+
       return await this.createAlert(userId, {
-        title: "⚠️ Stock Bajo",
-        message: `"${item.name}" bajó a ${item.quantity} unidades (Mínimo: ${minStock}).`,
-        type: "warning", // Esto disparará la notificación externa automáticamente
+        title: stockLow.title,
+        message: stockLow.message
+          .replace("{name}", item.name)
+          .replace("{quantity}", item.quantity)
+          .replace("{minStock}", minStock),
+        type: "warning", // This will automatically trigger the external notification
         isEvent: false,
       });
     }
     
-    return null; // No hubo necesidad de alerta
+    return null; // No alert needed
   }
 
 
   /**
-   * Envío interno a Resend (Email)
+   * Internal sending via Resend (Email)
    */
   async _sendEmail(config, { title, message }, userId) {
     const resend = new Resend(config.apiKey);
 
-    // Obtenemos el email del usuario desde la DB para el 'To'
+    // we get the user's email from the DB for the 'to' field
     const user = await prisma.user.findUnique({
       where: { id: parseInt(userId) },
     });
-    if (!user || !user.email) throw new Error("Email de destino no encontrado");
+    // Load i18n translations
+    const alertsI18n = require("../i18n/alerts.json");
+    const prefs = await prisma.userPreferences.findUnique({
+      where: { id: parseInt(userId) },
+      select: { language: true },
+    });
+    const lang = prefs?.language || "en";
+    if (!user || !user.email) throw new Error(alertsI18n.email_not_found[lang] || alertsI18n.email_not_found["en"]);
 
     const { error } = await resend.emails.send({
       from: config.fromEmail,
       to: user.email,
       subject: `Invenicum: ${title}`,
-      html: `<h3>${title}</h3><p>${message}</p><p>---</p><p>Enviado automáticamente por Invenicum.</p>`,
+      html: `<h3>${title}</h3><p>${message}</p><p>---</p><p>Sent automatically by Invenicum.</p>`,
     });
 
     if (error) throw new Error(error.message);
   }
 
   /**
-   * Obtiene las alertas y las devuelve formateadas mediante el DTO
+   * Gets the alerts and returns them formatted via the DTO
    */
   async getAlerts(userId) {
     const alerts = await prisma.alert.findMany({
@@ -121,42 +141,61 @@ class AlertService {
       orderBy: { createdAt: "desc" },
     });
 
-    // Devolvemos la lista procesada por el DTO
+    // Load i18n translations
+    const alertsI18n = require("../i18n/alerts.json");
+    if (!alerts || alerts.length === 0) {
+      // Get user language
+      const prefs = await prisma.userPreferences.findUnique({
+        where: { userId: parseInt(userId) },
+        select: { language: true },
+      });
+      const lang = prefs?.language || "en";
+      return { message: alertsI18n.alert_list_empty[lang] || alertsI18n.alert_list_empty["en"] };
+    }
+    // Return the list processed by the DTO
     return AlertDTO.fromList(alerts);
   }
 
   /**
-   * Edita una alerta o evento validando los tipos de datos
+   * Edit an alert or event validating data types
    */
   async updateAlert(id, userId, data) {
     const updated = await prisma.alert.update({
       where: {
         id: parseInt(id),
-        userId: parseInt(userId), // Seguridad: solo el dueño puede editar
+        userId: parseInt(userId), // Security: only the owner can edit
       },
       data: {
         title: data.title,
         message: data.message,
         type: data.type,
         isEvent: data.isEvent,
-        // Convertimos el string que viene de Flutter a objeto Date para MySQL
+        // Convert the string coming from Flutter to a Date object for MySQL
         scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
         notifyAt: data.notifyAt ? new Date(data.notifyAt) : null,
       },
     });
 
-    // Retornamos los datos limpios a través del DTO
-    return new AlertDTO(updated).toJSON();
+    // Load i18n translations
+    const alertsI18n = require("../i18n/alerts.json");
+    const prefs = await prisma.userPreferences.findUnique({
+      where: { userId: parseInt(userId) },
+      select: { language: true },
+    });
+    const lang = prefs?.language || "en";
+    const dto = new AlertDTO(updated).toJSON();
+    dto.message = alertsI18n.alert_updated[lang] || alertsI18n.alert_updated["en"];
+    return dto;
   }
 
   /**
-   * Crea una alerta o evento validando los tipos de datos
+   * Create a alerta o evento validando the tipos de data
    */
   async createAlert(userId, data) {
     try {
       const userIdInt = parseInt(userId);
 
-      // 1. Persistencia en la Base de Datos
+      // 1. Persistence in the database
       const newAlert = await prisma.alert.create({
         data: {
           userId: userIdInt,
@@ -165,30 +204,30 @@ class AlertService {
           type: data.type || "info",
           isRead: !!data.isRead,
           isEvent: !!data.isEvent,
-          // Manejo de fechas para el Calendario
+          // Date handling for the calendar
           scheduledAt: data.scheduledAt ? new Date(data.scheduledAt) : null,
           notifyAt: data.notifyAt ? new Date(data.notifyAt) : null,
         },
       });
 
-      // 2. 🚀 Lógica de Notificación Externa Automática
-      // Solo disparamos Telegram/Email si NO es un evento silencioso
-      // o si es una alerta crítica (warning/error/stock_low)
+      // 2. Automatic External Notification Logic
+      // We only trigger Telegram/Email if it's not a silent event
+      // or if it's a critical alert (warning/error/stock_low)
       const tiposCriticos = ["warning", "error", "stock_low", "critical"];
 
       if (tiposCriticos.includes(newAlert.type) || !newAlert.isEvent) {
-        // Buscamos las preferencias del usuario en tiempo real
+        // we fetch the user's preferences in real time
         const prefs = await prisma.userPreferences.findUnique({
           where: { userId: userIdInt },
           select: { channelOrder: true },
         });
 
-        // Convertimos el String "telegram,email" en Array
+        // Convert the string "telegram,email" into an array
         const priorityChannels = prefs?.channelOrder
           ? prefs.channelOrder.split(",")
-          : ["email"]; // Fallback de seguridad
+          : ["email"]; // Fallback
 
-        // Disparamos el dispatch (sin await para no bloquear la respuesta de la API)
+        // Trigger the dispatch (without await to avoid blocking the API response)
         this.dispatchExternalNotification(
           userIdInt,
           { title: newAlert.title, message: newAlert.message },
@@ -196,8 +235,16 @@ class AlertService {
         ).catch((err) => console.error("[ALERT DISPATCH ERROR]:", err));
       }
 
-      // 3. Retornamos el objeto para la App (Calendario/Lista)
-      return new AlertDTO(newAlert).toJSON();
+      // 3. Return the object for the App (Calendar/List)
+      const alertsI18n = require("../i18n/alerts.json");
+      const prefs = await prisma.userPreferences.findUnique({
+        where: { userId: userIdInt },
+        select: { language: true },
+      });
+      const lang = prefs?.language || "en";
+      const dto = new AlertDTO(newAlert).toJSON();
+      dto.message = alertsI18n.alert_created[lang] || alertsI18n.alert_created["en"];
+      return dto;
     } catch (error) {
       console.error("[ALERT SERVICE ERROR]:", error.message);
       throw error;
@@ -205,7 +252,7 @@ class AlertService {
   }
 
   async markAsRead(id, userId) {
-    // Usamos updateMany para asegurar que la alerta pertenece al usuario
+    // Use updateMany to ensure the alert belongs to the user
     const result = await prisma.alert.updateMany({
       where: {
         id: parseInt(id),
@@ -213,17 +260,32 @@ class AlertService {
       },
       data: { isRead: true },
     });
-    return result;
+    // Load i18n translations
+    const alertsI18n = require("../i18n/alerts.json");
+    const prefs = await prisma.userPreferences.findUnique({
+      where: { userId: parseInt(userId) },
+      select: { language: true },
+    });
+    const lang = prefs?.language || "en";
+    return { ...result, message: alertsI18n.alert_updated[lang] || alertsI18n.alert_updated["en"] };
   }
 
   async deleteAlert(id, userId) {
-    // Primero verificamos existencia para evitar error 404 de Prisma si no existe
-    return await prisma.alert.delete({
+    // First verify existence to avoid a Prisma 404 if it doesn't exist
+    const deleted = await prisma.alert.delete({
       where: {
         id: parseInt(id),
         userId: parseInt(userId),
       },
     });
+    // Load i18n translations
+    const alertsI18n = require("../i18n/alerts.json");
+    const prefs = await prisma.userPreferences.findUnique({
+      where: { userId: parseInt(userId) },
+      select: { language: true },
+    });
+    const lang = prefs?.language || "en";
+    return { ...deleted, message: alertsI18n.alert_deleted[lang] || alertsI18n.alert_deleted["en"] };
   }
 }
 

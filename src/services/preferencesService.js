@@ -1,10 +1,10 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
 const currencyService = require("../services/currencyService");
 
 class PreferencesService {
   /**
-   * Obtiene las preferencias del usuario y las devuelve formateadas por el DTO
+   * Gets the user's preferences and returns them formatted by the DTO
    */
   async getPreferences(userId) {
     try {
@@ -12,31 +12,31 @@ class PreferencesService {
         where: { userId: parseInt(userId) },
       });
 
-      // 1. Obtenemos las preferencias limpias del DTO
+      // 1. Get the clean preferences from the DTO
       const prefsData = new UserPreferencesDTO(preferences).toJSON();
 
-      // 2. Obtenemos los tipos de cambio actuales
+      // 2. Get the current exchange rates
       const rates = await currencyService.getLatestRates();
 
-      // 3. Devolvemos todo junto
+      // 3. Return everything together
       return {
         ...prefsData,
-        exchangeRates: rates, // Flutter usará esto para multiplicar los marketValue
+        exchangeRates: rates, // Flutter will use this to multiply the marketValue
       };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
-      throw new Error("Error al obtener las preferencias");
+      throw new Error("Error getting preferences");
     }
   }
 
   /**
-   * Método unificado para actualizar cualquier preferencia (idioma, IA, etc.)
+   * Unified method to update any preference (language, AI, etc.)
    */
   async updatePreferences(userId, data) {
     try {
       const userIdInt = parseInt(userId);
 
-      // El DTO nos filtra solo lo que es válido para Prisma
+      // The DTO filters only what is valid for Prisma
       const dataToUpdate = UserPreferencesDTO.toPrismaData(data);
 
       const updated = await prisma.userPreferences.upsert({
@@ -44,7 +44,7 @@ class PreferencesService {
         update: dataToUpdate,
         create: {
           userId: userIdInt,
-          ...dataToUpdate, // Prisma usará los valores enviados o los defaults del schema
+          ...dataToUpdate, // Prisma will use the sent values or the schema defaults
         },
       });
 
@@ -56,13 +56,13 @@ class PreferencesService {
       console.error("[PREFERENCES SERVICE - UPDATE]:", error.message);
       return {
         success: false,
-        message: "No se pudieron actualizar las preferencias",
+        message: "Preferences could not be updated",
       };
     }
   }
 
   /**
-   * Métodos específicos si prefieres mantener llamadas atómicas desde el controlador
+   * Specific methods if you prefer to keep atomic calls from the controller
    */
   async updateLanguage(userId, languageCode) {
     return this.updatePreferences(userId, { language: languageCode });
@@ -88,13 +88,13 @@ class PreferencesService {
         userId: userId,
       },
       orderBy: {
-        id: "desc", // Los más nuevos primero
+        id: "desc",
       },
     });
   }
 
   /**
-   * 🔔 NUEVO: Actualiza las notificaciones (los 6 switches o el reorden de canales)
+   * 🔔 new: updates the notifications (the 6 switches or the reorder of channels)
    */
   async updateNotificationSettings(userId, notificationData) {
     return this.updatePreferences(userId, notificationData);
@@ -102,7 +102,7 @@ class PreferencesService {
 
   async updateThemePreference(userId, themeData) {
     const { themeColor, themeBrightness } = themeData;
-    // Usa upsert para crear el registro si no existe o actualizarlo si ya existe
+    // Use upsert to create the record if it doesn't exist or update it if it does
     return await prisma.userThemeConfig.upsert({
       where: { userId: userId },
       update: { themeColor, themeBrightness },
@@ -123,7 +123,7 @@ class PreferencesService {
 
   async deleteCustomTheme(userId, themeId) {
     try {
-      // Buscamos el tema asegurándonos de que pertenezca al usuario
+      // we search the theme ensuring it belongs to the user
       const theme = await prisma.customTheme.findFirst({
         where: {
           id: themeId,
@@ -134,7 +134,7 @@ class PreferencesService {
       if (!theme) {
         return {
           success: false,
-          message: "Tema no encontrado o no autorizado",
+          message: "Theme not found or not authorized to delete",
         };
       }
 
@@ -142,9 +142,9 @@ class PreferencesService {
         where: { id: themeId },
       });
 
-      return { success: true, message: "Tema eliminado correctamente" };
+      return { success: true, message: "Theme deleted successfully" };
     } catch (error) {
-      throw new Error("Error al eliminar tema: " + error.message);
+      throw new Error("Error deleting theme: " + error.message);
     }
   }
 }

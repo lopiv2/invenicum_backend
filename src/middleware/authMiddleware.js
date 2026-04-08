@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+﻿const jwt = require('jsonwebtoken');
 
 const verifyToken = (req, res, next) => {
     try {
@@ -12,14 +12,14 @@ const verifyToken = (req, res, next) => {
             });
         }
 
-        // Extraer el token (eliminar 'Bearer ' del inicio)
+        // Extraer the token (delete 'Bearer ' del inicio)
         const token = bearerHeader.split(' ')[1];
         //console.log("Token recibido:", token);
 
-        // Verificar el token
+        // Verify the token
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'tu-secret-key-temporal');
 
-        // Guardar la información del usuario en req.user
+        // Guardar the información del Use en req.Use
         req.user = {
             id: decoded.userId, // Usamos userId que es como lo guardamos en userService.js
             email: decoded.email,

@@ -1,8 +1,8 @@
-const path = require('path');
-// 1. CARGAR ENTORNO
+﻿const path = require('path');
+// 1. CARGAR environment
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
-// IMPORTANTE: Importamos el prisma que tiene la extensión configurada
+// Important: Import the prisma que tiene the extensión configurada
 const prisma = require("../../src/middleware/prisma");
 const IntegrationDTO = require('../../src/models/integrationModel');
 
@@ -20,8 +20,8 @@ async function runIntegrationTest() {
         // --- PASO 1: GUARDADO ---
         console.log("💾 Paso 1: Guardando datos (Prisma debería cifrar automáticamente)...");
         
-        // Enviamos el JSON como string. La extensión en prisma.js detectará 
-        // config.data y aplicará encrypt() antes de tocar la MariaDB.
+        // Enviamos the JSON como string. the extensión en prisma.js detectará 
+        // config.data and aplicará encrypt() antes de tocar the MariaDB.
         const savedData = await prisma.userIntegration.upsert({
             where: {
                 userId_type: { userId: TEST_USER_ID, type: TEST_TYPE }
@@ -50,14 +50,14 @@ async function runIntegrationTest() {
         }
 
         // --- PASO 3: VALIDACIÓN DE DESCIFRADO ---
-        // Si la extensión funciona, record.config.data YA ES el JSON original, no el hash.
+        // if the extensión funciona, record.config.data YA ES the JSON original, no the hash.
         console.log("🔓 Paso 3: Verificando datos descifrados por la extensión...");
         const finalConfig = JSON.parse(record.config.data);
         console.log("   [OK] Datos recuperados:", finalConfig);
 
         // --- PASO 4: MAPEADO A DTO ---
         console.log("📦 Paso 4: Mapeando a IntegrationDTO...");
-        // Reasignamos para que el DTO reciba el objeto parseado
+        // Reasignamos so that the DTO reciba the objeto parseado
         record.config = finalConfig; 
         const dto = new IntegrationDTO(record);
         

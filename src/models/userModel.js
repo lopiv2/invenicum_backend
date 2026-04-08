@@ -1,4 +1,4 @@
-const { Temporal } = require("@js-temporal/polyfill");
+﻿const { Temporal } = require("@js-temporal/polyfill");
 
 class UserDTO {
   constructor(prismaUser) {
@@ -14,23 +14,23 @@ class UserDTO {
 
     if (rawDate) {
       try {
-        // 1. Convertimos CUALQUIER cosa (String o Date) a un String ISO
-        // Esto es lo más seguro para que Temporal lo entienda siempre.
+        // 1. Convertimos CUALQUIER cosa (String o Date) a a String ISO
+        // Esto es lo más seguro so that Temporal lo entienda siempre.
         const isoString =
           rawDate instanceof Date
             ? rawDate.toISOString()
             : new Date(rawDate).toISOString();
 
-        // 2. Creamos el instante desde el string (esto no falla nunca)
+        // 2. Create the instante from the string (esto no fails nunca)
         const linkedInstant = Temporal.Instant.from(isoString);
 
         const now = Temporal.Now.instant();
         const thirtyDays = Temporal.Duration.from({ days: 30 });
 
-        // 3. Calculamos el límite y comparamos
+        // 3. Calculamos the límite and comparamos
         const expiryLimit = linkedInstant.add(thirtyDays);
 
-        // Si el resultado es < 0, significa que 'now' es ANTERIOR al límite (Válido)
+        // if the resultado es < 0, significa que 'now' es ANTERIOR al límite (Válido)
         isGithubValid = Temporal.Instant.compare(now, expiryLimit) < 0;
       } catch (e) {
         console.error("[DTO DATE ERROR]: Error procesando fecha GitHub", e);
@@ -41,7 +41,7 @@ class UserDTO {
     this.githubHandle = prismaUser.githubHandle || null;
     this.avatarUrl = prismaUser.avatarUrl || null;
 
-    // Nos aseguramos de enviar un string ISO a Flutter
+    // Nos Ensure de enviar a string ISO a Flutter
     this.githubLinkedAt = rawDate
       ? typeof rawDate === "string"
         ? rawDate
@@ -50,7 +50,7 @@ class UserDTO {
 
     this.isGithubVerified = Boolean(isGithubValid);
 
-    // --- CONFIGURACIONES (con Number() para evitar líos) ---
+    // --- CONFIGURACIONES (with Number() for evitar líos) ---
     this.themeConfig = prismaUser.themeConfig
       ? {
           id: Number(prismaUser.themeConfig.id),

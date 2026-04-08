@@ -1,4 +1,4 @@
-const FieldDefinitionDTO = require('./fieldDefinitionModel');
+﻿const FieldDefinitionDTO = require('./fieldDefinitionModel');
 const { Temporal } = require('@js-temporal/polyfill');
 
 class AssetTemplateDTO {
@@ -32,7 +32,7 @@ class AssetTemplateDTO {
   }
 
   /**
-   * Solo exportamos las llaves en camelCase para Flutter
+   * only exportamos the llaves en camelCase for Flutter
    */
   toJSON() {
     return {

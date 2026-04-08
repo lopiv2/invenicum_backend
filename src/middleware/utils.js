@@ -1,11 +1,11 @@
-const axios = require("axios");
+﻿const axios = require("axios");
 
 /**
- * Escanea recursivamente un objeto JSON en busca del primer valor numérico
- * que corresponda a un campo de precio conocido.
+ * Escanea recursivamente a objeto JSON en searches del first valor numérico
+ * que corresponda a a campo de precio conocido.
  * Estrategia en dos pasadas:
- *   1ª) Busca claves de precio fiable (marketPrice, marketValue) a cualquier profundidad.
- *   2ª) Si no encontró nada, busca tendencias/medias (trend, avg…) como fallback.
+ *   1ª) searches claves de precio fiable (marketPrice, marketValue) a cualquier profundidad.
+ *   2ª) if no encontró nada, searches tendencias/medias (trend, avg…) como fallback.
  * Esto evita que `cardmarket.trend` tape a `tcgplayer.normal.marketPrice`.
  * @param {object} data
  * @returns {number|null}
@@ -68,11 +68,11 @@ async function getBase64FromUrl(imageUrl) {
 }
 
 /**
- * Genera el Prompt Universal optimizado para Mapeo y Enriquecimiento
- * @param {string} contextHint - Contexto de la fuente (ej: "un Pokémon")
- * @param {string} rawData - El JSON bruto de la API
+ * Genera the Prompt Universal optimizado for Mapping and Enriquecimiento
+ * @param {string} contextHint - Contexto de the fuente (ej: "a Pokémon")
+ * @param {string} rawData - the JSON bruto de the API
  * @param {string} locale - Código de idioma (es, en, etc.)
- * @param {boolean} isNewStructure - Si es true, pide a la IA que genere las reglas de mapeo
+ * @param {boolean} isNewStructure - if es true, pide a the IA que genere the reglas de Mapping
  */
 function generateUniversalPrompt(
   contextHint,
@@ -90,7 +90,7 @@ function generateUniversalPrompt(
   };
   const targetLanguage = languageMap[locale] || "Español";
 
-  // Si ya tenemos el mapeo, el prompt es mucho más corto y barato (ahorro de tokens)
+  // if ya tenemos the Mapping, the prompt es mucho más corto and barato (ahorro de tokens)
   if (!isNewStructure) {
     return `
       Actúa como un Redactor Creativo. 
@@ -114,7 +114,7 @@ function generateUniversalPrompt(
     `;
   }
 
-  // Si la estructura es NUEVA, pedimos el "Mapeo de ADN" de la API
+  // if the estructura es new, pedimos the "Mapping de ADN" de the API
   return `
     Actúa como un Analista de Datos y Especialista en APIs. 
     Tu tarea es analizar un volcado de datos de ${contextHint} y crear un mapeo permanente.

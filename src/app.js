@@ -1,11 +1,11 @@
-// app.js
+﻿// app.js
 
-// Importa el módulo Express
+// Import the module Express
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
-require("dotenv").config(); // Asegúrate de cargar las variables
+require("dotenv").config(); // Asegura que las variables de entorno se carguen
 const { Temporal } = require('@js-temporal/polyfill');
 const { AppConstants } = require("./config/appConstants");
 const authRoutes = require("./routes/authRoutes");
@@ -32,7 +32,7 @@ const appRoutes = require("./routes/appRoutes");
 
 
 
-// Crea una instancia de la aplicación Express
+// Create a instancia de the application Express
 const app = express();
 
 // ----------------------------------------------------
@@ -47,15 +47,15 @@ app.use(
   }),
 );
 
-// 🔑 Aumenta el límite para soportar Base64 de la IA
+// Increase the limit for soportar payloads Base64 de IA
 app.use(express.json({ limit: '10mb' })); 
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// 🔑 CONSTANTES DE ENTORNO
+// Environment constants
 const STATIC_URL_PREFIX = AppConstants.STATIC_URL_PREFIX;
-// 🔑 CAMBIO 1: UPLOAD_FOLDER debe ser la base (uploads/inventory)
+// Change 1: UPLOAD_FOLDER must ser the base path (uploads/inventory)
 const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
-// Definimos las subrutas dentro de esa base, usando las variables de ENV si las tuvieras:
+// Define subpaths bajo esa base using variables de environment when existan:
 const ASSET_TYPES_SUBDIR = AppConstants.UPLOAD_FOLDER_ASSET_TYPES_SUBDIR;
 
 const API_VERSION = AppConstants.API_VERSION;
@@ -65,18 +65,18 @@ const WEB_INDEX_FILE = path.join(WEB_BUILD_DIR, "index.html");
 const HAS_WEB_BUILD = fs.existsSync(WEB_INDEX_FILE);
 
 // ----------------------------------------------------
-// 2. CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS Y DIRECTORIOS
+// 2. configuration DE ARCHIVOS ESTATICOS and DIRECTORIOS
 // ----------------------------------------------------
 
-// Usamos path.resolve(process.cwd(), ...) en lugar de path.join(__dirname, ...)
-// para que app.js y upload.js usen EXACTAMENTE la misma ruta base.
-// upload.js ya usa process.cwd() al guardar — si app.js usara __dirname y el
-// servidor se arranca desde un directorio distinto al del proyecto, los archivos
-// se guardarían en un sitio y Express los serviría desde otro → Cannot GET.
+// Use path.resolve(process.cwd(), ...) en lugar de path.join(__dirname, ...)
+// so that app.js and upload.js usen EXACTAMENTE the misma base path.
+// upload.js ya Use process.cwd() al guardar. if app.js used __dirname and
+// the server inicia from a directorio distinto a the raiz del proyecto,
+// the archivos se guardarian en a lugar and Express the serviria from otro -> Cannot GET.
 const UPLOAD_DIR_TO_SERVE = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER);
 const ASSET_TYPES_DIR = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER, ASSET_TYPES_SUBDIR);
 
-// Asegurar que los directorios existan al arrancar
+// Ensure que the directorios existan al iniciar
 [UPLOAD_DIR_TO_SERVE, ASSET_TYPES_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -84,9 +84,9 @@ const ASSET_TYPES_DIR = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER, ASSET_TY
   }
 });
 
-// Mapeo: GET /images/asset-types/file.png → disco: uploads/inventory/asset-types/file.png
+// Mapping: GET /images/asset-types/file.png -> disk: uploads/inventory/asset-types/file.png
 app.use(STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
-console.log(`[Static] Sirviendo ${STATIC_URL_PREFIX} → ${UPLOAD_DIR_TO_SERVE}`);
+console.log(`[Static] Serving ${STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`);
 
 if (HAS_WEB_BUILD) {
   app.use(express.static(WEB_BUILD_DIR));
@@ -94,10 +94,10 @@ if (HAS_WEB_BUILD) {
 }
 
 // ----------------------------------------------------
-// 3. RUTAS
+// 3. ROUTES
 // ----------------------------------------------------
 
-// Ruta raíz
+// Root route
 app.get("/", (req, res) => {
   if (HAS_WEB_BUILD) {
     return res.sendFile(WEB_INDEX_FILE);
@@ -106,19 +106,19 @@ app.get("/", (req, res) => {
   res.send(`
 <h1>API de Invenicum</h1>
 ...
-<p>Versión: ${API_VERSION}</p>
-<p>Archivos Estáticos Servidos en: ${STATIC_URL_PREFIX}</p>
-  <p>Ruta física servida: ${UPLOAD_DIR_TO_SERVE}</p>
+<p>Version: ${API_VERSION}</p>
+<p>Static Files Served At: ${STATIC_URL_PREFIX}</p>
+  <p>Served physical path: ${UPLOAD_DIR_TO_SERVE}</p>
 <p>Timestamp: ${Temporal.Now.plainDateISO().toString()}</p>
 `);
 });
 
-// Usar las rutas con la versión de API
+// Use the ROUTES with the API version
 const API_BASE_PATH = "/api/" + API_VERSION;
 app.use((req, res, next) => {
   console.log(`[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`);
   console.log(
-    `Auth Header: ${req.headers.authorization ? "Presente" : "AUSENTE"}`,
+    `Auth Header: ${req.headers.authorization ? "Present" : "MISSING"}`,
   );
   next();
 });
@@ -155,14 +155,14 @@ if (HAS_WEB_BUILD) {
 }
 
 // ----------------------------------------------------
-// 4. INICIAR EL SERVIDOR
+// 4. START THE SERVER
 // ----------------------------------------------------
 
-// Inicia el servidor
+// Start the server
 app.listen(port, () => {
-  console.log(`La aplicación está corriendo en http://localhost:${port}`);
+  console.log(`The application is running at http://localhost:${port}`);
   console.log(`API Base Path: http://localhost:${port}${API_BASE_PATH}`);
   console.log(
-    `Imágenes Estáticas en: http://localhost:${port}${STATIC_URL_PREFIX}`,
+    `Static images at: http://localhost:${port}${STATIC_URL_PREFIX}`,
   );
 });

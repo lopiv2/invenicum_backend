@@ -1,12 +1,12 @@
-// services/adapters/claudeAdapter.js
-// Requiere: npm install @anthropic-ai/sdk
+﻿// services/adapters/claudeAdapter.js
+// Requires: npm install @anthropic-ai/sdk
 const Anthropic = require("@anthropic-ai/sdk");
 const integrationService = require("../services/integrationsService");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
 
 /**
- * Devuelve un cliente Claude listo para usar.
- * Lee la API key de las integraciones del usuario (type = "claude").
+ * Returns a Claude client ready to use.
+ * Reads the API key from the user's integrations (type = "claude").
  */
 async function getClaudeClient(userId, preferredModel) {
   const claudeData = await integrationService.getClaudeApiKey(userId);
@@ -23,20 +23,20 @@ async function getClaudeClient(userId, preferredModel) {
 }
 
 /**
- * Convierte las tool definitions del formato MCP al formato de Claude.
- * Claude usa el mismo esquema JSON que Gemini para los parámetros,
- * pero la estructura del objeto es ligeramente diferente.
+ * Converts tool definitions from MCP format to Claude format.
+ * Claude uses the same JSON schema as Gemini for parameters,
+ * but the object structure is slightly different.
  */
 function adaptToolDefinitions(toolDefinitions) {
   return toolDefinitions.map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: t.parameters, // Claude usa input_schema en lugar de parameters
+    input_schema: t.parameters, // Claude uses input_schema instead of parameters
   }));
 }
 
 /**
- * Ejecuta el agentic loop con Claude usando tool use.
+ * Runs the agentic loop with Claude using tool calls.
  */
 async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, systemPrompt, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
@@ -50,7 +50,7 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
     const response = await client.messages.create({
       model,
       max_tokens: 4096,
-      system: systemPrompt, // Claude separa el system del array de mensajes
+      system: systemPrompt, // Claude keeps the system prompt separate from the messages array
       messages,
       tools,
       ...(forceToolName
@@ -58,19 +58,19 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
         : {}),
     });
 
-    // Añadimos la respuesta al historial
+    // Add the response to the conversation history
     messages.push({ role: "assistant", content: response.content });
 
     const toolUseBlocks = response.content.filter((b) => b.type === "tool_use");
 
     if (toolUseBlocks.length === 0 || response.stop_reason === "end_turn") {
-      // Respuesta final de texto
+      // Final text response
       const textBlock = response.content.find((b) => b.type === "text");
       finalAnswer = strictToolMode ? null : textBlock?.text ?? "He completado la acción.";
       break;
     }
 
-    // Ejecutar tools y devolver resultados
+    // Execute tools and push their results
     const toolResults = [];
     let shouldBreak = false;
     for (const block of toolUseBlocks) {
@@ -99,11 +99,11 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
 }
 
 /**
- * Formato de mensajes inicial para Claude.
- * Claude separa el system prompt del array de mensajes.
+ * Initial message format for Claude.
+ * Claude separates the system prompt from the messages array.
  */
 function buildInitialMessages(systemPrompt, userInput) {
-  // Devolvemos el system por separado para que runAgenticLoop lo use
+  // Return the system prompt separately so runAgenticLoop can use it
   return {
     messages: [{ role: "user", content: userInput }],
     systemPrompt,

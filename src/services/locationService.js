@@ -1,16 +1,16 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 
-// Inclusión base: Opcionalmente puedes cargar los hijos si el frontend lo requiere para la vista de árbol.
+// Base inclusion: Optionally you can load children if the frontend requires it for the tree view.
 const LOCATION_INCLUDE = {
-  // children: true, // Descomentar si necesitas cargar hijos en las listas principales
+  // children: true, // Descomentar if necesitas cargar hijos en the listas principales
 };
 
 class LocationService {
   /**
-   * Crea una nueva ubicación.
-   * La propiedad (userId) se verifica a través del containerId.
-   * @param {number} userId - ID del usuario propietario (para verificación de seguridad).
-   * @param {object} data - Datos de la ubicación ({container_id, name, description, parent_id}).
+   * Create a new location.
+   * The property (userId) is verified through the containerId.
+   * @param {number} userId - Owner user ID (for security check).
+   * @param {object} data - Location data ({container_id, name, description, parent_id}).
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async createLocation(userId, data) {
@@ -21,7 +21,7 @@ class LocationService {
         );
       }
 
-      // 1. Verificar si el contenedor existe y pertenece al usuario (Seguridad)
+      // 1. Verify if the container exists and belongs to the user (security)
       const container = await prisma.container.findFirst({
         where: {
           id: parseInt(data.container_id),
@@ -32,17 +32,17 @@ class LocationService {
       if (!container) {
         return {
           success: false,
-          message: "Contenedor no encontrado o acceso denegado.",
+          message: "Container not found or access denied.",
         };
       }
 
-      // 2. Crear la ubicación
+      // 2. Create the location
       const location = await prisma.location.create({
         data: {
           name: data.name,
           description: data.description || "",
           containerId: parseInt(data.container_id),
-          // Usamos 'parentId' (mapeado a 'parent_id' en la DB)
+          // Use 'parentId' (mapped to 'parent_id' in the DB)
           parentId: data.parent_id ? parseInt(data.parent_id) : null,
         },
         include: LOCATION_INCLUDE,
@@ -56,30 +56,30 @@ class LocationService {
     } catch (error) {
       console.error("Error al crear ubicación:", error);
       
-      // Manejo específico si el parentId no existe (Foreign Key constraint)
+      // Specific handling if parentId does not exist (Foreign Key constraint)
       if (error.code === "P2003" && error.meta?.field_name.includes("parentId")) {
         return {
           success: false,
-          message: "El ID de la ubicación padre no es válido.",
+          message: "The parent location ID is not valid.",
         };
       }
       
       return {
         success: false,
-        message: error.message || "Error al crear la ubicación",
+        message: error.message || "Error creating location",
       };
     }
   }
 
   /**
-   * Obtiene todas las ubicaciones de un contenedor específico.
-   * @param {number} containerId - ID del contenedor.
-   * @param {number} userId - ID del usuario propietario.
+   * Gets all locations of a specific container.
+   * @param {number} containerId - Container ID.
+   * @param {number} userId - Owner user ID.
    * @returns {Promise<{success: boolean, message?: string, data?: object[]}>}
    */
   async getLocations(containerId, userId) {
     try {
-      // 1. Verificar la propiedad del contenedor es suficiente para la seguridad
+      // 1. Verify the propiedad del container es suficiente for the security
       const container = await prisma.container.findFirst({
         where: {
           id: parseInt(containerId),
@@ -94,13 +94,13 @@ class LocationService {
         };
       }
 
-      // 2. Obtener las ubicaciones
+      // 2. get the locations
       const locations = await prisma.location.findMany({
         where: {
           containerId: parseInt(containerId),
         },
         include: LOCATION_INCLUDE,
-        // Opcional: Ordenar para facilitar la construcción del árbol en el frontend
+        // Optional: Sort to ease building the tree in the frontend
         orderBy: [{ parentId: 'asc' }, { name: 'asc' }],
       });
 
@@ -118,9 +118,9 @@ class LocationService {
   }
 
   /**
-   * Obtiene una ubicación específica por ID, verificando la propiedad a través del contenedor.
-   * @param {number} id - ID de la ubicación.
-   * @param {number} userId - ID del usuario propietario.
+   * gets a location específica por ID, verificando the propiedad a través del container.
+   * @param {number} id - ID de the location.
+   * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async getLocationById(id, userId) {
@@ -128,7 +128,7 @@ class LocationService {
       const location = await prisma.location.findFirst({
         where: {
           id: parseInt(id),
-          // Filtro de seguridad: el contenedor debe pertenecer al usuario
+          // Security filter: the container must belong to the user
           container: {
             userId: parseInt(userId),
           },
@@ -157,10 +157,10 @@ class LocationService {
   }
 
   /**
-   * Actualiza una ubicación específica por ID.
-   * @param {number} id - ID de la ubicación a actualizar.
-   * @param {number} userId - ID del usuario propietario.
-   * @param {object} data - Datos para actualizar ({name, description, parent_id}).
+   * updates a location específica por ID.
+   * @param {number} id - ID de the location a update.
+   * @param {number} userId - ID del Use propietario.
+   * @param {object} data - data for update ({name, description, parent_id}).
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async updateLocation(id, userId, data) {
@@ -187,7 +187,7 @@ class LocationService {
       const location = await prisma.location.update({
         where: {
           id: parseInt(id),
-          // Filtro de seguridad: solo actualiza si el contenedor es del usuario
+          // Security filter: only update if the container belongs to the user
           container: {
             userId: parseInt(userId), 
           },
@@ -225,14 +225,14 @@ class LocationService {
   }
 
   /**
-   * Elimina una ubicación específica por ID.
-   * @param {number} id - ID de la ubicación a eliminar.
-   * @param {number} userId - ID del usuario propietario.
+   * deletes a location específica por ID.
+   * @param {number} id - ID de the location a delete.
+   * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string}>}
    */
   async deleteLocation(id, userId) {
     try {
-      // 1. Usar deleteMany para verificar la propiedad en el WHERE
+      // 1. use deleteMany to verify ownership in the WHERE clause
       const result = await prisma.location.deleteMany({
         where: {
           id: parseInt(id),
@@ -256,11 +256,11 @@ class LocationService {
     } catch (error) {
       console.error("Error al eliminar ubicación:", error);
       
-      // P2003 puede ocurrir si la ubicación tiene ítems o hijos (si no hay onDelete:Cascade en la jerarquía)
+      // P2003 puede ocurrir if the location tiene ítems o hijos (if no hay onDelete:Cascade en the jerarquía)
       if (error.code === "P2003") {
          return {
           success: false,
-          message: "No se puede eliminar la ubicación porque aún contiene activos del inventario o ubicaciones hijas.",
+          message: "Location cannot be deleted because it still contains inventory items or child locations.",
         };
       }
 

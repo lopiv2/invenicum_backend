@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 const { PrismaClient } = require("@prisma/client");
 const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
 const { Temporal } = require("@js-temporal/polyfill");
@@ -12,7 +12,7 @@ const adapter = new PrismaMariaDb(
     database: process.env.DB_NAME,
     connectionLimit: 10,
     connectTimeout: 5000,
-    // Necesario cuando MySQL usa caching_sha2_password sin TLS.
+    // Necesario when MySQL Use caching_sha2_password without TLS.
     allowPublicKeyRetrieval: true,
   },
   {
@@ -41,7 +41,7 @@ const prisma = basePrisma.$extends({
           return safeTemporal(a.scheduledAt);
         },
       },
-      // Añadimos notifyAt que también lo usas en el DTO
+      // Añadimos notifyAt que también lo Uses en the DTO
       notifyAtTemporal: {
         needs: { notifyAt: true },
         compute(a) {
@@ -62,7 +62,7 @@ const prisma = basePrisma.$extends({
           return safeTemporal(l.expectedReturnDate);
         },
       },
-      // ✅ Añadido: actualReturnDate para cerrar el ciclo del préstamo
+      // ✅ Añadido: actualReturnDate for cerrar the ciclo del loan
       actualReturnTemporal: {
         needs: { actualReturnDate: true },
         compute(l) {
@@ -82,12 +82,12 @@ const prisma = basePrisma.$extends({
 });
 
 /**
- * Función auxiliar para convertir Date/String a Temporal.Instant de forma segura
+ * Función auxiliar for convertir Date/String a Temporal.Instant de forma segura
  */
 function safeTemporal(dateValue) {
   if (!dateValue) return null;
   try {
-    // Si ya es Date, usamos ISO. Si es string, Temporal.from lo entiende.
+    // if ya es Date, Use ISO. if es string, Temporal.from lo entiende.
     const iso =
       dateValue instanceof Date
         ? dateValue.toISOString()

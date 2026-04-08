@@ -1,11 +1,11 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const containerService = require("../services/containerService");
 const inventoryItemService = require("../services/inventoryItemService");
 const { Temporal } = require('@js-temporal/polyfill');
 
-// Middleware para logging
+// Middleware for logging
 router.use((req, res, next) => {
   const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
@@ -16,25 +16,24 @@ router.use((req, res, next) => {
   next();
 });
 
-// Rutas para contenedores
+// ROUTES for containers
 router.get("/containers", verifyToken, async (req, res) => {
   try {
-    // Verificamos que tenemos el ID del usuario
+    // We verify that the user is authenticated and we have their ID
     if (!req.user || !req.user.id) {
-      console.log("Datos del usuario en el request:", req.user);
       return res.status(401).json({
         success: false,
-        message: "Usuario no autenticado correctamente",
+        message: "User not authenticated correctly",
       });
     }
 
     const containersResult = await containerService.getContainers(req.user.id);
     res.json(containersResult);
   } catch (error) {
-    console.error("Error completo al obtener contenedores:", error);
+    console.error("Error getting containers:", error);
     res.status(500).json({
       success: false,
-      message: "Error al obtener los contenedores",
+      message: "Error getting containers",
       error: error.message,
     });
   }
@@ -49,7 +48,7 @@ router.patch("/containers/:id", verifyToken, async (req, res) => {
   if (!req.user || !req.user.id) {
     return res.status(401).json({
       success: false,
-      message: "Usuario no autenticado correctamente",
+      message: "User not authenticated correctly",
     });
   }
 
@@ -57,7 +56,7 @@ router.patch("/containers/:id", verifyToken, async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        'Se requiere al menos el campo "name" o "description" para actualizar.',
+        'At least the "name" or "description" field is required to update.',
     });
   }
 
@@ -68,25 +67,25 @@ router.patch("/containers/:id", verifyToken, async (req, res) => {
       updateData,
     );
 
-    // Asumimos que el service devuelve { success: true, data: container }
+    // We assume that the service returns { success: true, data: container }
     if (result.success) {
-      // 200 OK y devuelve el objeto actualizado.
+      // 200 OK and returns the updated object.
       res.status(200).json(result);
     } else {
-      // El servicio devolvió success: false (ej: Contenedor no encontrado)
+      // The service returned success: false (e.g., container not found or not belonging to the user).  
       res.status(404).json(result);
     }
   } catch (error) {
-    console.error(`Error al actualizar contenedor ${containerId}:`, error);
+    console.error(`Error updating container ${containerId}:`, error);
     res.status(500).json({
       success: false,
-      message: "Error al renombrar el contenedor",
+      message: "Error updating container",
       error: error.message,
     });
   }
 });
 
-// Búsqueda global de activos
+// Global asset search
 router.get("/search/assets", verifyToken, async (req, res) => {
   try {
     const query = req.query.q;
@@ -99,7 +98,7 @@ router.get("/search/assets", verifyToken, async (req, res) => {
     const result = await containerService.searchAssets(req.user.id, query);
 
     if (result.success) {
-      res.json(result); // El helper _extractData en Flutter buscará result.data
+      res.json(result); // The helper _extractData in Flutter will look for result.data
     } else {
       res.status(500).json(result);
     }
@@ -110,19 +109,19 @@ router.get("/search/assets", verifyToken, async (req, res) => {
 
 router.post("/containers", verifyToken, async (req, res) => {
   try {
-    // Verificamos que tenemos el ID del usuario
+    // We verify que tenemos the ID del use
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
-        message: "Usuario no autenticado correctamente",
+        message: "User not authenticated correctly",
       });
     }
 
-    // Verificamos que tenemos los datos necesarios
+    // We verify that we have the necessary data (at least the name)
     if (!req.body || !req.body.name) {
       return res.status(400).json({
         success: false,
-        message: "Se requiere el nombre del contenedor",
+        message: "Container name is required",
       });
     }
 
@@ -143,10 +142,10 @@ router.post("/containers", verifyToken, async (req, res) => {
       res.status(400).json(result);
     }
   } catch (error) {
-    console.error("Error completo al crear contenedor:", error);
+    console.error("Error creating container:", error);
     res.status(500).json({
       success: false,
-      message: "Error al crear el contenedor",
+      message: "Error creating container",
       error: error.message,
     });
   }
@@ -160,14 +159,13 @@ router.get("/containers/:id", verifyToken, async (req, res) => {
     );
 
     if (result.success) {
-      // El servicio devuelve { success: true, data: container }
+      // The service returns { success: true, data: container }
       res.json(result);
     } else {
-      // El servicio devolvió success: false (Contenedor no encontrado)
+      // The service returned success: false (e.g., container not found or not belonging to the user)
       return res.status(404).json(result);
     }
   } catch (error) {
-    // ...
     res.status(500).json({ error: error.message });
   }
 });
@@ -184,10 +182,10 @@ router.delete("/containers/:id", verifyToken, async (req, res) => {
   }
 });
 
-// Rutas para elementos del inventario
+// ROUTES for inventory items
 router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
   try {
-    // Verificar que el contenedor pertenece al usuario
+    // Verify that the container belongs to the user
     const container = await containerService.getContainerById(
       parseInt(req.params.containerId),
       req.user.id,
@@ -207,7 +205,7 @@ router.get("/containers/:containerId/items", verifyToken, async (req, res) => {
 
 router.post("/containers/:containerId/items", verifyToken, async (req, res) => {
   try {
-    // Verificar que el contenedor pertenece al usuario
+    // Verify that the container belongs to the user
     const container = await containerService.getContainerById(
       parseInt(req.params.containerId),
       req.user.id,
@@ -230,7 +228,7 @@ router.put(
   verifyToken,
   async (req, res) => {
     try {
-      // Verificar que el contenedor pertenece al usuario
+      // Verify that the container belongs to the user
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
         req.user.id,
@@ -256,7 +254,7 @@ router.delete(
   verifyToken,
   async (req, res) => {
     try {
-      // Verificar que el contenedor pertenece al usuario
+      // Verify that the container belongs to the user
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
         req.user.id,
@@ -281,7 +279,7 @@ router.patch(
   verifyToken,
   async (req, res) => {
     try {
-      // Verificar que el contenedor pertenece al usuario
+      // Verify that the container belongs to the user
       const container = await containerService.getContainerById(
         parseInt(req.params.containerId),
         req.user.id,

@@ -1,14 +1,14 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 const prisma = require("../middleware/prisma");
 const IntegrationDTO = require('../models/integrationModel');
 const EbayMarketDataDTO = require('../models/ebayMarketDataModel');
 
 class EbayService {
   /**
-   * MÉTODO PRINCIPAL: Coordina todo el flujo
+   * MÉTODO PRINCIPAL: Coordina todo the flujo
    */
   async getMarketDataForUser(userId, keywords) {
-    // 1. El servicio gestiona la BBDD
+    // 1. the service gestiona the BBDD
     const integrationRecord = await prisma.userIntegration.findUnique({
       where: { userId_type: { userId: parseInt(userId), type: 'ebay' } }
     });
@@ -20,7 +20,7 @@ class EbayService {
     // 2. Limpieza de config vía DTO
     const integration = new IntegrationDTO(integrationRecord);
 
-    // 3. Obtener Token de eBay
+    // 3. get Token de eBay
     const token = await this._getApplicationToken(integration.config);
     
     // 4. Consultar eBay
@@ -32,7 +32,7 @@ class EbayService {
       }
     });
 
-    // 5. Devolver el DTO procesado
+    // 5. Devolver the DTO procesado
     return new EbayMarketDataDTO({ ...response.data, _keywords: keywords });
   }
 

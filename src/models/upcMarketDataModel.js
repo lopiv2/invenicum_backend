@@ -1,11 +1,11 @@
-const { Temporal } = require('@js-temporal/polyfill');
+﻿const { Temporal } = require('@js-temporal/polyfill');
 
 class UpcMarketDataDTO {
   constructor(data) {
     const item = data.items?.[0] || {};
     const offers = item.offers || [];
 
-    // 1. Datos básicos del producto
+    // 1. data básicos del producto
     this.title = String(item.title || 'Producto no encontrado');
     this.description = String(item.description || '');
     this.category = String(item.category || 'General');
@@ -28,11 +28,11 @@ class UpcMarketDataDTO {
 
       if (offer.updated_t) {
         try {
-          // Temporal nos permite crear un instante directamente desde segundos de Unix
+          // Temporal nos permite Create a instante directamente from segundos de Unix
           // .fromEpochSeconds es mucho más legible que multiplicar por 1000
           updatedAtISO = Temporal.Instant.fromEpochSeconds(Number(offer.updated_t)).toString();
         } catch (e) {
-          // Fallback por si el timestamp viene mal
+          // fallback por if the timestamp viene mal
           updatedAtISO = null;
         }
       }

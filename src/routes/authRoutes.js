@@ -1,11 +1,11 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const userService = require("../services/userService");
 const verifyToken = require("../middleware/authMiddleware");
 const axios = require("axios");
 const { Temporal } = require('@js-temporal/polyfill');
 
-// Middleware para logging
+// Middleware for logging
 router.use((req, res, next) => {
   const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
@@ -14,14 +14,14 @@ router.use((req, res, next) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RUTAS DE PRIMER USO (públicas, sin token)
+// ROUTES DE first USO (públicas, without token)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * GET /auth/first-run
- * Comprueba si la base de datos tiene usuarios.
- * El frontend llama a este endpoint al arrancar para decidir si redirige
- * al wizard de configuración inicial o al login normal.
+ * Comprueba if the base de data tiene users.
+ * the cliente llama a este endpoint al arrancar for decidir if redirige
+ * al asistente de configuración inicial o al inicio de sesión normal.
  *
  * Response: { firstRun: true | false }
  */
@@ -31,19 +31,19 @@ router.get("/first-run", async (req, res) => {
     return res.status(200).json({ firstRun });
   } catch (error) {
     console.error("[ERROR][FIRST-RUN]:", error.message);
-    // En caso de error (DB caída, etc.) respondemos firstRun: false para
-    // no bloquear el arranque de la app — el login fallará por su cuenta.
+    // En caso de error (BD caída, etc.) respondemos firstRun: false for
+    // no bloquear the arranque de the app; the inicio de sesión fallará por su cuenta.
     return res.status(200).json({ firstRun: false });
   }
 });
 
 /**
  * POST /auth/setup
- * Crea el primer usuario administrador.
- * Está protegido a nivel de servicio: si ya existe algún usuario, rechaza
- * la petición con 403 para evitar que se llame después del primer arranque.
+ * Create the first Use administrador.
+ * Está protegido a nivel de service: if ya existe algún Use, rechaza
+ * the petición with 403 for evitar que se llame después del first arranque.
  *
- * Body: { name, email, password }
+ * body: { name, email, password }
  * Response: 201 { success: true, message: "..." }
  */
 router.post("/setup", async (req, res) => {
@@ -60,7 +60,7 @@ router.post("/setup", async (req, res) => {
     const result = await userService.createFirstAdmin({ name, email, password });
 
     if (!result.success) {
-      // El servicio devuelve forbidden: true cuando ya hay usuarios
+      // the service returns forbidden: true when ya existen users
       const statusCode = result.forbidden ? 403 : 400;
       return res.status(statusCode).json({
         success: false,
@@ -83,7 +83,7 @@ router.post("/setup", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RUTAS EXISTENTES (sin cambios)
+// ROUTES EXISTENTES (without Changes)
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/github/config", (req, res) => {

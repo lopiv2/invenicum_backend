@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const inventoryItemService = require("../services/inventoryItemService");
 const { Temporal } = require('@js-temporal/polyfill');
 
@@ -42,17 +42,17 @@ class DashboardDataService {
   }
 
   async getLoansExpiringToday(userId) {
-    // 1. Obtenemos el inicio del día de hoy en la zona horaria del sistema
+    // 1. get today's start of day in the system timezone
     const today = Temporal.Now.zonedDateTimeISO();
-    
-    // 2. Creamos el inicio del día (00:00:00)
+
+    // 2. Create the start of day (00:00:00)
     const startOfToday = today.with({ hour: 0, minute: 0, second: 0, millisecond: 0 });
-    
-    // 3. Sumamos un día para tener el inicio de mañana
+
+    // 3. Add a day to get the start of tomorrow
     const startOfTomorrow = startOfToday.add({ days: 1 });
 
-    // IMPORTANTE: Prisma necesita objetos Date de JS, así que convertimos 
-    // los instantes de Temporal a Date usando epochMilliseconds.
+    // Important: Prisma needs JS Date objects, so convert
+    // Temporal instants to Date using epochMilliseconds.
     return await prisma.loan.findMany({
       where: {
         userId: Number(userId),
@@ -93,7 +93,7 @@ class DashboardDataService {
         containerId: Number(row.containerId),
       }));
     } catch (error) {
-      console.error("Error obteniendo top préstamos:", error);
+      console.error("Error fetching top loans:", error);
       return [];
     }
   }

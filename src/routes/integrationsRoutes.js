@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const integrationService = require("../services/integrationsService");
 const verifyToken = require("../middleware/authMiddleware");
@@ -24,7 +24,7 @@ router.get("/barcode/lookup/:barcode", verifyToken, async (req, res) => {
     );
 
     if (inventoryItemDto) {
-      // 🚩 Usamos el método toJSON del DTO
+      // 🚩 Use the método toJSON del DTO
       res.status(200).json({ data: inventoryItemDto.toJSON() });
     } else {
       res.status(404).json({ message: "Producto no encontrado" });
@@ -40,7 +40,7 @@ router.post("/test", verifyToken, async (req, res) => {
     const { type, config } = req.body;
     const userId = req.user.id;
 
-    // Ejecutamos el test sin guardar nada en BD
+    // Ejecutamos the test without guardar nada en BD
     const result = await integrationService.testConnection(
       type,
       config,
@@ -62,7 +62,7 @@ router.get("/status", verifyToken, async (req, res) => {
   try {
     const integrations = await integrationService.getStatuses(req.user.id);
 
-    // Transformamos el array de DTOs en un mapa simple para Flutter { "gemini": true }
+    // Transformamos the array de DTOs en a mapa simple for Flutter { "gemini": true }
     const statusMap = {};
     integrations.forEach((i) => {
       statusMap[i.type] = i.isActive;
@@ -88,7 +88,7 @@ router.get("/enrich", verifyToken, async (req, res) => {
         .json({ error: "El parámetro 'query' es obligatorio" });
     }
 
-    // Llamamos a la función universal (por defecto bgg si no viene source)
+    // we call a the función universal (by default bgg if no viene source)
     const enrichedItem = await integrationService.getEnrichedItem(
       userId,
       query,
@@ -96,7 +96,7 @@ router.get("/enrich", verifyToken, async (req, res) => {
       locale || "es",
     );
 
-    // Devolvemos el DTO final generado por Gemini
+    // Devolvemos the DTO final generado por Gemini
     res.status(200).json({
       success: true,
       data: enrichedItem,
@@ -104,7 +104,7 @@ router.get("/enrich", verifyToken, async (req, res) => {
   } catch (error) {
     console.error(`[ENRICH-ERROR] ${error.message}`);
 
-    // Si es un error de "no encontrado" mandamos 404, si no 500
+    // if es a error de "no encontrado" mandamos 404, if no 500
     const statusCode = error.message.includes("no encontrado") ? 404 : 500;
     res.status(statusCode).json({
       success: false,
@@ -154,12 +154,12 @@ router.get("/:type", verifyToken, async (req, res) => {
       req.params.type,
     );
 
-    // Si no existe, devolvemos un objeto de configuración vacío
+    // if no existe, devolvemos a objeto de configuración vacío
     if (!integrationDto) {
       return res.status(200).json({ data: { config: {} } });
     }
 
-    // Devolvemos el config (que el servicio ya debería haber descifrado)
+    // Devolvemos the config (que the service ya debería haber descifrado)
     res.status(200).json({
       data: {
         config: integrationDto.config,
@@ -183,7 +183,7 @@ router.post("/", verifyToken, async (req, res) => {
         .json({ error: "Tipo y configuración son obligatorios" });
     }
 
-    // Guardamos (el servicio se encarga del cifrado)
+    // Guardamos (the service se encarga del encrypted)
     await integrationService.saveConfig(userId, type, config);
 
     res.status(200).json({

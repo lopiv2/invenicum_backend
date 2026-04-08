@@ -1,4 +1,4 @@
-// models/InventoryItemDTO.js
+﻿// models/InventoryItemDTO.js
 class InventoryItemDTO {
   constructor(prismaItem) {
     this.id = parseInt(prismaItem.id);
@@ -8,7 +8,7 @@ class InventoryItemDTO {
     this.serialNumber= prismaItem.serialNumber || null;
     this.condition = prismaItem.condition || "loose";
 
-    // --- STOCK Y CANTIDADES ---
+    // --- STOCK and CANTIDADES ---
     this.quantity = parseInt(prismaItem.quantity || 1);
     this.minStock = parseInt(prismaItem.minStock || 0);
     this.isLowStock = this.quantity <= this.minStock;

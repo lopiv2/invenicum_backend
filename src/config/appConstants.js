@@ -1,6 +1,6 @@
-// config/appConstants.js
-// Constantes de la aplicación que no varían entre entornos.
-// No leer desde process.env — son valores fijos del producto.
+﻿// config/appConstants.js
+// Constantes de the aplicación que no varían entre entornos.
+// No leer from process.env — son valores fijos del producto.
 
 class AppConstants {
   static STATIC_URL_PREFIX = "/images";

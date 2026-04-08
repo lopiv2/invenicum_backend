@@ -1,4 +1,4 @@
-const FieldDefinitionDTO = require("./fieldDefinitionModel");
+﻿const FieldDefinitionDTO = require("./fieldDefinitionModel");
 
 class AssetTypeDTO {
   constructor(prismaAssetType) {
@@ -13,7 +13,7 @@ class AssetTypeDTO {
       ? parseInt(prismaAssetType.desiredFieldId)
       : null;
 
-    // 🚀 Usamos el DTO especializado
+    // 🚀 Use the DTO especializado
     this.fieldDefinitions = FieldDefinitionDTO.fromList(
       prismaAssetType.fieldDefinitions,
     );

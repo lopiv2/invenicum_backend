@@ -1,7 +1,7 @@
-const Joi = require("joi");
+﻿const Joi = require("joi");
 
 const pluginSchema = Joi.object({
-  // Definimos solo lo mínimo necesario para que sea un plugin válido
+  // Definimos only lo mínimo necesario so that sea a plugin válido
   name: Joi.string().required(),
   slot: Joi.string().required(),
   ui: Joi.object().required(),

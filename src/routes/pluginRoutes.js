@@ -1,14 +1,14 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const { validatePlugin } = require("../middleware/jsValidator");
 const pluginService = require("../services/pluginService");
 
-// GET: Plugins instalados por el usuario (Para los StacSlots)
+// GET: Plugins instalados por the Use (for the espacios Stac)
 router.get("/installed", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    // Pasamos el userId para que el servicio calcule el campo 'isMine'
+    // Pasamos the userId so that the service calcule the campo 'esMio'
     const plugins = await pluginService.getUserPlugins(userId);
     res.json(plugins);
   } catch (error) {
@@ -16,7 +16,7 @@ router.get("/installed", verifyToken, async (req, res) => {
   }
 });
 
-// PUT: Activar o desactivar un plugin instalado (Toggle)
+// PUT: Activar o desactivar a plugin instalado (conmutar)
 router.put("/user/toggle", async (req, res) => {
   try {
     const { pluginId, isActive } = req.body;
@@ -44,7 +44,7 @@ router.put("/user/toggle", async (req, res) => {
   }
 });
 
-// POST: Crear un nuevo plugin global
+// POST: Create a new plugin global
 router.post("/", verifyToken, validatePlugin, async (req, res) => {
   try {
     const result = await pluginService.createPlugin(req.body, req.user.id);
@@ -54,12 +54,12 @@ router.post("/", verifyToken, validatePlugin, async (req, res) => {
   }
 });
 
-// PUT: Actualizar un plugin existente
+// PUT: update a plugin existente
 // routes/plugins.js
 router.put("/:id", verifyToken, validatePlugin, async (req, res) => {
   try {
     const { id } = req.params;
-    // Pasamos id del plugin, datos del body e id del usuario autenticado
+    // Pasamos id del plugin, data del body e id del Use autenticado
     const result = await pluginService.updatePlugin(id, req.body, req.user.id);
 
     res.json({
@@ -70,19 +70,19 @@ router.put("/:id", verifyToken, validatePlugin, async (req, res) => {
       data: result,
     });
   } catch (error) {
-    // Si es un error de permisos mandamos 403, si no 500
+    // if es a error de permisos mandamos 403, if no 500
     const statusCode = error.message.includes("autorizado") ? 403 : 500;
     res.status(statusCode).json({ success: false, message: error.message });
   }
 });
 
-// DELETE: Eliminar un plugin de la base de datos global
+// DELETE: delete a plugin de the base de data global
 router.delete("/:id", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const deleteFromGitHub = req.query.deleteFromGitHub === "true";
 
-    // 🚩 CAMBIO AQUÍ: Verifica que estás usando .userId (o lo que use tu JWT)
+    // 🚩 Change AQUÍ: Verifica que estás using .userId (o lo que Use tu JWT)
     // Según tu log previo del token, es userId
     const currentUserId = req.user.id;
 
@@ -103,7 +103,7 @@ router.get("/preview-stac", async (req, res) => {
       return res.status(400).json({ message: "La URL es requerida" });
     }
 
-    // LLAMADA AL SERVICIO
+    // call AL service
     const previewData = await pluginService.getPluginPreview(url);
 
     res.json(previewData);
@@ -112,10 +112,10 @@ router.get("/preview-stac", async (req, res) => {
   }
 });
 
-// GET: Plugins disponibles en la comunidad
+// GET: Plugins disponibles en the comunidad
 router.get("/community", verifyToken, async (req, res) => {
   try {
-    // 💡 Pasamos el ID para saber cuáles de la comunidad son "míos"
+    // 💡 Pasamos the ID for saber cuáles de the comunidad son "míos"
     const plugins = await pluginService.getAllCommunityPlugins(req.user.id);
     res.json(plugins);
   } catch (error) {
@@ -123,13 +123,13 @@ router.get("/community", verifyToken, async (req, res) => {
   }
 });
 
-// POST: Instalar un plugin
+// POST: Instalar a plugin
 router.post("/install", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const pluginData = req.body; // <--- Tomamos TODO el objeto (incluyendo download_url e isOfficial)
 
-    // Pasamos el objeto completo al servicio
+    // Pasamos the objeto completo al service
     await pluginService.installPlugin(userId, pluginData);
 
     res.json({ success: true, message: "Plugin instalado correctamente" });
@@ -139,7 +139,7 @@ router.post("/install", verifyToken, async (req, res) => {
   }
 });
 
-// DELETE: Desinstalar un plugin
+// DELETE: Desinstalar a plugin
 router.delete("/uninstall/:id", verifyToken, async (req, res) => {
   try {
     const pluginId = req.params.id;

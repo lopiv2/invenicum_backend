@@ -1,17 +1,17 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const alertService = require("../services/alertService");
 const AlertDTO = require("../models/alertModel");
 
-// 🚀 CREAR ALERTA (Manual o Automática con Notificación)
+// 🚀 Create ALERTA (Manual o Automática with Notificación)
 router.post("/alerts", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    // Extraemos priority_channels del body si existe
+    // Extraemos priority_channels del body if existe
     const { priority_channels, ...alertData } = req.body;
 
-    // 1. Guardamos la alerta en la DB (Persistencia para la App)
+    // 1. Guardamos the alerta en the DB (Persistencia for the App)
     const newAlert = await alertService.createAlert(userId, {
       ...alertData,
       isRead: false,
@@ -28,9 +28,9 @@ router.post("/alerts", verifyToken, async (req, res) => {
   }
 });
 
-// --- RESTO DE RUTAS MANTENIDAS ---
+// --- RESTO DE ROUTES MANTENIDAS ---
 
-// Obtener todas las alertas
+// get todas the alertas
 router.get("/alerts", verifyToken, async (req, res) => {
   try {
     const alerts = await alertService.getAlerts(req.user.id);
@@ -50,7 +50,7 @@ router.patch("/alerts/:id/read", verifyToken, async (req, res) => {
   }
 });
 
-// Actualizar alerta/evento
+// update alerta/evento
 router.put("/alerts/:id", verifyToken, async (req, res) => {
   try {
     const updatedAlert = await alertService.updateAlert(req.params.id, req.user.id, req.body);
@@ -60,7 +60,7 @@ router.put("/alerts/:id", verifyToken, async (req, res) => {
   }
 });
 
-// Eliminar alerta
+// delete alerta
 router.delete("/alerts/:id", verifyToken, async (req, res) => {
   try {
     await alertService.deleteAlert(req.params.id, req.user.id);

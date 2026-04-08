@@ -1,11 +1,11 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const alertService = require("./alertService");
 const LoanDTO = require("../models/loanModel");
 const { Temporal } = require('@js-temporal/polyfill');
 
 class LoanService {
   /**
-   * Mapea resultados de Prisma a DTOs
+   * Maps Prisma results to DTOs
    */
   _mapToDTO(loan) {
     if (!loan) return null;
@@ -13,7 +13,7 @@ class LoanService {
   }
 
   /**
-   * Obtiene todos los préstamos de un contenedor
+   * gets todos the loans de a container
    */
   async getLoans(containerId) {
     try {
@@ -22,15 +22,15 @@ class LoanService {
         orderBy: { loanDate: "desc" },
       });
 
-      return loans.map(this._mapToDTO); // 👈 Simplificado con DTO
+      return loans.map(this._mapToDTO); // 👈 Simplified with DTO
     } catch (error) {
       console.error("Error in getLoans:", error);
-      throw new Error(`Error al obtener préstamos: ${error.message}`);
+      throw new Error(`Error getting loans: ${error.message}`);
     }
   }
 
   /**
-   * Obtiene un préstamo específico
+   * Gets a specific loan
    */
   async getLoan(containerId, loanId) {
     try {
@@ -56,24 +56,24 @@ class LoanService {
       });
 
       if (!loan) {
-        throw new Error("Préstamo no encontrado");
+        throw new Error("Loan not found");
       }
 
-      // Verificar que el préstamo pertenece al contenedor especificado
+      // Verify that the loan belongs to the specified container
       if (loan.containerId !== parseInt(containerId)) {
-        throw new Error("El préstamo no pertenece a este contenedor");
+        throw new Error("The loan does not belong to this container");
       }
 
       return loan;
     } catch (error) {
       console.error("Error in getLoan:", error);
-      throw new Error(`Error al obtener el préstamo: ${error.message}`);
+      throw new Error(`Error getting the loan: ${error.message}`);
     }
   }
 
   /**
-   * Obtiene todos los préstamos globales filtrados por userId
-   * Ahora usamos l.userId directamente gracias a la nueva relación
+   * Gets all global loans filtered by userId
+   * Now uses l.userId directly thanks to the new relationship
    */
   async getAllLoans(userId) {
     try {
@@ -84,12 +84,12 @@ class LoanService {
       return loans.map(this._mapToDTO);
     } catch (error) {
       console.error("Error in getAllLoans:", error);
-      throw new Error("Error al obtener préstamos globales");
+      throw new Error("Error fetching global loans");
     }
   }
 
   /**
-   * Crea un nuevo préstamo con validación de stock y alertas
+   * Create a new loan with validación de stock and alertas
    */
   async createLoan(containerId, loanData, userId) {
     try {
@@ -98,7 +98,7 @@ class LoanService {
       const inventoryItemId_int = parseInt(inventoryItemId);
       const quantityToLoan = parseInt(quantity || 1);
 
-      // 1. Validar artículo y stock
+      // 1. Validar artículo and stock
       const inventoryItem = await prisma.inventoryItem.findUnique({
         where: { id: inventoryItemId_int },
       });
@@ -113,7 +113,7 @@ class LoanService {
 
       // 2. Transacción Atómica
       const result = await prisma.$transaction(async (tx) => {
-        // A. Crear Préstamo (DTO de entrada)
+        // A. Create loan (DTO de entrada)
         const loan = await tx.loan.create({
           data: {
             userId: parseInt(userId), // 🔑 Asignación obligatoria
@@ -124,7 +124,7 @@ class LoanService {
             borrowerName: loanData.borrowerName || null,
             borrowerEmail: loanData.borrowerEmail || null,
             borrowerPhone: loanData.borrowerPhone || null,
-            loanDate: new Date(Temporal.Now.instant().epochMilliseconds), // Fecha actual por defecto
+            loanDate: new Date(Temporal.Now.instant().epochMilliseconds), // Fecha actual by default
             expectedReturnDate: expectedReturnDate
               ? new Date(expectedReturnDate)
               : null,
@@ -152,29 +152,29 @@ class LoanService {
   }
 
   /**
-   * Actualiza un préstamo existente
+   * updates a loan existente
    */
   /**
-   * Actualiza un préstamo existente de forma segura
+   * updates a loan existente de forma segura
    */
   async updateLoan(containerId, loanId, loanData, userId) {
     try {
       const loanId_int = parseInt(loanId);
       const userId_int = parseInt(userId);
 
-      // 1. Verificamos existencia y propiedad en una sola consulta
+      // 1. We verify existencia and propiedad en a sola consulta
       const existingLoan = await prisma.loan.findFirst({
         where: {
           id: loanId_int,
-          userId: userId_int, // 🔑 Seguridad: Solo el dueño puede editar
+          userId: userId_int, // 🔑 Seguridad: only el dueño puede editar
         },
       });
 
       if (!existingLoan)
         throw new Error("Préstamo no encontrado o acceso denegado");
 
-      // 2. Limpieza de datos (DTO de entrada "ad-hoc")
-      // Solo extraemos los campos que permitimos editar
+      // 2. Limpieza de data (DTO de entrada "ad-hoc")
+      // only extraemos the campos que permitimos editar
       const {
         borrowerName,
         borrowerEmail,
@@ -209,7 +209,7 @@ class LoanService {
         },
       });
 
-      // 4. Retornamos mediante el DTO de salida
+      // 4. Retornamos mediante the DTO de salida
       return this._mapToDTO(updatedLoan);
     } catch (error) {
       console.error("Error in updateLoan:", error);
@@ -225,7 +225,7 @@ class LoanService {
       const loan = await prisma.loan.findFirst({
         where: {
           id: parseInt(loanId),
-          userId: parseInt(userId), // 🔑 Solo el dueño puede devolverlo
+          userId: parseInt(userId), // 🔑 only el dueño puede devolverlo
         },
       });
 
@@ -255,7 +255,7 @@ class LoanService {
   }
 
   /**
-   * Elimina un préstamo (Solo si es el dueño)
+   * deletes a loan (only if es the dueño)
    */
   async deleteLoan(loanId, userId) {
     try {
@@ -272,28 +272,28 @@ class LoanService {
   }
 
   /**
-   * Obtiene estadísticas de préstamos
+   * gets estadísticas de loans
    */
   async getLoanStats(containerId, userId) {
     try {
       const containerId_int = parseInt(containerId);
       const userId_int = parseInt(userId);
 
-      // 1. Verificamos que el contenedor pertenezca al usuario (Seguridad)
+      // 1. We verify que the container pertenezca al use (security)
       const container = await prisma.container.findFirst({
         where: { id: containerId_int, userId: userId_int },
       });
       if (!container)
         throw new Error("Contenedor no encontrado o acceso denegado");
 
-      // 2. Una sola consulta para agrupar todos los conteos por status
+      // 2. a sola consulta for agrupar todos the conteos por status
       const stats = await prisma.loan.groupBy({
         by: ["status"],
         where: { containerId: containerId_int },
         _count: { id: true },
       });
 
-      // 3. Formateamos el resultado (DTO style)
+      // 3. Formateamos the resultado (DTO style)
       const counts = {
         active: 0,
         returned: 0,

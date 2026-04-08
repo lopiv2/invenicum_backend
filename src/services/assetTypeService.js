@@ -1,4 +1,4 @@
-// services/assetTypeService.js
+﻿// services/assetTypeService.js
 
 const prisma = require("../middleware/prisma");
 const path = require("path");
@@ -7,12 +7,12 @@ require("dotenv").config();
 const AssetTypeDTO = require("../models/assetTypeModel");
 const BOOLEAN_TYPE_DB = "boolean";
 
-// 🔑 getPublicUrl es la ÚNICA fuente de verdad para construir URLs de imágenes.
-// Convierte la ruta de disco que devuelve Multer en la URL pública que Express sirve.
-// Ej: "/app/uploads/inventory/asset-types/asset-type-123.jpg" → "/images/asset-types/asset-type-123.jpg"
+// 🔑 getPublicUrl is the ONLY source of truth for building image URLs.
+// Converts the disk path returned by Multer into the public URL served by Express.
+// E.g.: "/app/uploads/inventory/asset-types/asset-type-123.jpg" → "/images/asset-types/asset-type-123.jpg"
 const { getPublicUrl } = require("../middleware/upload");
 
-// Ruta absoluta para borrar archivos físicos de asset-types
+// Absolute path to delete physical files of asset-types
 const UPLOAD_BASE_FOLDER = process.env.UPLOAD_FOLDER || "uploads/inventory";
 const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.resolve(
   process.cwd(),
@@ -20,17 +20,17 @@ const UPLOAD_DIR_ASSET_TYPES_ABSOLUTE = path.resolve(
   "asset-types",
 );
 
-// Ruta absoluta para borrar archivos físicos de inventory items
+// Absolute path to delete physical files of inventory items
 const UPLOAD_DIR_INVENTORY_ABSOLUTE = path.resolve(
   process.cwd(),
   UPLOAD_BASE_FOLDER,
 );
 
 /**
- * Crea un nuevo Tipo de Activo y sus definiciones de campo con múltiples imágenes.
- * @param {number} containerId ID del contenedor padre.
- * @param {number} userId ID del usuario (para la capa de seguridad).
- * @param {object} data Datos del AssetType (name, fieldDefinitions, files, possessionFieldId, desiredFieldId).
+ * Create a new Asset Type and its field definitions with multiple images.
+ * @param {number} containerId Parent container ID.
+ * @param {number} userId User ID (for the security layer).
+ * @param {object} data AssetType data (name, fieldDefinitions, files, possessionFieldId, desiredFieldId).
  */
 async function createAssetType(containerId, userId, data) {
   const {
@@ -42,7 +42,7 @@ async function createAssetType(containerId, userId, data) {
   } = data;
   const files = data.files || [];
 
-  // Validación básica
+  // Basic validation
   if (!name || !fieldDefinitions) {
     files.forEach((file) => {
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
@@ -53,18 +53,18 @@ async function createAssetType(containerId, userId, data) {
     };
   }
 
-  // 1. Preparar imágenes — getPublicUrl construye la URL correcta a partir
-  // de la ruta de disco que Multer asignó, sin depender de variables de entorno adicionales.
+  // 1. Prepare images — getPublicUrl builds the correct URL from
+  // the disk path assigned by Multer, without relying on additional environment variables.
   const imageRelations = files.map((file, index) => ({
     url: getPublicUrl(file.path), // ✅ "/images/asset-types/asset-type-xxx.jpg"
     filename: file.filename,
     order: index,
   }));
 
-  // 2. Preparar definiciones para Prisma con validación de tipo numérico
+  // 2. Prepare definitions for Prisma with numeric type validation
   const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => {
     const type = def.type.toLowerCase();
-    // Consideramos numéricos los tipos que pueden llevar cálculos
+    // We consider as numeric the types that can be used for calculations
     const isNumeric =
       type === "number" ||
       type === "price" ||
@@ -76,7 +76,7 @@ async function createAssetType(containerId, userId, data) {
       type: def.type,
       isRequired: !!def.isRequired,
       dataListId: def.dataListId ? parseInt(def.dataListId) : null,
-      // Solo permitimos estos flags si el tipo es numérico
+      // Only allow these flags if the type is numeric
       isSummable: isNumeric ? !!def.isSummable : false,
       isMonetary: isNumeric ? !!def.isMonetary : false,
       isCountable: isNumeric ? !!def.isCountable : false,
@@ -106,7 +106,7 @@ async function createAssetType(containerId, userId, data) {
       },
     });
 
-    // 🚀 Retornamos el DTO (toJSON es llamado automáticamente por Express al enviar la respuesta)
+    // 🚀 Return the DTO (toJSON is called automatically by Express when sending the Response)
     return {
       success: true,
       message: "Tipo de Activo creado con éxito.",
@@ -122,9 +122,9 @@ async function createAssetType(containerId, userId, data) {
 }
 
 /**
- * Obtiene un Tipo de Activo por ID.
+ * gets a Tipo de Activo por ID.
  * @param {number|string} assetTypeId ID del Tipo de Activo.
- * @param {number} userId ID del usuario para verificar la propiedad.
+ * @param {number} userId ID del use for Verify the propiedad.
  */
 async function getAssetTypeById(assetTypeId, userId) {
   try {
@@ -148,7 +148,7 @@ async function getAssetTypeById(assetTypeId, userId) {
       return { success: false, message: "Tipo de Activo no encontrado." };
     }
 
-    // Seguridad: Verificar que el contenedor al que pertenece el AssetType sea propiedad del usuario
+    // security: Verify that the container the AssetType belongs to is owned by the user
     if (assetType.container.userId !== userId) {
       return {
         success: false,
@@ -157,7 +157,7 @@ async function getAssetTypeById(assetTypeId, userId) {
       };
     }
 
-    // Quitar datos sensibles del contenedor antes de enviarlo
+    // Remove sensitive data from the container before sending it
     const { container, ...assetTypeData } = assetType;
 
     return {
@@ -172,10 +172,10 @@ async function getAssetTypeById(assetTypeId, userId) {
 }
 
 /**
- * Actualiza un Tipo de Activo y sus definiciones de campo y gestiona imágenes.
+ * updates a Tipo de Activo and sus definiciones de campo and gestiona imágenes.
  * @param {number} assetTypeId ID del Tipo de Activo.
- * @param {number} userId ID del usuario para verificar la propiedad.
- * @param {object} updateData Datos a actualizar (name, fieldDefinitions, filesToUpload, imageIdsToDelete).
+ * @param {number} userId ID del use for Verify the propiedad.
+ * @param {object} updateData data a update (name, fieldDefinitions, filesToUpload, imageIdsToDelete).
  */
 async function updateAssetType(assetTypeId, userId, updateData) {
   const {
@@ -190,7 +190,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
     throw new Error("ID de tipo de activo inválido.");
   }
 
-  // 1. Verificar propiedad y existencia
+  // 1. Verify propiedad and existencia
   const verification = await getAssetTypeById(assetTypeIdInt, userId, {
     include: { images: true, fieldDefinitions: true },
   });
@@ -207,7 +207,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
   try {
     const result = await prisma.$transaction(async (tx) => {
       // --- PASO A: GESTIÓN DE IMÁGENES ---
-      // Si se pide borrar o se sube una nueva, eliminamos la anterior
+      // if se pide borrar o se sube a new, eliminamos the anterior
       if (
         (removeExistingImage || filesToUpload?.length > 0) &&
         currentAssetType.images.length > 0
@@ -222,7 +222,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
       }
 
-      // Si hay archivos nuevos, creamos la relación
+      // if hay archivos nuevos, Create the relación
       if (filesToUpload?.length > 0) {
         const file = filesToUpload[0];
         const publicUrl = getPublicUrl(file.path); // ✅ URL correcta sin variables de entorno adicionales
@@ -237,13 +237,13 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         });
       }
 
-      // --- PASO B: ACTUALIZAR DEFINICIONES DE CAMPO ---
+      // --- PASO B: update DEFINICIONES DE CAMPO ---
       if (fieldDefinitions) {
         const incomingIds = fieldDefinitions
           .filter((fd) => fd.id && parseInt(fd.id) > 0)
           .map((fd) => parseInt(fd.id));
 
-        // 1. Borrar campos que ya no vienen en la lista
+        // 1. Borrar campos que ya no vienen en the lista
         await tx.customFieldDefinition.deleteMany({
           where: {
             assetTypeId: assetTypeIdInt,
@@ -251,7 +251,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
           },
         });
 
-        // 2. Upsert (Actualizar o Crear)
+        // 2. Upsert (update o Create)
         for (const fd of fieldDefinitions) {
           const type = fd.type.toLowerCase();
           const isNumeric =
@@ -262,7 +262,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
             type: fd.type,
             isRequired: !!fd.isRequired,
             dataListId: fd.dataListId ? parseInt(fd.dataListId) : null,
-            // 🛡️ Validación de lógica de negocio: solo numéricos tienen estos flags
+            // 🛡️ Validación de lógica de negocio: only numéricos tienen estos flags
             isSummable: isNumeric ? !!fd.isSummable : false,
             isMonetary: isNumeric ? !!fd.isMonetary : false,
             isCountable: isNumeric ? !!fd.isCountable : false,
@@ -281,9 +281,9 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         }
       }
 
-      // --- PASO C: ACTUALIZAR CAMPOS PRINCIPALES ---
-      // Solo incluimos possessionFieldId y desiredFieldId si vienen explícitamente
-      // en el payload. Si no vienen (undefined), Prisma los deja intactos en la DB.
+      // --- PASO C: update CAMPOS PRINCIPALES ---
+      // only incluimos possessionFieldId and desiredFieldId if vienen explícitamente
+      // en the payload. if no vienen (undefined), Prisma the deja intactos en the DB.
       const mainUpdateData = {
         name: assetTypeUpdates.name,
         isSerialized: !!assetTypeUpdates.isSerialized,
@@ -309,7 +309,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
       });
     });
 
-    // 🚀 RETORNO CON DTO
+    // 🚀 RETORNO with DTO
     return {
       success: true,
       message: "Tipo de Activo actualizado con éxito.",
@@ -329,9 +329,9 @@ async function updateAssetType(assetTypeId, userId, updateData) {
 }
 
 /**
- * Elimina un Tipo de Activo, sus elementos de inventario y sus imágenes asociadas.
+ * deletes an Asset Type, its inventory items and associated images.
  * @param {number} assetTypeId ID del Tipo de Activo.
- * @param {number} userId ID del usuario para verificar la propiedad.
+ * @param {number} userId ID del use for Verify the propiedad.
  */
 async function deleteAssetType(assetTypeId, userId) {
   const assetTypeIdInt = parseInt(assetTypeId);
@@ -339,7 +339,7 @@ async function deleteAssetType(assetTypeId, userId) {
     return { success: false, message: "ID de tipo de activo inválido" };
   }
 
-  // 1. Verificar propiedad y obtener imágenes asociadas
+  // 1. Verify propiedad and get imágenes asociadas
   const assetTypeToDelete = await prisma.assetType.findUnique({
     where: { id: assetTypeIdInt },
     include: {
@@ -355,10 +355,10 @@ async function deleteAssetType(assetTypeId, userId) {
     };
   }
 
-  // 2. BORRAR ARCHIVOS DEL DISCO (AssetType Images)
+  // 2. DELETE FILES FROM disk (AssetType Images)
   if (assetTypeToDelete.images && assetTypeToDelete.images.length > 0) {
     for (const image of assetTypeToDelete.images) {
-      // 🔑 USANDO la ruta absoluta corregida para Asset Types
+      // 🔑 using the route absoluta corregida for Asset Types
       const absolutePath = path.join(
         UPLOAD_DIR_ASSET_TYPES_ABSOLUTE,
         image.filename,
@@ -371,15 +371,15 @@ async function deleteAssetType(assetTypeId, userId) {
         }
       } catch (err) {
         console.error(`Error deleting file ${absolutePath}:`, err);
-        // Si falla el borrado del archivo, no impedimos la eliminación de la DB.
+        // if file deletion fails, do not block DB deletion.
       }
     }
   }
 
-  // 3. BORRAR REGISTROS DE LA BASE DE DATOS (Transacción)
+  // 3. BORRAR REGISTROS DE the BASE DE data (Transacción)
   try {
     await prisma.$transaction(async (tx) => {
-      // Borrar todos los InventoryItems asociados (Esto activará el CASCADE en InventoryItemImage)
+      // Borrar todos the InventoryItems asociados (Esto activará the CASCADE en InventoryItemImage)
       await tx.inventoryItem.deleteMany({
         where: {
           assetTypeId: assetTypeIdInt,
@@ -389,7 +389,7 @@ async function deleteAssetType(assetTypeId, userId) {
         },
       });
 
-      // Eliminar el AssetType (Esto activará el CASCADE en AssetTypeImage y CustomFieldDefinition)
+      // delete the AssetType (this will trigger CASCADE on AssetTypeImage and CustomFieldDefinition)
       await tx.assetType.delete({
         where: { id: assetTypeIdInt },
       });
@@ -406,18 +406,18 @@ async function deleteAssetType(assetTypeId, userId) {
 }
 
 /**
- * Elimina todos los elementos de inventario asociados a un tipo de activo (sin eliminar el AssetType).
+ * deletes all inventory items associated with an asset type (without deleting the AssetType).
  * @param {number} assetTypeId ID del Tipo de Activo.
- * @param {number} userId ID del usuario para verificar la propiedad.
+ * @param {number} userId ID del use for Verify the propiedad.
  */
 async function deleteAssetTypeItems(assetTypeId, userId) {
-  // 1. Convertir a Int y verificar la ID
+  // 1. Convertir a Int and Verify the ID
   const id = parseInt(assetTypeId);
   if (isNaN(id)) {
     return { success: false, message: "ID de tipo de activo inválido" };
   }
 
-  // 2. Verificar propiedad antes de eliminar
+  // 2. Verify ownership before delete
   const verification = await getAssetTypeById(id, userId);
   if (!verification.success) {
     return verification;
@@ -425,7 +425,7 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
 
   // 3. Borrado de Items
   try {
-    // 3a. Obtener los ítems y sus imágenes ANTES de borrarlos de la DB
+    // 3a. get the ítems and sus imágenes ANTES de borrarlos de the DB
     const itemsToDelete = await prisma.inventoryItem.findMany({
       where: {
         assetTypeId: id,
@@ -434,12 +434,12 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
       include: { images: true },
     });
 
-    // 3b. Borrar archivos del disco para cada ítem y sus imágenes
+    // 3b. Delete files from disk for each item and its images
     for (const item of itemsToDelete) {
       for (const image of item.images) {
-        // Usamos el filename (asumimos que existe y fue guardado)
+        // Use the filename (asumimos que existe and fue guardado)
         const filename = path.basename(image.url);
-        // 🔑 USANDO la ruta absoluta corregida para Inventory Items
+        // 🔑 using the route absoluta corregida for Inventory Items
         const absolutePath = path.join(UPLOAD_DIR_INVENTORY_ABSOLUTE, filename);
 
         try {
@@ -453,7 +453,7 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
       }
     }
 
-    // 3c. Eliminar los registros de la base de datos (Inventario y sus imágenes por CASCADE)
+    // 3c. delete the database records (Inventory and its images via CASCADE)
     await prisma.inventoryItem.deleteMany({
       where: {
         assetTypeId: id,
@@ -474,10 +474,10 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
 }
 
 /**
- * Actualiza solo los campos de colección (possessionFieldId, desiredFieldId) de un AssetType.
+ * updates only the campos de colección (possessionFieldId, desiredFieldId) de a AssetType.
  * @param {number} assetTypeId ID del AssetType.
- * @param {number} userId ID del usuario para verificar la propiedad.
- * @param {object} updateData Datos a actualizar ({possessionFieldId, desiredFieldId}).
+ * @param {number} userId ID del use for Verify the propiedad.
+ * @param {object} updateData data a update ({possessionFieldId, desiredFieldId}).
  */
 async function updateAssetTypeCollectionFields(
   assetTypeId,
@@ -494,12 +494,12 @@ async function updateAssetTypeCollectionFields(
     };
   }
 
-  // Función auxiliar para parsear y validar un ID de campo
+  // Función auxiliar for parsear and validar a ID de campo
   function validateAndParseField(fieldIdInput, assetType, fieldName) {
-    // Convertir a string, usar .trim() y asegurar que null/undefined se maneje
+    // Convertir a string, Use .trim() and Ensurer que null/undefined se maneje
     const idString = fieldIdInput?.toString().trim();
 
-    // 1. Si es null o cadena vacía, retorna null (para desvincular en DB)
+    // 1. if es null o cadena vacía, retorna null (for desvincular en DB)
     if (!idString || idString.length === 0) {
       return { success: true, parsedId: null };
     }
@@ -507,7 +507,7 @@ async function updateAssetTypeCollectionFields(
     // 2. Intentar parsear a entero
     const parsedId = parseInt(idString);
 
-    // 3. Validar que sea un número
+    // 3. Validar que sea a número
     if (isNaN(parsedId)) {
       return {
         success: false,
@@ -515,7 +515,7 @@ async function updateAssetTypeCollectionFields(
       };
     }
 
-    // 4. Validar que el campo exista en este AssetType
+    // 4. Validar que the campo exista en este AssetType
     const fieldDefinition = assetType.fieldDefinitions.find(
       (f) => f.id === parsedId,
     );
@@ -538,7 +538,7 @@ async function updateAssetTypeCollectionFields(
   }
 
   try {
-    // 1. Verificar propiedad del AssetType y obtener datos relacionados
+    // 1. Verify propiedad del AssetType and get data relacionados
     const assetType = await prisma.assetType.findUnique({
       where: { id },
       include: {
@@ -558,7 +558,7 @@ async function updateAssetTypeCollectionFields(
       };
     }
 
-    // 💡 VALIDACIÓN: Los campos de colección solo aplican a tipos de activo NO seriados.
+    // 💡 VALIDACIÓN: the campos de colección only aplican a tipos de activo NO seriados.
     if (assetType.isSerialized) {
       return {
         success: false,
@@ -567,7 +567,7 @@ async function updateAssetTypeCollectionFields(
       };
     }
 
-    // 2. Validar y Parsear IDs de Campos
+    // 2. Validar and Parsear IDs de Campos
 
     // Campo de Posesión
     const possessionValidation = validateAndParseField(
@@ -591,12 +591,12 @@ async function updateAssetTypeCollectionFields(
     }
     const desiredFieldIdParsed = desiredValidation.parsedId;
 
-    // 3. Actualizar los campos de colección
+    // 3. update the campos de colección
     const updatedAssetType = await prisma.assetType.update({
       where: { id },
       data: {
-        // 🔑 PRISMA: Usa 'null' para desvincular.
-        // possessionFieldIdParsed será null o un entero.
+        // 🔑 PRISMA: Use 'null' for desvincular.
+        // possessionFieldIdParsed será null o a entero.
         possessionFieldId: possessionFieldIdParsed,
         desiredFieldId: desiredFieldIdParsed,
       },
@@ -615,7 +615,7 @@ async function updateAssetTypeCollectionFields(
     };
   } catch (error) {
     console.error("Error en updateAssetTypeCollectionFields:", error);
-    // Lanza un error genérico para evitar exponer detalles internos
+    // Lanza a error genérico for evitar exponer detalles internos
     throw new Error(
       "Error al actualizar los campos de colección del AssetType.",
     );

@@ -1,9 +1,9 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 
 class DataListService {
   async getDataListsByContainer(containerId, userId) {
     try {
-      // Verificar que el usuario tenga acceso al contenedor
+      // Verify that the user has access to the container
       const container = await prisma.container.findFirst({
         where: {
           id: containerId,
@@ -18,7 +18,7 @@ class DataListService {
         };
       }
 
-      // Obtener todas las listas del contenedor
+      // get all lists from the container
       const dataLists = await prisma.dataList.findMany({
         where: {
           containerId: containerId
@@ -46,7 +46,7 @@ class DataListService {
   }
   async createDataList(containerId, userId, data) {
     try {
-      // Verificar que el usuario tenga acceso al contenedor
+      // Verify that the user has access to the container
       const container = await prisma.container.findFirst({
         where: {
           id: containerId,
@@ -61,7 +61,7 @@ class DataListService {
         };
       }
 
-      // Crear la lista de datos
+      // Create the lista de data
       const dataList = await prisma.dataList.create({
         data: {
           name: data.name,
@@ -129,7 +129,7 @@ class DataListService {
 
   async updateDataList(id, userId, data) {
     try {
-      // Verificar que el usuario tenga acceso a la lista
+      // Verify que the use tenga acceso a the lista
       const existingList = await prisma.dataList.findFirst({
         where: {
           id: id,
@@ -174,7 +174,7 @@ class DataListService {
 
   async deleteDataList(id, userId) {
     try {
-      // Verificar que el usuario tenga acceso a la lista
+      // Verify que the use tenga acceso a the lista
       const existingList = await prisma.dataList.findFirst({
         where: {
           id: id,

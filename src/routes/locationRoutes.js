@@ -1,15 +1,15 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const locationService = require("../services/locationService"); // 🔑 Importamos el nuevo servicio
-const containerService = require("../services/containerService"); // Necesario para verificar propiedad del contenedor
+const containerService = require("../services/containerService"); // Necesario para Verify propiedad del container
 const { Temporal } = require('@js-temporal/polyfill');
 
-// --- Middleware para Logging (Mantenemos la convención) ---
+// --- Middleware for Logging (Mantenemos the convención) ---
 router.use((req, res, next) => {
   const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(`[${timestamp}] ${req.method} ${req.originalUrl}`);
-  // No loguear headers o body en producción por seguridad, pero lo mantenemos por consistencia
+  // No registrar encabezados o body en produccion por security, pero lo mantenemos por consistencia
   if (req.body && Object.keys(req.body).length > 0) {
     console.log("Body:", req.body);
   }
@@ -17,16 +17,16 @@ router.use((req, res, next) => {
 });
 
 // =======================================================
-// === RUTAS PARA UBICACIONES (LOCATIONS) ===
+// === ROUTES for locations (LOCATIONS) ===
 // =======================================================
 
-// 1. OBTENER TODAS LAS UBICACIONES DE UN CONTENEDOR ESPECÍFICO (GET /containers/:containerId/locations)
+// 1. get TODAS the locations DE a container ESPECÍFICO (GET /containers/:containerId/locations)
 router.get("/containers/:containerId/locations", verifyToken, async (req, res) => {
   try {
     const containerId = parseInt(req.params.containerId);
     const userId = req.user.id;
 
-    // Verificar que el contenedor existe y pertenece al usuario (Autorización)
+    // Verify that the container exists and belongs to the Use (Autorización)
     const containerResult = await containerService.getContainerById(containerId, userId);
     if (!containerResult.success) {
       return res.status(404).json({ success: false, message: "Contenedor no encontrado o no autorizado." });
@@ -45,7 +45,7 @@ router.get("/containers/:containerId/locations", verifyToken, async (req, res) =
   }
 });
 
-// 2. CREAR UNA NUEVA UBICACIÓN (POST /locations)
+// 2. Create a new location (POST /locations)
 router.post("/locations", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -60,7 +60,7 @@ router.post("/locations", verifyToken, async (req, res) => {
       });
     }
 
-    // Opcional: Verificar que el container_id pertenezca al usuario antes de crear
+    // Opcional: Verify que the container_id pertenezca al use antes de Create
     const containerResult = await containerService.getContainerById(container_id, userId);
     if (!containerResult.success) {
       return res.status(404).json({ success: false, message: "Contenedor padre no encontrado o no autorizado." });
@@ -70,13 +70,13 @@ router.post("/locations", verifyToken, async (req, res) => {
       container_id,
       name,
       description: description || null,
-      parent_id: parent_id || null, // Permite null para ubicaciones raíz
+      parent_id: parent_id || null, // Permite null para locations raíz
     };
 
     const result = await locationService.createLocation(userId, locationData);
 
     if (result.success) {
-      // 201 Created y devuelve el objeto creado.
+      // 201 Createted and returns the objeto created.
       res.status(201).json(result); 
     } else {
       res.status(400).json(result);
@@ -91,7 +91,7 @@ router.post("/locations", verifyToken, async (req, res) => {
   }
 });
 
-// 3. OBTENER UNA UBICACIÓN POR ID (GET /locations/:id)
+// 3. get a location POR ID (GET /locations/:id)
 router.get("/locations/:id", verifyToken, async (req, res) => {
   try {
     const locationId = parseInt(req.params.id);
@@ -102,7 +102,7 @@ router.get("/locations/:id", verifyToken, async (req, res) => {
     if (result.success) {
       res.json(result);
     } else {
-      // Ubicación no encontrada o no pertenece al usuario.
+      // location no encontrada o no pertenece al use.
       return res.status(404).json(result); 
     }
   } catch (error) {
@@ -111,7 +111,7 @@ router.get("/locations/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 4. ACTUALIZAR UNA UBICACIÓN (PATCH /locations/:id)
+// 4. update a location (PATCH /locations/:id)
 router.patch("/locations/:id", verifyToken, async (req, res) => {
   const locationId = parseInt(req.params.id);
   const userId = req.user.id;
@@ -132,10 +132,10 @@ router.patch("/locations/:id", verifyToken, async (req, res) => {
     );
 
     if (result.success) {
-      // 200 OK y devuelve el objeto actualizado.
+      // 200 OK and returns the objeto actualizado.
       res.status(200).json(result);
     } else {
-      // Ubicación no encontrada o no pertenece al usuario.
+      // location no encontrada o no pertenece al use.
       res.status(404).json(result);
     }
   } catch (error) {
@@ -148,7 +148,7 @@ router.patch("/locations/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 5. ELIMINAR UNA UBICACIÓN (DELETE /locations/:id)
+// 5. delete a location (DELETE /locations/:id)
 router.delete("/locations/:id", verifyToken, async (req, res) => {
   try {
     const locationId = parseInt(req.params.id);
@@ -156,7 +156,7 @@ router.delete("/locations/:id", verifyToken, async (req, res) => {
 
     await locationService.deleteLocation(locationId, userId);
     
-    // 204 No Content para indicar eliminación exitosa.
+    // 204 No Content for indicar eliminación exitosa.
     res.status(204).send(); 
   } catch (error) {
     // Manejar errores como "No autorizado" o "No encontrado"

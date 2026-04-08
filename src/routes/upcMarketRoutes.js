@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const upcService = require("../services/upcService");
 const inventoryItemService = require("../services/inventoryItemService"); // Para actualizar el item
@@ -6,7 +6,7 @@ const verifyToken = require("../middleware/authMiddleware");
 
 /**
  * GET /api/market/lookup/:barcode
- * Solo consulta la API externa y devuelve la info (Previsualización)
+ * only consulta the API externa and returns the info (Previsualización)
  */
 router.get("/lookup/:barcode", verifyToken, async (req, res) => {
   try {
@@ -31,14 +31,14 @@ router.get("/lookup/:barcode", verifyToken, async (req, res) => {
 
 /**
  * POST /api/market/sync-item/:itemId
- * Consulta la API y GUARDA el precio directamente en el ítem de inventario
+ * Consulta the API and GUARDA the precio directamente en the ítem de inventario
  */
 router.post("/sync-item/:itemId", verifyToken, async (req, res) => {
   try {
     const { itemId } = req.params;
     const userId = req.user.id;
 
-    // Llamamos a un nuevo método en el servicio de inventario
+    // we call a a new método en the service de inventario
     const updatedItem = await inventoryItemService.syncItemMarketValue(
       itemId,
       userId,
@@ -56,10 +56,10 @@ router.post("/sync-item/:itemId", verifyToken, async (req, res) => {
 
 /**
  * POST /api/market/sync-asset-type
- * Actualiza el valor de mercado de todos los ítems con barcode de un assetType.
- * Body: { assetTypeId, containerId }
+ * updates the valor de mercado de todos the ítems with barcode de a assetType.
+ * body: { assetTypeId, containerId }
  *
- * Respuesta: {
+ * Response: {
  *   success: true,
  *   summary: { total, updated, skipped, errors },
  *   details: [{ id, name, status, reason? }]

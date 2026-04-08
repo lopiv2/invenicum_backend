@@ -1,4 +1,4 @@
-// middleware/upload.js
+﻿// middleware/upload.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -6,28 +6,28 @@ const { Temporal } = require('@js-temporal/polyfill');
 const { AppConstants } = require('../config/appConstants');
 
 // ─── Constantes centralizadas ─────────────────────────────────────────────────
-// Fuente de verdad única para rutas de disco y URLs públicas.
-// Todos los servicios deben llamar a getPublicUrl(file.path) para obtener
-// la URL que se guarda en DB — nunca construirla a mano.
+// Fuente de verdad única for ROUTES de disk and URLs públicas.
+// Todos the services must llamar a getPublicUrl(file.path) for get
+// the URL que se guarda en DB — nunca construirla a mano.
 
 const BASE_DIR = process.env.UPLOAD_FOLDER || "uploads/inventory";
 const STATIC_URL_PREFIX = AppConstants.STATIC_URL_PREFIX;
 
 /**
- * Convierte la ruta absoluta en disco de un archivo subido por Multer
- * a la URL pública que Express sirve correctamente.
+ * Convierte the route absoluta en disk de a archivo subido por Multer
+ * a the URL pública que Express sirve correctamente.
  *
- * Ejemplo con la configuración actual:
+ * Ejemplo with the configuración actual:
  *   file.path  = "/app/uploads/inventory/asset-types/asset-type-123.jpg"
  *   BASE_DIR   = "uploads/inventory"   → se sirve en STATIC_URL_PREFIX
  *   resultado  = "/images/asset-types/asset-type-123.jpg"   ✅
  *
- * Sin esta función los servicios solían guardar en DB la ruta absoluta del
- * disco ("/app/uploads/inventory/...") o una URL mal construida, lo que
- * hacía que el archivo existiera físicamente pero no fuera accesible.
+ * without esta función the services solían guardar en DB the route absoluta del
+ * disk ("/app/uploads/inventory/...") o a URL mal construida, lo que
+ * hacía que the archivo existiera físicamente pero no fuera accesible.
  *
- * @param {string} filePath - El valor de file.path que proporciona Multer
- * @returns {string} URL pública relativa (sin dominio ni puerto)
+ * @param {string} filePath - the valor de file.path que proporciona Multer
+ * @returns {string} URL pública relativa (without dominio ni puerto)
  */
 function getPublicUrl(filePath) {
   const absoluteBaseDir = path.resolve(process.cwd(), BASE_DIR);

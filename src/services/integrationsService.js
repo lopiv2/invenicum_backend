@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const _ = require("lodash");
 const IntegrationDTO = require("../models/integrationModel");
 const { encrypt, decrypt } = require("../middleware/cryptoUtils");
@@ -21,7 +21,7 @@ require("dotenv").config();
 
 class IntegrationService {
   /**
-   * Realiza una prueba de conexión sin guardar datos
+   * Runs a connection test without saving data
    */
   async testConnection(type, config, userId) {
     console.log("Recibida petición de test:");
@@ -33,7 +33,7 @@ class IntegrationService {
         case "bgg": {
           try {
             console.log(`🧪 Testing BGG API connection...`);
-            // Test: busca "Catan" como juego conocido para validar que el proxy responde
+            // Test: searches "Catan" as a known game to validate that the proxy responds
             const BGG_PROXY_URL = "https://api.invenicum.com/api/bgg";
             const response = await axios.get(BGG_PROXY_URL, {
               params: {
@@ -43,7 +43,7 @@ class IntegrationService {
               timeout: 10000,
             });
 
-            // Validar que el proxy devolvió resultados
+            // Validate that the proxy returned results
             const items = response.data?.items?.item;
             if (!response.data || !items) {
               throw new Error(
@@ -51,13 +51,13 @@ class IntegrationService {
               );
             }
 
-            // Extraer cantidad de resultados para mostrar al usuario
+            // Extract number of results to show the user
             const totalResults = response.data?.items?.total || 0;
             const firstGame = Array.isArray(items)
               ? items[0]?.name?.value || items[0]?.name
               : items?.name?.value || items?.name;
 
-            // 4. Verificación de dependencia (IA)
+            // 4. Dependency check (AI)
             const aiClient = await this.getActiveAiClient(userId);
             const aiWarning = !aiClient
               ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
@@ -70,7 +70,7 @@ class IntegrationService {
           } catch (error) {
             console.error("❌ Error en el Test de BGG:", error.message);
 
-            // Manejo específico de errores del proxy
+            // Proxy-specific error handling
             if (error.response?.status === 401) {
               throw new Error(
                 "Error de autenticación: La INTERNAL_API_KEY no es válida.",
@@ -92,7 +92,7 @@ class IntegrationService {
         case "pokemon": {
           const pokemon_name = "Pikachu";
 
-          // 1. Validación básica: que no esté vacío
+          // 1. Basic validation: must not be empty
           if (!pokemon_name) {
             throw new Error(
               "El nombre del Pokémon es requerido para la validación.",
@@ -102,8 +102,8 @@ class IntegrationService {
           try {
             console.log(`🧪 Validando existencia de Pokémon: ${pokemon_name}`);
 
-            // 2. Intentamos obtener el Pokémon (limpiamos el nombre por si acaso)
-            // PokeAPI solo acepta minúsculas y sin espacios
+            // 2. Try to get the Pokémon (sanitize the name just in case)
+            // PokeAPI only accepts lowercase and no spaces
             const sanitizedName = pokemon_name
               .toLowerCase()
               .trim()
@@ -114,8 +114,8 @@ class IntegrationService {
               { timeout: 5000 },
             );
 
-            // 3. Verificación de Gemini (mantenemos la lógica de BGG para avisar al usuario)
-            // Nota: Asegúrate de que 'userId' esté llegando a la función testConnection
+            // 3. Gemini check (keep BGG logic to notify the user)
+            // Note: Make sure 'userId' is being passed to the testConnection function
             const aiClient = await this.getActiveAiClient(userId);
             const aiWarning = !aiClient
               ? " (Nota: ningún proveedor de IA configurado, las descripciones no funcionarán)"
@@ -128,7 +128,7 @@ class IntegrationService {
           } catch (error) {
             console.error("❌ Error en el Test de PokeAPI:", error.message);
 
-            // Si la API devuelve 404, es que el nombre está mal escrito
+            // if the API returns 404, es que the nombre está mal escrito
             if (error.response?.status === 404) {
               throw new Error(
                 `The Pokémon "${pokemon_name}" does not exist. Please check the spelling.`,
@@ -196,7 +196,7 @@ class IntegrationService {
 
             if (response.error) {
               console.error("Detalle error Resend:", response.error);
-              // Esto nos dirá si es 'Unauthorized', 'Invalid Sender', etc.
+              // Esto nos dirá if es 'Unauthorized', 'Invalid Sender', etc.
               throw new Error(response.error.message);
             }
 
@@ -217,13 +217,13 @@ class IntegrationService {
           }
 
           try {
-            // Probamos llamando al método getMe de Telegram para validar el token
+            // We test by calling Telegram's getMe method to validate the token
             const response = await axios.get(
               `https://api.telegram.org/bot${config.botToken}/getMe`,
             );
 
             if (response.data.ok) {
-              // Si el token es válido, intentamos enviar un mensaje de prueba
+              // if the token es válido, intentamos enviar a mensaje de test
               await axios.post(
                 `https://api.telegram.org/bot${config.botToken}/sendMessage`,
                 {
@@ -255,7 +255,7 @@ class IntegrationService {
             const testModel =
               config.model || DEFAULT_MODELS[AI_PROVIDERS.GEMINI];
 
-            // Llamada mínima para validar credenciales y disponibilidad del modelo.
+            // minimal call to validate credentials and model availability.
             await tempClient.models.generateContent({
               model: testModel,
               contents: "ping",
@@ -392,7 +392,7 @@ class IntegrationService {
               },
             );
 
-            // ✅ Si llega aquí, es un 200 OK
+            // ✅ if llega aquí, es a 200 OK
             console.log("✅ Respuesta de UPCitemdb:", response.data);
 
             return {
@@ -402,14 +402,14 @@ class IntegrationService {
                 : "Conexión modo FREE (Trial) disponible",
             };
           } catch (error) {
-            // ❌ LOG DE ERROR PARA LA CONSOLA DEL BACKEND
+            // ❌ Error log for backend console
             console.error("❌ Error detectado en UPC Service:");
             if (error.response) {
-              // El servidor respondió con un código fuera de 2xx
+              // the server respondió with a código fuera de 2xx
               console.error("Status:", error.response.status);
               console.error("Data:", JSON.stringify(error.response.data));
             } else if (error.request) {
-              // La petición se hizo pero no hubo respuesta (CORS, Red, etc)
+              // the petición se hizo pero no hubo Response (CORS, Red, etc)
               console.error(
                 "No hubo respuesta del servidor (Posible Timeout/Red)",
               );
@@ -441,7 +441,7 @@ class IntegrationService {
           };
       }
     } catch (error) {
-      // Si el error viene del SDK de Google, suele estar en error.response.data o error.message
+            // if the error comes from the Google SDK, it's usually in error.response.data or error.message
       const googleError = error.response?.data?.error?.message || error.message;
 
       let msg = googleError || "Error de conexión";
@@ -455,7 +455,7 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la config de Resend desencriptada para uso interno
+   * gets the config de Resend decrypted for uso interno
    */
   async getResendConfig(userId) {
     try {
@@ -479,7 +479,7 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la config de Telegram desencriptada
+   * gets the config de Telegram decrypted
    */
   async getTelegramConfig(userId) {
     try {
@@ -503,7 +503,7 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la API Key de Gemini ya desencriptada para uso interno
+   * gets the API Key de Gemini ya decrypted for uso interno
    * @param {number|string} userId
    * @returns {Promise<{apiKey: string, model: string}|null>}
    */
@@ -515,7 +515,7 @@ class IntegrationService {
         where: { userId_type: { userId: parsedId, type: "gemini" } },
       });
 
-      // Log detallado para diagnóstico — eliminar en producción
+      // Detailed log for diagnostics — remove in production
       if (!record) {
         return null;
       }
@@ -525,18 +525,18 @@ class IntegrationService {
       }
 
       // config viene de Prisma como objeto JSON: { data: "encrypted_string" }
-      // Si config.data existe → está cifrado con nuestro encrypt()
-      // Si no existe → se guardó sin cifrar (directamente el objeto)
+      // if config.data existe → está encrypted with nuestro encrypt()
+      // if no existe → se guardó without cifrar (directamente the objeto)
       let apiKey, model;
 
       if (record.config?.data) {
-        // Caso normal: cifrado
+        // Caso normal: encrypted
         const decrypted = decrypt(record.config.data);
         const configObj = JSON.parse(decrypted);
         apiKey = configObj.apiKey;
         model = configObj.model;
       } else if (record.config?.apiKey) {
-        // Caso fallback: guardado sin cifrar (config = { apiKey: "...", model: "..." })
+        // Caso de fallback: guardado without cifrar (config = { apiKey: "...", model: "..." })
         apiKey = record.config.apiKey;
         model = record.config.model;
       } else {
@@ -561,7 +561,7 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la API Key de OpenAI ya desencriptada para uso interno
+   * gets the API Key de OpenAI ya decrypted for uso interno
    */
   async getOpenAIApiKey(userId) {
     try {
@@ -589,7 +589,7 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la API Key de Anthropic/Claude ya desencriptada para uso interno
+   * gets the API Key de Anthropic/Claude ya decrypted for uso interno
    */
   async getClaudeApiKey(userId) {
     try {
@@ -617,9 +617,9 @@ class IntegrationService {
   }
 
   /**
-   * Devuelve el cliente de IA activo según las preferencias del usuario.
-   * Usado por getEnrichedItem y los warnings de testConnection.
-   * Retorna { client, model, provider } o null si nada está configurado.
+   * returns the cliente de IA activo según the preferencias del use.
+   * Used por getEnrichedItem and the warnings de testConnection.
+   * Retorna { client, model, provider } o null if nada está configurado.
    */
   async getActiveAiClient(userId) {
     const prefs = await prisma.userPreferences.findUnique({
@@ -663,7 +663,7 @@ class IntegrationService {
   }
 
   /**
-   * Guarda o actualiza la configuración de una integración
+   * Guarda o updates the configuración de a integración
    */
   async saveConfig(userId, type, config) {
     // 1. CIFRAMOS MANUALMENTE AQUÍ
@@ -684,13 +684,13 @@ class IntegrationService {
       },
     });
 
-    // Devolvemos el DTO (el DTO debe recibir la config ya descifrada)
+    // Devolvemos the DTO (the DTO must recibir the config ya descifrada)
     result.config = config;
     return new IntegrationDTO(result);
   }
 
   /**
-   * Obtiene la configuración descifrada para una integración específica
+   * gets the configuración descifrada for a integración específica
    */
   async getConfig(userId, type) {
     const record = await prisma.userIntegration.findUnique({
@@ -710,23 +710,23 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene el mapa de estados para los checks de la UI en Flutter
+   * gets the mapa de estados for the checks de the UI en Flutter
    */
   async getStatuses(userId) {
     const integrations = await prisma.userIntegration.findMany({
       where: {
         userId: parseInt(userId),
-        isActive: true, // Solo las activas
+        isActive: true, // only las activas
       },
     });
 
-    // 🚩 Para Flutter es mejor un Mapa { "gemini": true, "telegram": true }
-    // Pero si quieres seguir usando DTOs para una lista:
+    // 🚩 for Flutter es mejor a Mapa { "gemini": true, "telegram": true }
+    // Pero if quieres seguir using DTOs for a lista:
     return integrations.map((i) => new IntegrationDTO(i));
   }
 
   /**
-   * Desactiva una integración sin borrar los datos
+   * Desactiva a integración without borrar the data
    */
   async deleteIntegration(userId, type) {
     return await prisma.userIntegration.update({
@@ -736,13 +736,13 @@ class IntegrationService {
   }
 
   /**
-   * Obtiene la configuración de UPCitemdb ya desencriptada para uso interno
+   * gets the configuración de UPCitemdb ya decrypted for uso interno
    * @param {number|string} userId
    * @returns {Promise<{apiKey: string}|null>}
    */
   async getUpcApiKey(userId) {
     try {
-      // 1. Buscamos el registro en la base de datos para el tipo 'upcitemdb'
+      // 1. we search the registro en the base de data for the tipo 'upcitemdb'
       const record = await prisma.userIntegration.findUnique({
         where: {
           userId_type: {
@@ -752,16 +752,16 @@ class IntegrationService {
         },
       });
 
-      // 2. Si no existe, no está activa o no tiene datos, devolvemos null
+      // 2. if no existe, no está activa o no tiene data, devolvemos null
       if (!record || !record.isActive || !record.config?.data) {
         return null;
       }
 
-      // 3. DESENCRIPTAMOS MANUALMENTE usando tu utilidad de crypto
+      // 3. DESENCRIPTAMOS MANUALMENTE using tu utilidad de crypto
       const decrypted = decrypt(record.config.data);
       const configObj = JSON.parse(decrypted);
 
-      // 4. Devolvemos la API Key (y cualquier otro parámetro de config si existiera)
+      // 4. Devolvemos the API Key (and cualquier otro parámetro de config if existiera)
       return {
         apiKey: configObj.apiKey,
       };
@@ -775,10 +775,10 @@ class IntegrationService {
   }
 
   async lookupBarcode(userId, barcode) {
-    // 1. Obtener estados de integración
+    // 1. get estados de integración
     const integrations = await this.getStatuses(userId);
 
-    // 2. Verificar si upcitemdb está activa
+    // 2. Verify if upcitemdb está activa
     const upcIntegration = integrations.find((i) => i.type === "upcitemdb");
     const isUpcActive = upcIntegration?.isActive === true;
 
@@ -788,7 +788,7 @@ class IntegrationService {
       // 🚩 EXTRACCIÓN DINÁMICA DE API KEY
       let apiKey = null;
       if (fullConfig && fullConfig.config) {
-        // Si config es el string 'id:key', sacamos la segunda parte. Si es objeto, sacamos .apiKey
+        // if config es the string 'id:key', sacamos the segunda parte. if es objeto, sacamos .apiKey
         if (typeof fullConfig.config === "string") {
           const parts = fullConfig.config.split(":");
           apiKey = parts.length > 1 ? parts[1] : parts[0];
@@ -797,8 +797,8 @@ class IntegrationService {
         }
       }
 
-      // 🚩 SELECCIÓN DE ENDPOINT
-      // Si tenemos apiKey -> Pro. Si no -> Trial.
+      // 🚩 ENDPOINT SELECTION
+      // if tenemos apiKey -> Pro. if no -> Trial.
       const isPro = !!apiKey;
       const baseURL = isPro
         ? "https://api.upcitemdb.com/prod/v1/lookup"
@@ -809,7 +809,7 @@ class IntegrationService {
           params: { upc: barcode },
           headers: {
             Accept: "application/json",
-            // Solo incluimos el header si realmente tenemos una key
+            // only incluimos the header if realmente tenemos a key
             ...(isPro ? { user_key: apiKey, key_type: "free" } : {}),
           },
         });
@@ -819,8 +819,8 @@ class IntegrationService {
           let imageUrl =
             item.images && item.images.length > 0 ? item.images[0] : null;
 
-          // 3. 🚩 LA MAGIA: Convertir a Base64 antes de enviar al DTO
-          // Esto evita el error de pantalla blanca/CORS en Flutter Web
+          // 3. 🚩 the key step: Convert to Base64 before sending to the DTO
+          // Esto evita the error de pantalla blanca/CORS en Flutter Web
           if (imageUrl && imageUrl.startsWith("http")) {
             console.log(
               "🔄 Convirtiendo imagen de código de barras a Base64...",
@@ -828,7 +828,7 @@ class IntegrationService {
             imageUrl = await getBase64FromUrl(imageUrl);
           }
 
-          // Mapeo al DTO (Simulando Prisma)
+          // Mapping to the DTO (simulating Prisma)
           const mockPrismaItem = {
             id: 0,
             name: item.title,
@@ -857,7 +857,7 @@ class IntegrationService {
           err.message,
         );
 
-        // Si el Pro falla por Key inválida, podrías intentar un fallback a trial aquí si quisieras
+        // if the Pro fails por Key invalida, podrias intentar a fallback a trial aqui if quisieras
       }
     }
 
@@ -865,13 +865,13 @@ class IntegrationService {
   }
 
   /**
-   * Genera un hash único basado en las llaves del JSON (su estructura)
+   * Genera a hash único basado en the llaves del JSON (su estructura)
    */
   getStructureHash(rawData) {
     try {
       const json = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
       const keys = Object.keys(json).sort().join("|");
-      // Esto retorna un STRING hexadecimal
+      // Esto retorna a STRING hexadecimal
       return crypto.createHash("md5").update(keys).digest("hex");
     } catch (e) {
       console.error("Error parseando JSON para hash:", e);
@@ -887,14 +887,14 @@ class IntegrationService {
       customFieldValues: {},
     };
 
-    // Extraer valor de mercado si el mapper tiene la ruta guardada
+    // Extraer valor de mercado if the mapper tiene the route guardada
     if (mappingRules.market_value_path) {
       const rawPrice = _.get(sourceJson, mappingRules.market_value_path, null);
       const parsed = parseFloat(rawPrice);
       if (!isNaN(parsed) && parsed > 0) result.market_value = parsed;
     }
 
-    // Si el mapper no tenía ruta, hacer búsqueda programática como fallback
+    // if the mapper no tenia route, hacer search programatica como fallback
     if (!result.market_value) {
       const found = extractMarketPrice(sourceJson);
       if (found) result.market_value = found;
@@ -916,13 +916,13 @@ class IntegrationService {
         source_query_locale: { source, query: normalizedQuery, locale },
       },
     });
-    // Solo usar caché si el market value ya está calculado.
-    // Si es 0, forzamos reproceso para intentar obtener el precio de la API.
+    // only use caché if the market value ya está calculado.
+    // if es 0, forzamos reproceso for intentar get the precio de the API.
     if (cachedResult && (cachedResult.data?.marketValue ?? 0) > 0) {
       return cachedResult.data;
     }
 
-    // --- CAPA 2: OBTENCIÓN DE DATOS RAW ---
+    // --- CAPA 2: OBTENCIÓN DE data RAW ---
     let rawData = "";
     let contextHint = "";
 
@@ -938,7 +938,7 @@ class IntegrationService {
           );
           rawData = JSON.stringify(pokeRes.data);
         } catch (directErr) {
-          // Si falla (404), buscamos por listado parcial
+          // if fails (404), we search por listado parcial
           if (directErr.response?.status === 404) {
             const searchRes = await axios.get(
               `https://pokeapi.co/api/v2/pokemon?limit=1302`,
@@ -971,7 +971,7 @@ class IntegrationService {
               };
             }
 
-            // Un solo match parcial → obtener detalle
+            // a only match parcial → get detalle
             const pokeRes = await axios.get(matches[0].url);
             rawData = JSON.stringify(pokeRes.data);
           } else {
@@ -1082,7 +1082,7 @@ class IntegrationService {
           };
         }
 
-        // Un solo resultado → obtener detalle completo
+        // a only resultado → get detalle completo
         console.log(`🎯 Carta única seleccionada ID: ${results[0].id}`);
         const detailRes = await axios.get(`${TCGDEX_URL}/${results[0].id}`);
         rawData = JSON.stringify(detailRes.data);
@@ -1092,13 +1092,13 @@ class IntegrationService {
         throw new Error(`La fuente ${source} no está soportada.`);
     }
 
-    // Si llegamos aquí, tenemos rawData de un solo item → procesamos con IA
+    // if llegamos aquí, tenemos rawData de a only item → procesamos with IA
     return this._processWithAI(userId, rawData, contextHint, source, normalizedQuery, locale);
   }
 
   /**
-   * Procesa un item seleccionado por el frontend tras elegir de la lista de candidatos.
-   * Obtiene los detalles completos y pasa por Capa 3+ (mapeo + IA + post-procesado).
+   * Procesa a item seleccionado por the frontend tras elegir de the lista de candidatos.
+   * gets the detalles completos and pasa por Capa 3+ (Mapping + IA + post-procesado).
    */
   async processSelectedItem(userId, source, itemId, locale = "es") {
     let rawData = "";
@@ -1159,21 +1159,21 @@ class IntegrationService {
   }
 
   /**
-   * CAPA 3+: Mapeo, IA, post-procesado y caché.
-   * Función interna reutilizada por getEnrichedItem y processSelectedItem.
+   * CAPA 3+: Mapping, IA, post-procesado and caché.
+   * Función interna reutilizada por getEnrichedItem and processSelectedItem.
    */
   async _processWithAI(userId, rawData, contextHint, source, cacheKey, locale) {
-    // Pre-extraer precio del raw data ANTES de llamar a la IA.
-    // Más fiable que depender del modelo para valores numéricos exactos.
+    // Pre-extract price from raw data BEFORE calling the AI.
+    // More reliable than depending on the model for exact numeric values.
     let preExtractedPrice = 0;
     try {
       const rawJson = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
       preExtractedPrice = extractMarketPrice(rawJson) || 0;
     } catch (_) {}
 
-    // --- CAPA 3: GESTIÓN DE MAPEO (ESTRUCTURA) ---
+    // --- CAPA 3: GESTIÓN DE Mapping (ESTRUCTURA) ---
     const structureHash = this.getStructureHash(rawData);
-    // Validación de seguridad
+    // Validación de security
     if (!structureHash) {
       throw new Error("No se pudo generar el hash de la estructura.");
     }
@@ -1181,14 +1181,14 @@ class IntegrationService {
       where: { structureHash: structureHash },
     });
 
-    // Seguridad: el hash es globalmente único, pero no queremos usar un mapper
+    // security: the hash es globalmente único, pero no queremos Use a mapper
     // de otra API/source por accidente.
     const exactMapper =
       exactMapperByHash && exactMapperByHash.source === source
         ? exactMapperByHash
         : null;
 
-    // Mantener exactamente UN mapper por source (el más reciente).
+    // Mantener exactamente a mapper por source (the más reciente).
     const sourceMappers = await prisma.apiMapper.findMany({
       where: { source },
       orderBy: { createdAt: "desc" },
@@ -1201,7 +1201,7 @@ class IntegrationService {
       });
     }
 
-    // Si no hay hash exacto, usamos el único mapper del source como fallback.
+    // if there's no exact hash, use the single mapper from the source as fallback.
     const existingMapper = exactMapper || sourceMapper;
 
     let finalPrompt = "";
@@ -1209,10 +1209,10 @@ class IntegrationService {
     let finalData = null;
 
     if (isNewStructure) {
-      // Si la estructura es nueva, pedimos el mapeo y el enriquecimiento completo
+      // if the estructura es new, pedimos the Mapping and the enriquecimiento completo
       finalPrompt = generateUniversalPrompt(contextHint, rawData, locale, true);
     } else {
-      // Si ya conocemos la estructura, mapeamos localmente sin volver a llamar a la IA
+      // if ya conocemos the estructura, mapeamos localmente without volver a llamar a the IA
       const extractedData = this.applyLocalMapping(
         JSON.parse(rawData),
         existingMapper.mappingJson,
@@ -1226,11 +1226,11 @@ class IntegrationService {
       };
     }
     if (isNewStructure) {
-      // --- FASE DE IA (solo cuando la estructura es nueva) ---
+      // --- FASE DE IA (only when the estructura es new) ---
       const aiData = await this.getActiveAiClient(userId);
       if (!aiData)
         throw new Error(
-          "Ningún proveedor de IA configurado. Ve a Integraciones.",
+          "No AI provider configured. Go to Integrations.",
         );
       const { client, model, provider } = aiData;
       let rawText = "";
@@ -1273,7 +1273,7 @@ class IntegrationService {
 
       let aiResponse;
       try {
-        // Limpiamos posibles marcas de markdown y buscamos los límites del JSON
+        // Clean possible markdown markers and search for JSON boundaries
         let sanitizedText = rawText.replace(/```json|```/g, "").trim();
         const start = sanitizedText.indexOf("{");
         const end = sanitizedText.lastIndexOf("}");
@@ -1288,11 +1288,11 @@ class IntegrationService {
         throw new Error("La IA no devolvió un formato válido.");
       }
 
-      // --- CAPA 4: ASIGNACIÓN DE DATOS SEGÚN ORIGEN (solo estructura nueva) ---
+      // --- CAPA 4: ASIGNACIÓN DE data SEGÚN ORIGEN (only estructura new) ---
       finalData = aiResponse.itemData || aiResponse;
 
       if (aiResponse.mappingRules) {
-        // Reusar el mapper del source si existe; si no, crearlo.
+        // Reuse the source mapper if it exists; if not, create it.
         if (sourceMapper) {
           await prisma.apiMapper
             .update({
@@ -1323,13 +1323,13 @@ class IntegrationService {
       }
     }
 
-    // --- 5. POST-PROCESADO (Imagen, precio y DTO) ---
-    // El precio siempre viene del raw data (programático), nunca de la IA.
-    // Así evitamos que el modelo devuelva 0 o un valor inventado.
+    // --- 5. POST-PROCESADO (Imagen, precio and DTO) ---
+    // the price always comes from raw data (programmatic), never from the AI.
+    // Así evitamos que the modelo devuelva 0 o a valor inventado.
     if (preExtractedPrice > 0) {
       finalData.marketValue = preExtractedPrice;
     } else {
-      // Sin precio en raw data: intentar lo que devolvió la IA como último recurso
+      // without precio en raw data: intentar lo que returned the IA como último recurso
       const aiPrice = finalData.marketValue ?? finalData.market_value;
       finalData.marketValue = parseFloat(aiPrice) || 0;
     }
@@ -1338,17 +1338,17 @@ class IntegrationService {
     if (finalData.images?.[0]?.url?.startsWith("http")) {
       try {
         let imgUrl = finalData.images[0].url;
-        // TCGdex devuelve URLs sin extensión (ej. .../sm/det1/4).
-        // Añadimos /high.webp para obtener la imagen real.
+        // TCGdex returns URLs without extensión (ej. .../sm/det1/4).
+        // Añadimos /high.webp for get the imagen real.
         if (
           imgUrl.includes("assets.tcgdex.net") &&
           !/\.(webp|jpg|jpeg|png|gif)$/i.test(imgUrl)
         ) {
           imgUrl = `${imgUrl}/high.webp`;
         }
-        // En caché guardamos URL (ligera). El Base64 se usa solo para la respuesta.
+        // En caché guardamos URL (ligera). the Base64 se use only for the Response.
         cacheImageUrl = imgUrl;
-        // Convertimos a Base64 para que el front no tenga problemas de CORS
+        // Convertimos a Base64 so that the front no tenga problemas de CORS
         finalData.images[0].url = await getBase64FromUrl(imgUrl);
       } catch (err) {
         console.error("⚠️ Fallo al convertir imagen:", err.message);
@@ -1357,7 +1357,7 @@ class IntegrationService {
 
     const draft = new DraftItemDTO(finalData).toJSON();
 
-    // Guardar versión ligera en caché para evitar payloads gigantes por Base64
+    // Guardar versión ligera en caché for evitar payloads gigantes por Base64
     const cacheDraft = JSON.parse(JSON.stringify(draft));
     if (cacheImageUrl) {
       cacheDraft.imageUrl = cacheImageUrl;
@@ -1366,7 +1366,7 @@ class IntegrationService {
       }
     }
 
-    // Guardar en caché de resultados finales (upsert para no fallar si ya existe)
+    // Guardar en caché de resultados finales (upsert for no fallar if ya existe)
     await prisma.enrichedCache
       .upsert({
         where: {

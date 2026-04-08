@@ -1,17 +1,17 @@
-// src/dtos/EbayMarketDataDTO.js
+﻿// src/dtos/EbayMarketDataDTO.js
 const { Temporal } = require('@js-temporal/polyfill');
 
 class EbayMarketDataDTO {
   constructor(rawEbayData) {
     const items = rawEbayData.itemSummaries || [];
 
-    // 1. Calculamos el valor de mercado promedio
+    // 1. Calculamos the valor de mercado promedio
     this.marketValue = this._calculateAverage(items);
     
-    // 2. Moneda (tomamos la del primer resultado)
+    // 2. Moneda (tomamos the del first resultado)
     this.currency = items.length > 0 ? items[0].price.currency : 'EUR';
 
-    // 3. Mapeamos solo los 10 productos para comprar
+    // 3. Mapeamos only the 10 productos for comprar
     this.listings = items.slice(0, 10).map(item => ({
       id: item.itemId,
       title: item.title,

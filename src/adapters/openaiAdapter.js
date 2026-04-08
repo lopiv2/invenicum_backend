@@ -1,12 +1,12 @@
-// services/adapters/openaiAdapter.js
+﻿// services/adapters/openaiAdapter.js
 // Requiere: npm install openai
 const OpenAI = require("openai");
 const integrationService = require("../services/integrationsService");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
 
 /**
- * Devuelve un cliente OpenAI listo para usar.
- * Lee la API key de las integraciones del usuario (type = "openai").
+ * returns a cliente OpenAI listo for use.
+ * Lee the API key de the integraciones del Use (type = "openai").
  */
 async function getOpenAIClient(userId, preferredModel) {
   const openaiData = await integrationService.getOpenAIApiKey(userId);
@@ -23,7 +23,7 @@ async function getOpenAIClient(userId, preferredModel) {
 }
 
 /**
- * Convierte las tool definitions del formato MCP (Gemini-compatible)
+ * Convierte the definiciones de tools del formato MCP (compatible with Gemini)
  * al formato que espera OpenAI.
  */
 function adaptToolDefinitions(toolDefinitions) {
@@ -38,7 +38,7 @@ function adaptToolDefinitions(toolDefinitions) {
 }
 
 /**
- * Ejecuta el agentic loop con OpenAI usando function calling.
+ * Ejecuta the agentic loop with OpenAI using function calling.
  */
 async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
@@ -91,7 +91,7 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
 }
 
 /**
- * Formato de mensajes inicial para OpenAI.
+ * Formato de mensajes inicial for OpenAI.
  */
 function buildInitialMessages(systemPrompt, userInput) {
   return [

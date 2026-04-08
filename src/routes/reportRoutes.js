@@ -1,15 +1,15 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const reportService = require("../services/reportService");
 const authMiddleware = require("../middleware/authMiddleware");
 const fs = require("fs");
 
-// 🔒 Aplicar middleware de autenticación a todas las rutas
+// 🔒 Aplicar middleware de autenticación a todas the ROUTES
 router.use(authMiddleware);
 
 /**
  * GET /api/v1/reports/generate/:containerId
- * Genera un nuevo reporte al vuelo y lo descarga
+ * Genera a new reporte al vuelo and lo descarga
  *
  * Query params:
  * - type: inventory|loans|assets (requerido)
@@ -49,11 +49,11 @@ router.get("/generate/:containerId", async (req, res) => {
       });
     }
 
-    // Extraer filtros del query string (excluyendo type y format)
+    // Extraer filtros del query string (excluyendo type and format)
     const filters = {};
     for (const [key, value] of Object.entries(req.query)) {
       if (key !== "type" && key !== "format") {
-        // Intentar convertir a número si es posible
+        // Intentar convertir a número if es posible
         filters[key] = isNaN(value) ? value : parseInt(value);
       }
     }
@@ -68,14 +68,14 @@ router.get("/generate/:containerId", async (req, res) => {
       currency
     );
 
-    // Verificar que el archivo existe
+    // Verify que the archivo existe
     if (!fs.existsSync(result.filePath)) {
       return res.status(404).json({
         error: "El archivo del reporte no se generó correctamente",
       });
     }
 
-    // Descargar el archivo directamente
+    // Descargar the archivo directamente
     res.download(result.filePath, result.fileName, (err) => {
       if (err) {
         console.error("Error downloading report:", err);

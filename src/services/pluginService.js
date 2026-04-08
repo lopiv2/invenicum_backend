@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const axios = require("axios");
 const { Octokit } = require("@octokit/rest");
 require("dotenv").config();
@@ -7,7 +7,7 @@ const { Temporal } = require('@js-temporal/polyfill');
 const { GitHubConstants } = require("../config/githubConstants");
 
 class PluginService {
-  // Centralizamos la configuración de GitHub para no repetir código
+  // Centralize GitHub configuration to avoid code repetition
   get _githubConfig() {
     return GitHubConstants.getConfig();
   }
@@ -20,11 +20,11 @@ class PluginService {
     const { auth, owner, repo, pluginRepoUrl } = await this._getGithubConfigAsync();
     const octokit = new Octokit({ auth });
 
-    // Extraemos el nombre del archivo del índice desde la URL (ej: repository_plugin.json)
+    // Extract the file name from the index URL (e.g., repository_plugin.json)
     const path = "repository_plugin.json";
 
     try {
-      // 1. Obtener el archivo de índice actual de GitHub
+      // 1. Get the current index file from GitHub
       const { data: fileData } = await octokit.repos.getContent({
         owner,
         repo,
@@ -35,7 +35,7 @@ class PluginService {
         Buffer.from(fileData.content, "base64").toString(),
       );
 
-      // 2. Buscar el plugin y sumar 1
+      // 2. Search for the plugin and add 1
       let found = false;
       if (content.plugins && Array.isArray(content.plugins)) {
         content.plugins = content.plugins.map((p) => {
@@ -47,9 +47,9 @@ class PluginService {
         });
       }
 
-      if (!found) return; // Si no está en el índice, no hacemos nada
+      if (!found) return; // If not in the index, do nothing
 
-      // 3. Subir el archivo actualizado
+      // 3. Upload the updated file
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -62,14 +62,14 @@ class PluginService {
       });
     } catch (error) {
       console.error(
-        "❌ Error actualizando downloadCount en GitHub:",
+        "❌ Error updating downloadCount in GitHub:",
         error.message,
       );
     }
   }
 
   /**
-   * Privado: Obtiene plugins desde GitHub e "hidrata" cada uno con su UI y Avatar real
+   * Private: gets plugins from GitHub and "hydrates" each one with its real UI and Avatar
    */
   async _getGitHubPlugins() {
     try {
@@ -79,24 +79,24 @@ class PluginService {
       if (response.data && Array.isArray(response.data.plugins)) {
         const basePlugins = response.data.plugins;
 
-        // 🚩 HIDRATACIÓN: Descargamos el contenido de cada download_url en paralelo
+        // 🚩 HYDRATION: Download the content of each download_url in parallel
         const hydratedPlugins = await Promise.all(
           basePlugins.map(async (plugin) => {
             try {
-              // Si tiene URL de descarga, buscamos los datos completos (UI y Avatar)
+              // If it has a download URL, we fetch the full data (UI and Avatar)
               if (plugin.download_url) {
                 const res = await axios.get(plugin.download_url);
                 const fullData = res.data;
 
                 return {
                   ...plugin,
-                  // 🚩 Extraemos el avatar del JSON completo del plugin
+                  // 🚩 Extract the full JSON avatar from plugin
                   downloadCount: plugin.downloadCount || 0,
                   authorAvatar:
                     fullData.authorAvatar ||
                     fullData.avatarUrl ||
                     plugin.authorAvatar,
-                  // Extraemos la propiedad 'ui'
+                  // Extract the 'ui' property
                   ui: fullData.ui || fullData,
                 };
               }
@@ -120,13 +120,13 @@ class PluginService {
 
       return [];
     } catch (error) {
-      console.error("❌ Error cargando catálogo de GitHub:", error.message);
+      console.error("❌ Error loading GitHub plugin catalog:", error.message);
       return [];
     }
   }
 
   /**
-   * Crea o actualiza un plugin localmente y sincroniza con GitHub
+   * Create or updates a plugin locally and synchronize with GitHub
    */
   async createPlugin(pluginData, userId) {
     const uId = parseInt(userId);
@@ -136,17 +136,17 @@ class PluginService {
     });
 
     if (!user || !user.githubHandle)
-      throw new Error("Usuario no encontrado o sin GitHub vinculado");
+      throw new Error("User not found or GitHub not linked");
 
-    // Verificación de seguridad: Si ya existe, ¿soy el dueño?
+    // Security check: if the plugin already exists, am I the owner?
     const existing = await prisma.plugin.findUnique({
       where: { id: pluginData.id },
     });
     if (existing && existing.author !== user.githubHandle) {
-      throw new Error("No autorizado: Este plugin pertenece a otro autor");
+      throw new Error("Not authorized: This plugin belongs to another author");
     }
 
-    // 3. Llamamos al método que mencionaste para hacer el trabajo sucio con GitHub
+    // 3. Call the method that handles the GitHub interaction
     try {
       const prData = await this.uploadPluginJson(
         pluginData,
@@ -156,25 +156,25 @@ class PluginService {
 
       return {
         success: true,
-        message: "Propuesta enviada a GitHub correctamente",
+        message: "Proposal submitted to GitHub successfully",
         prUrl: prData.html_url,
       };
     } catch (error) {
-      console.error("❌ Error al proponer plugin:", error.message);
-      throw new Error("Error al procesar la propuesta en GitHub");
+      console.error("❌ Error proposing plugin:", error.message);
+      throw new Error("Error processing the proposal on GitHub");
     }
   }
 
   async getPluginPreview(url) {
     try {
       if (!url.startsWith("https://raw.githubusercontent.com")) {
-        throw new Error("URL no permitida");
+        throw new Error("URL not allowed for preview");
       }
       const response = await axios.get(url);
       return response.data;
     } catch (error) {
-      console.error("❌ Error en getPluginPreview:", error.message);
-      throw new Error("No se pudo obtener la previsualización del plugin.");
+      console.error("❌ Error in getPluginPreview:", error.message);
+      throw new Error("Could not fetch plugin preview.");
     }
   }
 
@@ -182,7 +182,7 @@ class PluginService {
     const { auth, owner, repo } = await this._getGithubConfigAsync();
     if (!semver.valid(plugin.version)) {
       throw new Error(
-        `La versión '${plugin.version}' no es un SemVer válido (ej: 1.0.0)`,
+        `The version '${plugin.version}' is not a valid SemVer (e.g., 1.0.0)`,
       );
     }
     const octokit = new Octokit({ auth });
@@ -232,18 +232,18 @@ class PluginService {
         title: `🆕 Plugin Submission: ${plugin.name}`,
         head: branchName,
         base: "main",
-        body: `Usuario: ${authorName}\nID: ${plugin.id}\nVersión: ${plugin.version}`,
+        body: `User: ${authorName}\nID: ${plugin.id}\nVersion: ${plugin.version}`,
       });
 
       return pr.data;
     } catch (error) {
-      console.error("❌ Error en flujo de PR de GitHub:", error.message);
+      console.error("❌ Error in GitHub PR flow:", error.message);
       throw error;
     }
   }
 
   /**
-   * Mezcla plugins locales y remotos
+   * Mixes local and remote plugins
    */
   async getAllCommunityPlugins(userId) {
     const uId = parseInt(userId);
@@ -289,12 +289,12 @@ class PluginService {
   }
 
   /**
-   * Instala un plugin detectando automáticamente la estructura de la UI
+   * Installs a plugin by automatically detecting the UI structure
    */
   async installPlugin(userId, pluginData) {
     const uId = parseInt(userId);
     if (!pluginData || !pluginData.id)
-      throw new Error("Datos del plugin incompletos");
+      throw new Error("Incomplete plugin data");
 
     let uiData = pluginData.ui;
 
@@ -309,7 +309,7 @@ class PluginService {
       uiData = uiData.ui;
     }
 
-    // Upsert del plugin sin authorId (usamos los campos de texto author y authorAvatar)
+    // Upsert the plugin without authorId (Use the text fields author and authorAvatar)
     await prisma.plugin.upsert({
       where: { id: pluginData.id },
       update: {
@@ -338,15 +338,15 @@ class PluginService {
       create: { userId: uId, pluginId: pluginData.id, isActive: true },
     });
 
-    // 2. 🚀 Sincronizar con GitHub (Sin bloquear la respuesta al usuario)
-    // No usamos 'await' aquí para que el usuario no espere a GitHub para ver su plugin instalado
+    // 2. 🚀 Synchronize with GitHub (without blocking the Response to the User)
+    // Do not use 'await' here so that the user does not have to wait for GitHub to see their plugin installed  
     this._incrementPluginDownloadCount(pluginData.id).catch(console.error);
 
     return result;
   }
 
   /**
-   * Lista plugins instalados comparando handle para determinar isMine
+   * Lists installed plugins by comparing GitHub handle to determine isMine
    */
   async getUserPlugins(userId) {
     const uId = parseInt(userId);
@@ -383,10 +383,11 @@ class PluginService {
   }
 
   /**
-   * Actualiza un plugin validando el handle de GitHub
+   * Updates a plugin by validating the GitHub handle and creating a PR if it's public, or updating directly if it's private
+   * Only the author can update their plugin, whether it's public or private
    */
   async updatePlugin(id, data, uId) {
-    // 1. Obtener datos del usuario desde la DB para el autor/avatar
+    // 1. get data del Use from the DB for the autor/avatar
     const user = await prisma.user.findUnique({
       where: { id: parseInt(uId) },
       select: { githubHandle: true, avatarUrl: true, name: true },
@@ -395,26 +396,26 @@ class PluginService {
     const { auth, owner, repo } = await this._getGithubConfigAsync();
     const octokit = new Octokit({ auth });
 
-    // 2. Definir nombres de rama y ruta del archivo
+    // 2. Definir nombres de rama and route del archivo
     const branchName = `plugin-update-${id}-${Temporal.Now.instant().epochMilliseconds}`;
     const path = `plugins/${id}.json`;
 
     try {
-      // A. Obtener referencia de main (para crear la rama)
+      // A. get reference of main (for creating the branch)
       const { data: mainRef } = await octokit.git.getRef({
         owner,
         repo,
         ref: "heads/main",
       });
 
-      // B. Obtener el archivo actual para conseguir su SHA (Obligatorio para actualizar)
+      // B. get the current file to get its SHA (Required for update)
       const { data: currentFile } = await octokit.repos.getContent({
         owner,
         repo,
         path,
       });
 
-      // C. Crear la nueva rama
+      // C. Create the new branch from main using the SHA of the current file (important for concurrency control in updates)
       await octokit.git.createRef({
         owner,
         repo,
@@ -422,7 +423,7 @@ class PluginService {
         sha: mainRef.object.sha,
       });
 
-      // D. Preparar el contenido del JSON (igual que en uploadPluginJson)
+      // D. Prepare the content of the JSON (same as in uploadPluginJson)
       const pluginFileContent = {
         id: id,
         name: data.name,
@@ -434,30 +435,30 @@ class PluginService {
         ui: data.ui,
       };
 
-      // E. Subir el archivo modificado a la nueva rama usando el SHA
+      // E. Upload the modified file to the new branch using the SHA
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
         path,
         branch: branchName,
-        sha: currentFile.sha, // 🚩 Esto es lo que diferencia la actualización de la creación
+        sha: currentFile.sha, // 🚩 This is what differentiates the update from the creation
         message: `🆙 Update plugin: ${data.name} by ${user.githubHandle}`,
         content: Buffer.from(
           JSON.stringify(pluginFileContent, null, 2),
         ).toString("base64"),
       });
 
-      // F. Crear el Pull Request
+      // F. Create the Pull Request
       const pr = await octokit.pulls.create({
         owner,
         repo,
         title: `🆙 Plugin Update: ${data.name}`,
         head: branchName,
         base: "main",
-        body: `Solicitud de actualización enviada por @${user.githubHandle}\nID: ${id}\nVersión: ${data.version}`,
+        body: `Update request submitted by @${user.githubHandle}\nID: ${id}\nVersion: ${data.version}`,
       });
 
-      // Una vez creado el PR con éxito:
+      // Once the PR is created successfully:
       await prisma.plugin.update({
         where: { id: id },
         data: {
@@ -468,15 +469,16 @@ class PluginService {
 
       return pr.data;
     } catch (error) {
-      console.error("❌ Error en flujo de PR de actualización:", error.message);
+      console.error("❌ Error in update PR flow:", error.message);
       throw new Error(
-        "No se pudo procesar la actualización en GitHub: " + error.message,
+        "Failed to process the update on GitHub: " + error.message,
       );
     }
   }
 
   /**
-   * Borra un plugin validando el handle de GitHub
+   * Deletes a plugin by validating the GitHub handle and deleting the file from GitHub if it's public, or deleting directly if it's private
+   * Only the author can delete their plugin, whether it's public or private
    */
   async deletePlugin(id, userId, deleteFromGitHub = false) {
     const uId = parseInt(userId);
@@ -488,7 +490,7 @@ class PluginService {
 
     if (!plugin || plugin.author !== user?.githubHandle) {
       throw new Error(
-        "No autorizado: Solo el autor puede eliminar este plugin",
+        "Unauthorized: Only the author can delete this plugin",
       );
     }
 
@@ -511,7 +513,7 @@ class PluginService {
           sha: fData.sha,
         });
       } catch (e) {
-        console.warn("No se pudo borrar de GitHub:", e.message);
+        console.warn("Failed to delete from GitHub:", e.message);
       }
     }
 

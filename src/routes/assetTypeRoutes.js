@@ -1,4 +1,4 @@
-// routes/assetTypeRoutes.js
+﻿// routes/assetTypeRoutes.js
 
 const express = require("express");
 const router = express.Router();
@@ -10,13 +10,13 @@ const fs = require("fs");
 require("dotenv").config(); // Cargar las variables de entorno
 const { Temporal } = require('@js-temporal/polyfill');
 
-// Middleware para logging (opcional)
+// Middleware for logging (opcional)
 router.use((req, res, next) => {
   const timestamp = Temporal.Now.plainDateISO().toString();
   console.log(
     `[${timestamp}] AssetTypeRoutes - ${req.method} ${req.originalUrl}`
   );
-  // Omitir el log del cuerpo en archivos grandes
+  // Omitir the log del body en archivos grandes
   if (
     req.body &&
     Object.keys(req.body).length > 0 &&
@@ -28,7 +28,7 @@ router.use((req, res, next) => {
 });
 
 // --------------------------------------------------------------------
-// C (Create) - Crear un nuevo Tipo de Activo (Anidado bajo contenedor)
+// C (Create) - Create a new Tipo de Activo (Anidado bajo container)
 // POST /containers/:containerId/asset-types
 // --------------------------------------------------------------------
 router.post(
@@ -41,7 +41,7 @@ router.post(
       const containerId = parseInt(req.params.containerId);
       const userId = req.user.id;
 
-      // 1. Verificación de propiedad del contenedor
+      // 1. Verificación de propiedad del container
       const container = await containerService.getContainerById(
         containerId,
         userId
@@ -55,16 +55,16 @@ router.post(
       }
       const isSerialized = req.body.isSerialized === "true";
 
-      // 2. Preparar los datos
+      // 2. Preparar the data
       const assetTypeData = {
         ...req.body,
         isSerialized: isSerialized,
-        // CORRECCIÓN: fieldDefinitions se parsea y se incluyen los archivos
+        // CORRECCIÓN: fieldDefinitions se parsea and se incluyen the archivos
         fieldDefinitions: JSON.parse(req.body.fieldDefinitions || "[]"),
         files: uploadedFiles,
       };
 
-      // 3. Delegar la creación al servicio (el servicio maneja el resto de la lógica de URL y DB)
+      // 3. Delegar the Createción al service (the service maneja the resto de the lógica de URL and DB)
       const result = await assetTypeService.createAssetType(
         containerId,
         userId,
@@ -74,7 +74,7 @@ router.post(
       if (result.success) {
         res.status(201).json(result);
       } else {
-        // Si el servicio falla, limpia los archivos subidos
+        // if the service fails, limpia the archivos subidos
         uploadedFiles.forEach((file) => fs.unlinkSync(file.path));
         res.status(400).json(result);
       }
@@ -99,7 +99,7 @@ router.post(
 );
 
 // --------------------------------------------------------------------
-// R (Read) - Obtener un único Tipo de Activo
+// R (Read) - get a único Tipo de Activo
 // --------------------------------------------------------------------
 router.get("/asset-types/:id", verifyToken, async (req, res) => {
   try {
@@ -124,54 +124,54 @@ router.get("/asset-types/:id", verifyToken, async (req, res) => {
 });
 
 // --------------------------------------------------------------------
-// U (Update) - Actualizar un Tipo de Activo
+// U (Update) - update a Tipo de Activo
 // --------------------------------------------------------------------
 router.patch(
   "/asset-types/:id",
   verifyToken,
   upload.array("files"),
   async (req, res) => {
-    // req.files contiene los archivos subidos por Multer (nueva imagen)
+    // req.files contiene the archivos subidos por Multer (new imagen)
     const filesToUpload = req.files || [];
 
-    // 🔑 1. Capturar el flag booleano 'removeExistingImage'.
-    // Viene como string 'true' o 'false' en FormData, por eso comparamos con 'true'.
+    // 🔑 1. Capturar the flag booleano 'removeExistingImage'.
+    // Viene como string 'true' o 'false' en FormData, por eso comparamos with 'true'.
     const removeExistingImage = req.body.removeExistingImage === "true";
 
     try {
       const assetTypeId = req.params.id;
-      // Asegúrate de que req.user.id esté disponible por el middleware verifyToken
+      // Make sure req.use.id esté disponible por the middleware verifyToken
       const userId = req.user.id;
 
-      // 2. Preparar los datos
+      // 2. Preparar the data
       const updateData = {
-        // Incluir el nombre solo si está presente
+        // Incluir the nombre only if está presente
         ...(req.body.name && { name: req.body.name }),
 
-        // 🔑 NUEVO: Incluir isSerialized y quantity si están definidos
+        // 🔑 new: Incluir isSerialized and quantity if están definidos
         // isSerialized se convierte a booleano. Viene como string 'true'/'false'
         ...(req.body.isSerialized !== undefined && {
           isSerialized: req.body.isSerialized === "true",
         }),
 
-        // quantity se parsea a entero si existe
+        // quantity se parsea a entero if existe
         ...(req.body.quantity !== undefined && {
           quantity: parseInt(req.body.quantity, 10),
         }),
 
-        // Parsear las definiciones de campo, que vienen como un string JSON
+        // Parsear the definiciones de campo, que vienen como a string JSON
         fieldDefinitions: req.body.fieldDefinitions
           ? JSON.parse(req.body.fieldDefinitions)
           : undefined,
 
-        // Nuevos archivos subidos (para reemplazo)
+        // Nuevos archivos subidos (for reemplazo)
         filesToUpload: filesToUpload,
 
-        // Flag para la eliminación
+        // Flag for the eliminación
         removeExistingImage: removeExistingImage,
       };
 
-      // 3. Delegar la actualización al servicio de AssetType
+      // 3. Delegar the actualización al service de AssetType
       const result = await assetTypeService.updateAssetType(
         assetTypeId,
         userId,
@@ -179,15 +179,15 @@ router.patch(
       );
 
       if (result.success) {
-        // Devolver el AssetType actualizado
+        // Devolver the AssetType actualizado
         res.json({ success: true, data: result.data });
       } else {
-        // Si el servicio falla, limpiar los archivos subidos temporalmente
+        // if the service fails, limpiar the archivos subidos temporalmente
         filesToUpload.forEach((file) => fs.unlinkSync(file.path));
         res.status(400).json(result);
       }
     } catch (error) {
-      // Limpiar archivos subidos en caso de error del servidor o servicio
+      // Limpiar archivos subidos en caso de error del server o service
       filesToUpload.forEach((file) => {
         try {
           fs.unlinkSync(file.path);
@@ -206,9 +206,9 @@ router.patch(
   }
 );
 
-// 🎯 NUEVA RUTA: Actualizar solo los campos de colección de un AssetType
+// 🎯 new route: update only the campos de colección de a AssetType
 // PATCH /asset-types/:id/collection-fields
-// Esto permite actualizar possessionFieldId y desiredFieldId sin necesidad de multipart/form-data
+// Esto permite update possessionFieldId and desiredFieldId without necesidad de multipart/form-data
 router.patch("/asset-types/:id/collection-fields", verifyToken, async (req, res) => {
   try {
     const assetTypeId = req.params.id;
@@ -252,7 +252,7 @@ router.patch("/asset-types/:id/collection-fields", verifyToken, async (req, res)
 });
 
 // --------------------------------------------------------------------
-// D (Delete) - Eliminar todos los ítems asociados a un Tipo de Activo
+// D (Delete) - delete todos the ítems asociados a a Tipo de Activo
 // --------------------------------------------------------------------
 router.delete("/asset-types/:id/assets", verifyToken, async (req, res) => {
   try {
@@ -286,7 +286,7 @@ router.delete("/asset-types/:id/assets", verifyToken, async (req, res) => {
 });
 
 // --------------------------------------------------------------------
-// D (Delete) - Eliminar un Tipo de Activo y sus archivos
+// D (Delete) - delete a Tipo de Activo and sus archivos
 // DELETE /asset-types/:id
 // --------------------------------------------------------------------
 router.delete("/asset-types/:id", verifyToken, async (req, res) => {
@@ -294,7 +294,7 @@ router.delete("/asset-types/:id", verifyToken, async (req, res) => {
     const assetTypeId = req.params.id;
     const userId = req.user.id;
 
-    // El servicio maneja la limpieza de archivos del disco y la DB
+    // the service maneja the limpieza de archivos del disk and the DB
     const result = await assetTypeService.deleteAssetType(assetTypeId, userId);
 
     if (result.success) {

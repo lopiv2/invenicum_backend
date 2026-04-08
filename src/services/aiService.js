@@ -1,4 +1,4 @@
-// services/aiService.js
+﻿// services/aiService.js
 const prisma = require("../middleware/prisma");
 const { TOOL_DEFINITIONS, executeTool } = require("./mcpServer");
 const { AI_PROVIDERS, DEFAULT_MODELS } = require("../config/aiConstants");
@@ -32,28 +32,28 @@ async function buildSystemPrompt(userId, locale) {
     where: { userId },
     select: { id: true, name: true },
   });
-  const listaContenedores =
+  const containerList =
     containers.map((c) => `- ${c.name} (ID: ${c.id})`).join("\n") ||
-    "- (sin contenedores aún)";
+    "- (no containers yet)";
 
   return (
-    `Eres Veni, el asistente de inventario de Invenicum. ` +
-    `Responde SIEMPRE en el idioma "${locale}". ` +
-    `\n\nContenedores del usuario:\n${listaContenedores}` +
-    `\n\nREGLAS CRÍTICAS:` +
-    `\n- NUNCA escribas XML, JSON, <tool_call> ni bloques de código en tu respuesta.` +
-    `\n- NUNCA describas lo que vas a hacer con una tool — simplemente INVÓCALA.` +
-    `\n- Para navegar usa SIEMPRE la function "navigate", nunca escribas la ruta en el texto.` +
-    `\n- Tu respuesta debe ser breve y conversacional.` +
-    `\n\nHerramientas disponibles: navigate, open_scanner, search_assets, ` +
+    `You are Veni, the inventory assistant for Invenicum. ` +
+    `ALWAYS reply in the language "${locale}". ` +
+    `\n\nUser containers:\n${containerList}` +
+    `\n\nCRITICAL RULES:` +
+    `\n- NEVER write XML, JSON, <tool_call> or code blocks in your response.` +
+    `\n- NEVER describe what you are going to do with a tool — just INVOKE IT.` +
+    `\n- To navigate, ALWAYS use the "navigate" function, never write the path in the text.` +
+    `\n- Your response must be brief and conversational.` +
+    `\n\nAvailable tools: navigate, open_scanner, search_assets, ` +
     `create_asset, list_containers, create_container, create_template, extract_product_from_url.`
   );
 }
 
 function isCreateTemplateIntent(input = "") {
   const text = String(input || "").toLowerCase();
-  const mentionsTemplate = /(plantilla|template)/.test(text);
-  const createVerb = /(crear|crea|diseña|disena|genera|arma|haz|construye|build|generate|design|create)/.test(text);
+  const mentionsTemplate = /(template)/.test(text);
+  const createVerb = /(build|generate|design|create)/.test(text);
   return mentionsTemplate && createVerb;
 }
 
@@ -63,26 +63,26 @@ function inferNavigationPathFromInput(input = "") {
   const directPath = text.match(/\/(dashboard|settings|integrations|templates|scanner|loans|inventory)\b/);
   if (directPath) return directPath[0];
 
-  if (/integraciones|integration/.test(text)) return "/integrations";
-  if (/dashboard|inicio|home/.test(text)) return "/dashboard";
-  if (/ajustes|configuraci[oó]n|settings|preferencias|preferences/.test(text)) return "/settings";
-  if (/plantillas|templates/.test(text)) return "/templates";
-  if (/esc[aá]ner|scanner/.test(text)) return "/scanner";
-  if (/pr[eé]stamos|prestamos|loans/.test(text)) return "/loans";
-  if (/inventario|inventory/.test(text)) return "/dashboard";
+  if (/integrations/.test(text)) return "/integrations";
+  if (/dashboard|home/.test(text)) return "/dashboard";
+  if (/settings|preferences/.test(text)) return "/settings";
+  if (/templates/.test(text)) return "/templates";
+  if (/scanner/.test(text)) return "/scanner";
+  if (/loans/.test(text)) return "/loans";
+  if (/inventory/.test(text)) return "/dashboard";
 
   return null;
 }
 
 function isNavigationIntent(input = "") {
   const text = String(input || "").toLowerCase();
-  const hasVerb = /(ir|ve|v[eé]|ll[eé]vame|llevar|navega|navegar|abrir|abre|open|go to|take me|navigate)/.test(text);
+  const hasVerb = /(open|go to|take me|navigate)/.test(text);
   return hasVerb && !!inferNavigationPathFromInput(text);
 }
 
 function modelPromisesNavigation(text = "") {
   const t = String(text || "").toLowerCase();
-  return /(te llevo|i'?ll take you|i will take you|navigat|go to|llevarte)/.test(t);
+  return /(i'?ll take you|i will take you|navigat|go to)/.test(t);
 }
 
 function isTransientProviderError(error) {
@@ -101,7 +101,7 @@ class AIService {
   async processChatConversation(userInput, context = {}) {
     const userId = parseInt(context.userId);
     const locale = context.locale || "es";
-    if (isNaN(userId)) throw new Error("userId requerido");
+    if (isNaN(userId)) throw new Error("userId required");
 
     const { adapter, getClient } = await getAdapter(userId);
 
@@ -113,7 +113,7 @@ class AIService {
     }
 
     const { client, model, provider } = clientData;
-    console.log(`[AI] Proveedor: ${provider} | Modelo: ${model}`);
+    console.log(`[AI] Provider: ${provider} | Model: ${model}`);
 
     const toolContext = {
       userId,
@@ -128,22 +128,22 @@ class AIService {
     let finalInput = userInput;
     const strictTemplateMode = userInput !== "SAY_HELLO_INITIAL" && isCreateTemplateIntent(userInput);
     if (strictTemplateMode) {
-      console.log("[AI][TemplateStrict] Modo estricto activado para solicitud de plantilla.");
+      console.log("[AI][TemplateStrict] Strict mode enabled for template request.");
     }
     if (userInput === "SAY_HELLO_INITIAL") {
       finalInput =
-        `Actúa como Veni, asistente de Invenicum. Preséntate brevemente. ` +
-        `Responde en "${locale}". Dime que puedes ayudar con el inventario.`;
+        `Act as Veni, Invenicum assistant. Briefly introduce yourself. ` +
+        `Reply in "${locale}". Say you can help with inventory.`;
     } else if (strictTemplateMode) {
       finalInput =
-        `Solicitud del usuario: ${userInput}\n\n` +
-        `Modo estricto de plantillas: debes invocar create_template.` +
-        ` No escribas create_template(...) como texto.` +
-        ` El payload debe cumplir exactamente:` +
+        `User request: ${userInput}\n\n` +
+        `Strict template mode: you must invoke create_template.` +
+        ` Do not write create_template(...) as text.` +
+        ` The payload must exactly comply with:` +
         ` name:string, description:string, category:string, fields:array(5-8).` +
-        ` Cada field requiere name y type en [text, number, date, dropdown, price, boolean, url].` +
-        ` Si type='dropdown', options es obligatorio con 3-6 strings.` +
-        ` Si falta información, asume valores razonables y completa campos útiles.`;
+        ` Each field requires name and type in [text, number, date, dropdown, price, boolean, url].` +
+        ` If type='dropdown', options is mandatory with 3-6 strings.` +
+        ` If information is missing, assume reasonable values and complete useful fields.`;
     }
 
     const systemPrompt = await buildSystemPrompt(userId, locale);
@@ -156,7 +156,7 @@ class AIService {
       try {
         return await executeTool(name, args, toolContext);
       } catch (err) {
-        console.error(`[MCP] Error en tool ${name}:`, err.message);
+        console.error(`[MCP] Error invoking tool ${name}:`, err.message);
         return { toolResult: { error: err.message } };
       }
     };
@@ -175,20 +175,20 @@ class AIService {
       }));
     } catch (error) {
       if (isTransientProviderError(error)) {
-        console.warn(
-          `[AI][Provider] Error transitorio del proveedor (status=${error?.status ?? "n/a"}) en intento 1.`,
-        );
+          console.warn(
+            `[AI][Provider] Transient provider error (status=${error?.status ?? "n/a"}) on attempt 1.`,
+          );
         if (strictTemplateMode) {
           return {
             answer:
-              "El proveedor de IA está con alta demanda en este momento. Te abro el creador para que no pierdas tiempo.",
+              "The AI provider is under high demand right now. Opening the template creator so you don't lose time.",
             action: "NAVIGATE",
             data: { path: "/templates/create", reason: "provider_transient_error" },
           };
         } else {
           return {
             answer:
-              "El proveedor de IA está temporalmente saturado. Intenta de nuevo en unos segundos.",
+              "The AI provider is temporarily busy. Please try again in a few seconds.",
             action: null,
             data: {},
           };
@@ -199,14 +199,14 @@ class AIService {
 
     if (strictTemplateMode) {
       console.log(
-        `[AI][TemplateStrict] Intento 1 completado. finalAction=${finalAction ?? "null"}`,
+        `[AI][TemplateStrict] Attempt 1 completed. finalAction=${finalAction ?? "null"}`,
       );
     }
 
     if (!strictTemplateMode && !finalAction) {
       const providerNoAnswer =
         !finalAnswer ||
-        /no pude procesar la solicitud|respuesta vac[ií]a/i.test(String(finalAnswer));
+        /could not process the request|empty response/i.test(String(finalAnswer));
 
       const inferredFromUser = isNavigationIntent(userInput)
         ? inferNavigationPathFromInput(userInput)
@@ -222,32 +222,32 @@ class AIService {
           `[AI][NavFallback] inferredFromUser=${inferredFromUser ?? "null"} | inferredFromModel=${inferredFromModel ?? "null"} | providerNoAnswer=${providerNoAnswer}`,
         );
         if (inferredPath) {
-          console.warn(
-            `[AI] Respuesta vacía/sin acción del proveedor. Navegación inferida por heurística: ${inferredPath}`,
-          );
-          finalAction = "NAVIGATE";
-          finalData = { path: inferredPath, reason: "provider_empty_response_navigation_fallback" };
-        }
+            console.warn(
+              `[AI] Empty/no-action response from provider. Heuristic-inferred navigation: ${inferredPath}`,
+            );
+            finalAction = "NAVIGATE";
+            finalData = { path: inferredPath, reason: "provider_empty_response_navigation_fallback" };
+          }
       }
     }
 
-    // En modo estricto de plantilla intentamos un segundo pase forzado antes de abortar.
-    if (strictTemplateMode && finalAction !== "CREATE_TEMPLATE") {
-      console.warn(
-        `[AI][TemplateStrict] Intento 1 no logró CREATE_TEMPLATE. finalAnswer=${
-          finalAnswer ? "present" : "empty"
-        }. Iniciando reintento forzado.`,
-      );
+      // In strict template mode we attempt a forced second pass before aborting.
+      if (strictTemplateMode && finalAction !== "CREATE_TEMPLATE") {
+        console.warn(
+          `[AI][TemplateStrict] Attempt 1 did not achieve CREATE_TEMPLATE. finalAnswer=${
+            finalAnswer ? "present" : "empty"
+          }. Starting forced retry.`,
+        );
 
-      const retryPrompt =
-        `Reintento obligatorio: genera la plantilla solicitada por el usuario y llama create_template ahora.\n` +
-        `Usuario: ${userInput}\n\n` +
-        `Reglas estrictas:\n` +
-        `- NO respondas texto normal.\n` +
-        `- SOLO invoca create_template.\n` +
-        `- fields debe tener entre 5 y 8 campos.\n` +
-        `- Tipos permitidos: text, number, date, dropdown, price, boolean, url.\n` +
-        `- En dropdown, options obligatorio con 3 a 6 opciones.`;
+        const retryPrompt =
+          `Mandatory retry: generate the template requested by the user and call create_template now.\n` +
+          `User: ${userInput}\n\n` +
+          `Strict rules:\n` +
+          `- DO NOT reply with normal text.\n` +
+          `- ONLY invoke create_template.\n` +
+          `- fields must contain between 5 and 8 fields.\n` +
+          `- Allowed types: text, number, date, dropdown, price, boolean, url.\n` +
+          `- For dropdown, options are mandatory with 3 to 6 options.`;
 
       const retryInitialMessages = adapter.buildInitialMessages(systemPrompt, retryPrompt);
       const retryMessages = retryInitialMessages.messages ?? retryInitialMessages;
@@ -268,11 +268,11 @@ class AIService {
       } catch (error) {
         if (isTransientProviderError(error)) {
           console.warn(
-            `[AI][Provider] Error transitorio del proveedor (status=${error?.status ?? "n/a"}) en reintento estricto.`,
+            `[AI][Provider] Transient provider error (status=${error?.status ?? "n/a"}) on strict retry.`,
           );
           return {
             answer:
-              "El proveedor de IA está con alta demanda en este momento. Te abro el creador para que no pierdas tiempo.",
+              "The AI provider is under high demand right now. Opening the template creator so you don't lose time.",
             action: "NAVIGATE",
             data: { path: "/templates/create", reason: "provider_transient_error_retry" },
           };
@@ -281,34 +281,34 @@ class AIService {
       }
 
       console.log(
-        `[AI][TemplateStrict] Reintento completado. finalAction=${retryResult.finalAction ?? "null"}`,
+        `[AI][TemplateStrict] Retry completed. finalAction=${retryResult.finalAction ?? "null"}`,
       );
 
       if (retryResult.finalAction === "CREATE_TEMPLATE") {
-        console.log("[AI][TemplateStrict] Reintento exitoso: plantilla creada por tool call.");
+        console.log("[AI][TemplateStrict] Retry successful: template created via tool call.");
         finalAction = retryResult.finalAction;
         finalData = retryResult.finalData;
         finalAnswer = retryResult.finalAnswer;
       } else {
         console.warn(
-          "[AI][TemplateStrict] Reintento fallido. Se navega al creador de plantillas.",
+          "[AI][TemplateStrict] Retry failed. Navigating to template creator.",
         );
         return {
           answer:
-            "No pude construir una plantilla válida automáticamente. Te abro el creador para completarla con campos obligatorios.",
+            "I could not build a valid template automatically. Opening the template creator so you can complete required fields.",
           action: "NAVIGATE",
           data: { path: "/templates/create", reason: "strict_template_mode_failed" },
         };
       }
     }
 
-    // Limpiar el answer de artefactos que el modelo a veces incluye en el texto
+    // Clean the answer from artifacts that the model sometimes includes in the text
     let answer = finalAnswer;
     if (answer) {
-      // FALLBACK: El modelo a veces escribe la tool call como texto en lugar de invocarla.
-      // Intentamos parsear cualquier JSON que contenga "name": "navigate" u otras tools.
+      // Fallback: the model sometimes writes the tool call as text instead of invoking it.
+      // We try to parse any JSON containing "name": "navigate" or other tools.
       if (!finalAction) {
-        // Buscar cualquier bloque JSON en el texto
+        // Search for any JSON block in the text
         const jsonMatches = answer.match(/\{[\s\S]*?\}/g) || [];
         for (const jsonStr of jsonMatches) {
           try {
@@ -318,7 +318,7 @@ class AIService {
 
             if (toolName === "navigate" || toolName === "navigate_to") {
               finalAction = "NAVIGATE";
-              // El path puede venir con distintos nombres de clave
+              // The path can come with different key names
               const p = args.path || args.route || args.target || args.location || args.destination || "/dashboard";
               finalData = { path: p.startsWith("/") ? p : "/" + p };
               answer = answer.replace(jsonStr, "").trim();
@@ -331,11 +331,11 @@ class AIService {
               break;
             }
           } catch (_) {
-            // No era JSON válido — ignorar
+            // Not valid JSON — ignore
           }
         }
 
-        // Fallback para sintaxis de función: navigate(route="dashboard")
+        // Fallback alternative for function syntax: navigate(route="dashboard")
         if (!finalAction) {
           const navMatch = answer.match(/navigate\s*\(\s*(?:target|path|route|location)\s*=\s*["']([^"']+)["']/i)
                         || answer.match(/navigate\s*\(\s*["']([^"']+)["']/i);
@@ -352,13 +352,12 @@ class AIService {
           finalData = {};
           answer = answer.replace(/open_scanner\s*\([^)]*\)/gi, "").trim();
         }
-
       }
 
-      // Eliminar cualquier resto de artefactos del modelo
+      // Delete any remaining artifacts from the model
       answer = answer.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
       answer = answer.replace(/\*\*Acción:\*\*[^]*/gi, "");
-      // Eliminar líneas que solo contengan llaves o corchetes sueltos
+      // Delete lines that only contain loose braces or brackets
       answer = answer.replace(/^[\s{}[\]]*$/gm, "").trim();
 
       if (strictTemplateMode && /create_template\s*\(/i.test(answer)) {
@@ -366,15 +365,15 @@ class AIService {
       }
     }
 
-    // Si la acción es de navegación y no hay respuesta de texto útil,
-    // generamos un mensaje por defecto para que el chat no quede vacío.
+    // If the action is navigation and there is no useful text response,
+    // generate a default message so the chat is not left empty.
     if (!answer && finalAction) {
       const actionMessages = {
-        NAVIGATE:        "De acuerdo, te llevo ahí.",
-        OPEN_SCANNER:    "Abriendo el escáner...",
-        CREATE_TEMPLATE: "Aquí tienes la plantilla que he diseñado. Revísala antes de publicar.",
+        NAVIGATE:        "Alright, taking you there.",
+        OPEN_SCANNER:    "Opening the scanner...",
+        CREATE_TEMPLATE: "Here is the template I designed. Review it before publishing.",
       };
-      answer = actionMessages[finalAction] ?? "He completado la acción solicitada.";
+      answer = actionMessages[finalAction] ?? "I have completed the requested action.";
     }
 
     if (finalAction === "CREATE_TEMPLATE") {
@@ -391,7 +390,7 @@ class AIService {
         category: finalData?.category ?? "",
         fields: normalizedFields,
         fieldDefinitions: normalizedFields,
-        // Ruta con token para forzar refresco de prefill incluso si ya estás en /templates/create.
+        // Path with token to force prefill refresh even if you're already on /templates/create.
         path: `/templates/create?ai_prefill=${prefillToken}`,
         prefillToken,
         shouldNavigate: true,
@@ -410,7 +409,7 @@ class AIService {
     );
 
     return {
-      answer: answer || "He completado la acción solicitada.",
+      answer: answer || "I have completed the requested action.",
       action: finalAction,
       data: finalData,
     };

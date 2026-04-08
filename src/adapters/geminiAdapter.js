@@ -1,4 +1,4 @@
-// services/adapters/geminiAdapter.js
+﻿// services/adapters/geminiAdapter.js
 const { GoogleGenAI } = require("@google/genai");
 const integrationService = require("../services/integrationsService");
 const { DEFAULT_MODELS, AI_PROVIDERS } = require("../config/aiConstants");
@@ -35,8 +35,8 @@ async function generateContentWithRetry(client, payload, label, maxRetries = 2) 
 }
 
 /**
- * Devuelve un cliente y modelo Gemini listos para usar.
- * Lee la API key del sistema de integraciones del usuario.
+ * returns a cliente and modelo Gemini listos for use.
+ * Lee the API key del sistema de integraciones del Use.
  */
 async function getGeminiClient(userId, preferredModel) {
   const geminiData = await integrationService.getGeminiApiKey(userId);
@@ -54,7 +54,7 @@ async function getGeminiClient(userId, preferredModel) {
 }
 
 /**
- * Ejecuta el agentic loop con Gemini usando function calling nativo.
+ * Ejecuta the agentic loop with Gemini using function calling nativas.
  */
 async function runAgenticLoop({ client, model, messages, toolDefinitions, onToolCall, systemPrompt, forceToolName = null, strictToolMode = false }) {
   const MAX_ITERATIONS = 5;
@@ -144,8 +144,8 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
       break;
     }
 
-    // Filtramos pensamiento, pero conservamos siempre functionCall/functionResponse.
-    // Algunos modelos pueden marcar functionCall con thought=true.
+    // Filter thought parts, but always preserve functionCall/functionResponse.
+    // Some models may mark functionCall with thought=true.
     let parts = allParts.filter((p) => !p.thought || p.functionCall || p.functionResponse);
     let toolCalls = parts.filter((p) => p.functionCall);
     let textParts = parts.filter((p) => p.text);
@@ -287,7 +287,7 @@ async function runAgenticLoop({ client, model, messages, toolDefinitions, onTool
 }
 
 /**
- * Formato de mensajes inicial para Gemini.
+ * Formato de mensajes inicial for Gemini.
  */
 function buildInitialMessages(systemPrompt, userInput) {
   return {

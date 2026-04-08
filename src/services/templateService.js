@@ -1,8 +1,8 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const axios = require("axios");
 const { Octokit } = require("@octokit/rest");
 const crypto = require("crypto");
-const AssetTemplateDTO = require("../models/templateModel"); // 👈 Importamos el DTO
+const AssetTemplateDTO = require("../models/templateModel"); // 👈 Import the DTO
 require("dotenv").config();
 const { Temporal } = require('@js-temporal/polyfill');
 const { GitHubConstants } = require("../config/githubConstants");
@@ -17,18 +17,18 @@ class TemplateService {
   }
 
   /**
-   * Guarda una plantilla en la biblioteca personal del usuario.
+   * Saves a template in the user's personal library.
    */
   async saveTemplateToUser(userId, templateData) {
     try {
       const { id: templateId } = templateData;
 
-      // Guardamos solo la relación.
-      // Si tu DB requiere que la plantilla exista, puedes hacer un upsert mínimo (solo ID y nombre)
-      // para satisfacer la integridad referencial sin guardar todos los campos/fields.
+      // We only save the relation.
+      // If your DB requires the template to exist, you can do a minimal upsert (only ID and name)
+      // to satisfy referential integrity without saving all fields.
       await prisma.assetTemplate.upsert({
         where: { id: templateId },
-        update: { name: templateData.name }, // Actualización mínima
+        update: { name: templateData.name }, // Minimal update
         create: {
           id: templateId,
           name: templateData.name,
@@ -43,7 +43,7 @@ class TemplateService {
         create: { userId, templateId },
       });
     } catch (error) {
-      console.error("❌ Error al vincular plantilla al usuario:", error);
+      console.error("❌ Error linking template to user:", error);
       throw error;
     }
   }
@@ -67,24 +67,24 @@ class TemplateService {
   }
 
   /**
-   * Market con Sincronización y DTO
+   * Market with synchronization and DTO
    */
   async getAllMarketTemplates() {
     try {
-      // 1. Obtenemos directamente de GitHub
+      // 1. We get directly from GitHub
       const githubTemplates = await this._getGitHubTemplates();
 
-      // 2. Retornamos los datos transformados por el DTO sin pasar por Prisma
-      // Nota: Asegúrate de que tu DTO acepte objetos simples de JS
+      // 2. Return the data transformed by the DTO without going through Prisma
+      // Note: Make sure your DTO accepts simple JS objects
       return AssetTemplateDTO.fromList(githubTemplates);
     } catch (error) {
-      console.error("❌ Error al obtener market desde GitHub:", error);
+      console.error("❌ Error getting market from GitHub:", error);
       return [];
     }
   }
 
   /**
-   * Detalle Hidratado con DTO
+   * Detalle Hidratado with DTO
    */
   async getTemplateDetail(id) {
     try {
@@ -92,13 +92,13 @@ class TemplateService {
       const templateMeta = templates.find((t) => t.id === id);
 
       if (!templateMeta)
-        throw new Error("Plantilla no encontrada en el repositorio");
+        throw new Error("Template not found in repository");
 
-      // Descargamos el contenido completo (fields, etc.) desde la download_url
+      // Descargamos the contenido completo (fields, etc.) from the download_url
       const response = await axios.get(templateMeta.download_url);
       const fullData = response.data;
 
-      // Retornamos un objeto combinado (meta + contenido completo)
+      // Retornamos a objeto combinado (meta + contenido completo)
       return new AssetTemplateDTO({
         ...templateMeta,
         ...fullData,
@@ -110,17 +110,17 @@ class TemplateService {
   }
 
   /**
-   * Publicación con Sistema de PR corregido
+   * Publicación with Sistema de PR corregido
    */
   async publishTemplate(userId, templateData) {
     try {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) throw new Error("Usuario no encontrado");
 
-      // 1. Generamos el ID Único para que sea el mismo en DB y GitHub
+      // 1. Generamos the ID Único so that sea the mismo en DB and GitHub
       const templateId = `tpl_${crypto.randomUUID().substring(0, 8)}`;
 
-      // 2. Creamos el objeto completo con el ID inyectado
+      // 2. Create the objeto completo with the ID inyectado
       const templateToPublish = {
         ...templateData,
         id: templateId, // 🚩 IMPORTANTE: Aquí asignamos el ID
@@ -152,8 +152,8 @@ class TemplateService {
         });
       });
 
-      // 4. Enviar a GitHub (Ahora enviamos el objeto que YA TIENE el ID)
-      // 🚩 IMPORTANTE: Pasamos templateToPublish, no templateData
+      // 4. Enviar a GitHub (Ahora enviamos the objeto que YA TIENE the ID)
+      // 🚩 Important: Pasamos templateToPublish, no templateData
       await this._openGitHubPullRequest(
         templateToPublish,
         user.githubHandle,
@@ -173,7 +173,7 @@ class TemplateService {
     const path = "repository_template.json"; // El archivo de índice
 
     try {
-      // 1. Descargamos el índice actual de GitHub
+      // 1. Descargamos the índice actual de GitHub
       const { data: fileData } = await octokit.repos.getContent({
         owner,
         repo,
@@ -184,7 +184,7 @@ class TemplateService {
         Buffer.from(fileData.content, "base64").toString(),
       );
 
-      // 2. Buscamos la plantilla en el JSON y sumamos 1
+      // 2. we search the template in the JSON and increment by 1
       let found = false;
       content.templates = content.templates.map((tpl) => {
         if (tpl.id === templateId) {
@@ -196,7 +196,7 @@ class TemplateService {
 
       if (!found) return;
 
-      // 3. Subimos el archivo actualizado a GitHub
+      // 3. Subimos the archivo actualizado a GitHub
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo,
@@ -231,20 +231,20 @@ class TemplateService {
 
     try {
       // 🚀 2. VALIDACIÓN ACTIVA DEL TOKEN
-      // Intentamos obtener los datos del usuario autenticado para verificar el token
+      // Intentamos get the data del use autenticado for Verify the token
       await octokit.users.getAuthenticated();
       console.log("🔐 Token verificado exitosamente para el proceso de PR.");
 
       const branchName = `submission/${template.id}`;
 
-      // 3. Obtener el SHA de main
+      // 3. get the SHA de main
       const { data: ref } = await octokit.git.getRef({
         owner,
         repo,
         ref: "heads/main",
       });
 
-      // 4. Crear la rama
+      // 4. Create the rama
       try {
         await octokit.git.createRef({
           owner,
@@ -281,19 +281,19 @@ class TemplateService {
         branch: branchName,
       });
 
-      // 7. Crear el Pull Request
+      // 7. Create the Pull Request
       const pr = await octokit.pulls.create({
         owner,
         repo,
         title: `📦 Template: ${template.name}`,
-        body: `Propuesta de plantilla enviada por @${githubHandle}.\n\nID: ${template.id}`,
+        body: `Template proposal submitted by @${githubHandle}.\n\nID: ${template.id}`,
         head: branchName,
         base: "main",
       });
 
       return pr.data;
     } catch (err) {
-      // Manejo de errores específico según el código de estado de GitHub
+      // Manejo de errores específico según the código de estado de GitHub
       if (err.status === 401) {
         console.error("❌ ERROR: El GITHUB_TOKEN no es válido o ha expirado.");
         throw new Error(

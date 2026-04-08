@@ -1,26 +1,26 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 
-// Objeto de inclusión (Prisma Eager Loading)
-// Define qué relaciones cargar automáticamente con el contenedor
+// Inclusion object (Prisma Eager Loading)
+// Defines which relations to automatically load with the container
 const CONTAINER_INCLUDE = {
   assetTypes: {
-    // Incluir las definiciones de campos para cada AssetType
+    // Include field definitions for each AssetType
     include: {
       fieldDefinitions: true,
       images: true,
     },
   },
-  // Opcional: Si deseas que los items del inventario también se carguen
-  // NOTA: Para GET /containers, cargar TODOS los ítems puede ser muy pesado.
-  // Es mejor cargarlos solo en getContainerById si es estrictamente necesario, o excluirlos aquí.
+  // Optional: if you want inventory items to also be loaded
+  // NOTE: for GET /containers, loading ALL items can be very heavy.
+  // It is better to load them only in getContainerById if strictly necessary, or exclude them here.
   items: false,
 };
 
 class ContainerService {
   /**
-   * Crea un nuevo contenedor para un usuario.
-   * @param {number} userId - ID del usuario propietario.
-   * @param {object} data - Datos del contenedor ({name, description, isCollection}).
+   * Create a new container for a user.
+   * @param {number} userId - Owner user ID.
+   * @param {object} data - Container data ({name, description, isCollection}).
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async createContainer(userId, data) {
@@ -38,33 +38,33 @@ class ContainerService {
           isCollection: data.isCollection || false,
           userId: parseInt(userId),
         },
-        // Incluir relaciones para devolver datos completos
+        // Include relations to return complete data
         include: CONTAINER_INCLUDE,
       });
 
       return {
         success: true,
-        message: "Contenedor creado exitosamente",
+        message: "Container created successfully",
         data: container,
       };
     } catch (error) {
       console.error("Error al crear contenedor:", error);
       return {
         success: false,
-        message: error.message || "Error al crear el contenedor",
+        message: error.message || "Error creating container",
       };
     }
   }
 
   /**
-   * Obtiene todos los contenedores de un usuario, incluyendo AssetTypes y FieldDefinitions.
-   * @param {number} userId - ID del usuario propietario.
+   * Gets all containers of a user, including AssetTypes and FieldDefinitions.
+   * @param {number} userId - Owner user ID.
    * @returns {Promise<{success: boolean, message?: string, data?: object[]}>}
    */
   async getContainers(userId) {
     try {
       console.log(
-        "Buscando contenedores y tipos de activo para usuario:",
+        "Searching containers and asset types for user:",
         userId,
       );
 
@@ -72,7 +72,7 @@ class ContainerService {
         where: {
           userId: parseInt(userId),
         },
-        // Carga Eager para AssetTypes y FieldDefinitions
+        // Carga Eager for AssetTypes and FieldDefinitions
         include: CONTAINER_INCLUDE,
       });
 
@@ -90,9 +90,9 @@ class ContainerService {
   }
 
   /**
-   * Obtiene un contenedor específico por ID, verificando la propiedad.
-   * @param {number} id - ID del contenedor.
-   * @param {number} userId - ID del usuario propietario.
+   * gets a container específico por ID, verificando the propiedad.
+   * @param {number} id - ID del container.
+   * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async getContainerById(id, userId) {
@@ -102,7 +102,7 @@ class ContainerService {
           id: parseInt(id),
           userId: parseInt(userId),
         },
-        // Carga Eager para AssetTypes y FieldDefinitions
+        // Carga Eager for AssetTypes and FieldDefinitions
         include: CONTAINER_INCLUDE,
       });
 
@@ -127,10 +127,10 @@ class ContainerService {
   }
 
   /**
-   * Actualiza un contenedor específico por ID, verificando la propiedad.
-   * @param {number} id - ID del contenedor a actualizar.
-   * @param {number} userId - ID del usuario propietario.
-   * @param {object} data - Datos para actualizar ({name, description}).
+   * updates a container específico por ID, verificando the propiedad.
+   * @param {number} id - ID del container a update.
+   * @param {number} userId - ID del Use propietario.
+   * @param {object} data - data for update ({name, description}).
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async updateContainer(id, userId, data) {
@@ -183,14 +183,14 @@ class ContainerService {
   }
 
   /**
-   * Elimina un contenedor específico por ID, verificando la propiedad.
-   * @param {number} id - ID del contenedor a eliminar.
-   * @param {number} userId - ID del usuario propietario.
+   * deletes a container específico por ID, verificando the propiedad.
+   * @param {number} id - ID del container a delete.
+   * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
    */
   async deleteContainer(id, userId) {
     try {
-      // Prisma maneja las eliminaciones en cascada si están configuradas en schema.prisma
+      // Prisma maneja the eliminaciones en cascada if están configuradas en schema.prisma
       const container = await prisma.container.delete({
         where: {
           id: parseInt(id),
@@ -220,9 +220,9 @@ class ContainerService {
   }
 
   /**
-   * Realiza una búsqueda global de activos para un usuario específico.
-   * @param {number} userId - ID del usuario.
-   * @param {string} query - Texto a buscar.
+   * Realiza a búsqueda global de activos for a Use específico.
+   * @param {number} userId - ID del Use.
+   * @param {string} query - Texto a Search.
    */
   async searchAssets(userId, query) {
     try {
@@ -232,7 +232,7 @@ class ContainerService {
             userId: parseInt(userId),
           },
           OR: [
-            { name: { contains: query } }, // MySQL ya es insensitive por defecto
+            { name: { contains: query } }, // MySQL ya es insensitive by default
           ],
         },
         include: {

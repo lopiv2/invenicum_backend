@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
 const fs = require("fs");
@@ -8,7 +8,7 @@ const translations = require("../i18n/reports.json");
 
 class ReportService {
   constructor() {
-    // Crear directorio temporal de reportes
+    // Create temporary reports directory
     this.reportsDir = path.join(__dirname, "../uploads/reports");
     if (!fs.existsSync(this.reportsDir)) {
       fs.mkdirSync(this.reportsDir, { recursive: true });
@@ -16,7 +16,7 @@ class ReportService {
   }
 
   /**
-   * Genera un reporte del inventario, préstamos o activos al vuelo
+   * Generates a report of inventory, loans or assets on the fly
    */
   async generateReport(
     containerId,
@@ -36,14 +36,14 @@ class ReportService {
         throw new Error("Contenedor no encontrado");
       }
 
-      // Verificar que el usuario es propietario del contenedor
+      // Verify that the user is the owner of the container
       if (container.userId !== parseInt(userId)) {
         throw new Error(
           "No tienes permiso para generar reportes de este contenedor",
         );
       }
 
-      // Obtener datos según el tipo de reporte
+      // Get data according to the report type
       let data;
       switch (reportType) {
         case "inventory":
@@ -59,7 +59,7 @@ class ReportService {
           throw new Error(`Tipo de reporte no soportado: ${reportType}`);
       }
 
-      // Generar el archivo
+      // Generate the file
       let filePath, fileName;
       if (format === "pdf") {
         ({ filePath, fileName } = await this._generatePDF(
@@ -96,12 +96,12 @@ class ReportService {
   // ========================
 
   /**
-   * Obtiene datos de inventario
+  * gets inventory data
    */
   async _getInventoryData(containerId, filters = {}) {
     const where = { containerId: parseInt(containerId) };
 
-    // Aplicar filtros si existen
+    // Aplicar filtros if existen
     if (filters.assetTypeId) {
       const assetTypeId =
         typeof filters.assetTypeId === "number"
@@ -148,7 +148,7 @@ class ReportService {
   }
 
   /**
-   * Obtiene datos de préstamos
+   * gets data de loans
    */
   async _getLoansData(containerId, filters = {}) {
     const where = { containerId: parseInt(containerId) };
@@ -178,7 +178,7 @@ class ReportService {
   }
 
   /**
-   * Obtiene datos de activos por tipo
+   * gets data de activos por tipo
    */
   async _getAssetsData(containerId, filters = {}) {
     const assetTypes = await prisma.assetType.findMany({
@@ -203,7 +203,7 @@ class ReportService {
   }
 
   /**
-   * Genera un PDF
+   * Genera a PDF
    */
   async _generatePDF(reportType, containerName, data, locale = "en", currency = "USD") {
     const t = translations[locale] || translations["en"];
@@ -218,7 +218,7 @@ class ReportService {
         doc.pipe(stream);
 
         // 2. Fecha formateada correctamente
-        // Convertimos a String explícitamente para PDFKit
+        // Convertimos a String explícitamente for PDFKit
         const reportDate = Temporal.Now.zonedDateTimeISO().toLocaleString(
           "es-ES",
           {
@@ -348,11 +348,11 @@ class ReportService {
           );
           yPosition += 40;
 
-          // Tabla de préstamos
+          // Tabla de loans
           doc
             .fontSize(12)
             .font("Helvetica-Bold")
-            .text("Préstamos Activos", 50, yPosition);
+            .text("Active Loans", 50, yPosition);
           yPosition += 20;
 
           const tableTop = yPosition;
@@ -456,7 +456,7 @@ class ReportService {
   }
 
   /**
-   * Genera un Excel
+   * Genera a Excel
    */
     
   async _generateExcel(reportType, containerName, data,locale = "en", currency = "USD") {
@@ -561,7 +561,7 @@ class ReportService {
         worksheet.getCell(`B${startRow}`).value = data.summary.returnedLoans;
         startRow += 3;
 
-        // Tabla de préstamos
+        // Tabla de loans
         worksheet.getCell(`A${startRow}`).value = t.loans.col_item;
         worksheet.getCell(`B${startRow}`).value = t.loans.col_borrower;
         worksheet.getCell(`C${startRow}`).value = t.loans.col_date;

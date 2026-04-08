@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const InventoryItemDTO = require("../models/inventoryItemModel");
 const upcService = require("../services/upcService");
 const path = require("path");
@@ -10,15 +10,15 @@ const bwipjs = require("bwip-js");
 const { Temporal } = require("@js-temporal/polyfill");
 const { AppConstants } = require("../config/appConstants");
 
-// Usamos process.cwd() para coincidir exactamente con upload.js (que también usa process.cwd()).
-// Si usáramos __dirname y el servidor arrancara desde otro directorio, los archivos
-// se guardarían en un sitio y se buscarían en otro al borrarlos → ENOENT.
+// Use process.cwd() to match exactly with upload.js (which also uses process.cwd()).
+// If we used __dirname and the server started from another directory, the files
+// would be saved in one place and searched in another when deleting them → ENOENT.
 const UPLOAD_DIR_ABSOLUTE = path.resolve(
   process.cwd(),
   process.env.UPLOAD_FOLDER || "uploads/inventory",
 );
 
-// getPublicUrl: convierte file.path de Multer en la URL pública correcta.
+// getPublicUrl: converts Multer's file.path to the correct public URL.
 const { getPublicUrl } = require("../middleware/upload");
 
 class InventoryItemService {
@@ -27,13 +27,13 @@ class InventoryItemService {
     if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
 
     let str = String(value).trim();
-    // Limpiar símbolos monetarios y texto accidental
+    // Clean monetary symbols and accidental text
     str = str.replace(/[^\d,.-]/g, "");
 
     const lastComma = str.lastIndexOf(",");
     const lastDot = str.lastIndexOf(".");
 
-    // Si ambos existen, el separador más a la derecha se considera decimal
+    // If both exist, the rightmost separator is considered decimal
     if (lastComma !== -1 && lastDot !== -1) {
       if (lastComma > lastDot) {
         str = str.replace(/\./g, "").replace(",", ".");
@@ -41,7 +41,7 @@ class InventoryItemService {
         str = str.replace(/,/g, "");
       }
     } else if (lastComma !== -1) {
-      // Solo coma: usarla como decimal
+      // Only comma: use it as decimal
       str = str.replace(",", ".");
     }
 
@@ -52,8 +52,8 @@ class InventoryItemService {
   async createItem(data) {
     const files = data.files || [];
 
-    // 1. DESESTRUCTURACIÓN DINÁMICA
-    // Extraemos lo que requiere lógica especial y dejamos el resto en 'restOfData'
+    // 1. DYNAMIC DESTRUCTURING
+    // Extract what requires special logic and leave the rest in 'restOfData'
     const {
       containerId,
       assetTypeId,
@@ -75,8 +75,8 @@ class InventoryItemService {
       ...restOfData
     } = data;
 
-    // Extraemos y parseamos marketValue explícitamente (puede llegar como string desde form-data)
-    // isDraft es un campo del DraftItemDTO que Prisma no conoce → lo excluimos
+    // Explicitly extract and parse marketValue (it may come as a string from form-data)
+    // isDraft is a field from DraftItemDTO that Prisma does not know → we exclude it
     const {
       marketValue: _rawMarketValue,
       market_value: _rawMarketValueSnake,
@@ -88,7 +88,7 @@ class InventoryItemService {
       0,
     );
 
-    // 2. PARSEO DE IDs Y VALIDACIÓN DE ASSET TYPE
+    // 2. PARSING IDs and ASSET TYPE VALIDATION
     const cId = parseInt(containerId);
     const aTId = parseInt(assetTypeId);
     const lId = parseInt(locationId);
@@ -106,7 +106,7 @@ class InventoryItemService {
       throw new Error("Asset Type not found.");
     }
 
-    // 3. LÓGICA DE NEGOCIO (Quantity, MinStock y CustomFields)
+    // 3. BUSINESS LOGIC (Quantity, MinStock and CustomFields)
     const quantityInput = parseInt(cleanRestOfData.quantity) || 1;
     const quantity = assetType.isSerialized
       ? 1
@@ -140,14 +140,14 @@ class InventoryItemService {
       throw error;
     }
 
-    // 4. MAPEO DE IMÁGENES — getPublicUrl construye la URL correcta desde file.path
+    // 4. Mapping DE IMÁGENES — getPublicUrl construye the URL correcta from file.path
     const imageRelations = files.map((file, index) => ({
       url: getPublicUrl(file.path), // ✅ "/images/items/item-xxx.jpg"
       order: index,
     }));
 
     try {
-      // 5. CREACIÓN EN PRISMA
+      // 5. CreateCIÓN EN PRISMA
       const newItem = await prisma.inventoryItem.create({
         data: {
           ...cleanRestOfData,
@@ -167,8 +167,8 @@ class InventoryItemService {
         },
       });
 
-      // 6. RETORNO AUTOMATIZADO CON EL DTO 🏆
-      // Esto asegura que la respuesta sea idéntica a lo que Flutter espera.
+      // 6. RETORNO AUTOMATIZADO with the DTO 🏆
+      // Esto Ensure que the Response sea idéntica a lo que Flutter espera.
       return new InventoryItemDTO(newItem).toJSON();
     } catch (error) {
       console.error("Prisma error:", error);
@@ -182,7 +182,7 @@ class InventoryItemService {
   }
 
   // =================================================================
-  // 2. MÉTODO PARA COPIAR UN ÍTEM EXISTENTE (cloneItem)
+  // 2. MÉTODO for COPIAR a ÍTEM EXISTENTE (cloneItem)
   // =================================================================
   async cloneItem(data) {
     // 1. Validación inicial
@@ -190,7 +190,7 @@ class InventoryItemService {
       throw new Error("Cloning operation cannot include new file uploads.");
     }
     console.log(data);
-    // 2. DESESTRUCTURACIÓN DINÁMICA (Igual que en createItem)
+    // 2. DESESTRUCTURACIÓN DINÁMICA (Igual que en CreateteItem)
     const {
       id: _oldId,
       containerId,
@@ -214,7 +214,7 @@ class InventoryItemService {
       throw new Error("Invalid Container, Asset Type or Location ID.");
     }
 
-    // 3. LÓGICA DE ASSET TYPE Y CANTIDAD
+    // 3. LÓGICA DE ASSET TYPE and CANTIDAD
     const assetType = await prisma.assetType.findUnique({
       where: { id: aTId },
     });
@@ -229,30 +229,30 @@ class InventoryItemService {
     const minStock = parseInt(restOfData.minStock) || 0;
     const finalBarcode = null;
 
-    // 4. COPIA FÍSICA DE IMÁGENES EN DISCO
+    // 4. COPIA FÍSICA DE IMÁGENES EN disk
     const allImageRelations = [];
     const newlyCopiedFilenames = [];
-    // Para la copia de archivos necesitamos el prefijo para extraer el filename relativo.
-    // Usamos STATIC_URL_PREFIX como referencia, igual que antes, pero ahora
-    // la URL de la imagen copiada se construye con getPublicUrl(newPath).
+    // for the copia de archivos necesitamos the prefijo for extraer the filename relativo.
+    // Use STATIC_URL_PREFIX como referencia, igual que antes, pero ahora
+    // the URL de the imagen copiada se construye with getPublicUrl(newPath).
     const baseImageUrl = AppConstants.STATIC_URL_PREFIX;
     const cleanBaseImageUrl = baseImageUrl.endsWith("/")
       ? baseImageUrl
       : `${baseImageUrl}/`;
 
-    // Subdirectorio donde se guardan las imágenes de items (relativo a UPLOAD_DIR_ABSOLUTE)
+    // Subdirectorio donde se guardan the imágenes de items (relativo a UPLOAD_DIR_ABSOLUTE)
     const ITEMS_SUBDIR = "items";
     const ITEMS_DIR_ABSOLUTE = path.join(UPLOAD_DIR_ABSOLUTE, ITEMS_SUBDIR);
 
-    // Aseguramos que el subdirectorio existe antes de copiar
+    // Ensure que the subdirectorio existe antes de copiar
     if (!fs.existsSync(ITEMS_DIR_ABSOLUTE)) {
       fs.mkdirSync(ITEMS_DIR_ABSOLUTE, { recursive: true });
     }
 
     if (Array.isArray(imagesFromRequest)) {
       for (const [index, img] of imagesFromRequest.entries()) {
-        // Normalizamos separadores y quitamos el prefijo estático (/images)
-        // para obtener la ruta relativa: "items/item-123.jpg"
+        // Normalizamos separadores and quitamos the prefijo estático (/images)
+        // for get the route relativa: "items/item-123.jpg"
         let relativePath = img.url.replace(/\\/g, "/");
 
         if (relativePath.startsWith(cleanBaseImageUrl)) {
@@ -275,12 +275,12 @@ class InventoryItemService {
             "-" +
             Math.round(Math.random() * 1e9);
           const newFilename = `item-clone-${uniqueSuffix}${ext}`;
-          // El clon se guarda en el mismo subdirectorio items/ que el original
+          // the clon se guarda en the mismo subdirectorio items/ que the original
           const newPath = path.join(ITEMS_DIR_ABSOLUTE, newFilename);
 
           try {
             fs.copyFileSync(originalPath, newPath);
-            // Guardamos la ruta relativa para la limpieza en caso de error de DB
+            // Guardamos the route relativa for the limpieza en caso de error de DB
             newlyCopiedFilenames.push(path.join(ITEMS_SUBDIR, newFilename));
 
             allImageRelations.push({
@@ -299,7 +299,7 @@ class InventoryItemService {
       }
     }
 
-    // 5. CREACIÓN EN LA BASE DE DATOS
+    // 5. CreateCIÓN EN the BASE DE data
     try {
       const newItem = await prisma.inventoryItem.create({
         data: {
@@ -316,11 +316,11 @@ class InventoryItemService {
         include: { images: { orderBy: { order: "asc" } } },
       });
 
-      // 6. RETORNO CON EL DTO 🏆
+      // 6. RETORNO with the DTO 🏆
       return new InventoryItemDTO(newItem).toJSON();
     } catch (error) {
-      // Limpieza de archivos si la DB falla
-      // newlyCopiedFilenames contiene rutas relativas a UPLOAD_DIR_ABSOLUTE (ej: items/item-clone-xxx.jpg)
+      // Limpieza de archivos if the DB fails
+      // newlyCopiedFilenames contiene ROUTES relativas a UPLOAD_DIR_ABSOLUTE (ej: items/item-clone-xxx.jpg)
       newlyCopiedFilenames.forEach((relativePath) => {
         const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
         if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
@@ -354,7 +354,7 @@ class InventoryItemService {
 
       if (!result || result.length === 0) return 0;
 
-      // Acceso seguro al valor 'total'
+      // Safe access to the 'total' value
       const totalValue = result[0].total;
       return totalValue ? parseFloat(totalValue) : 0;
     } catch (error) {
@@ -364,14 +364,14 @@ class InventoryItemService {
   }
 
   // ----------------------------------------------------
-  // 🔑 NUEVO MÉTODO DE VALIDACIÓN DE VALORES PERSONALIZADOS
+  // 🔑 new MÉTODO DE VALIDACIÓN DE VALORES PERSONALIZADOS
   // ----------------------------------------------------
   async validateCustomFieldValues(assetTypeId, values) {
     if (!values || Object.keys(values).length === 0) {
       return; // No hay valores que validar
     }
 
-    // 1. Obtener todas las definiciones de campo para este AssetType
+    // 1. get todas the definiciones de campo for este AssetType
     const definitions = await prisma.customFieldDefinition.findMany({
       where: { assetTypeId },
     });
@@ -380,7 +380,7 @@ class InventoryItemService {
       const fieldKey = def.id.toString();
       const value = values[fieldKey];
 
-      // 2. Validar campos requeridos (si es necesario)
+      // 2. Validar campos requeridos (if es necesario)
       if (
         def.isRequired &&
         (value === null || value === undefined || value === "")
@@ -388,16 +388,16 @@ class InventoryItemService {
         throw new Error(`Field '${def.name}' is required but was empty.`);
       }
 
-      // 3. Validar tipo de datos (IMPORTANTE para 'isSummable')
+      // 3. Validar tipo de data (Important for 'isSummable')
       if (value !== null && value !== undefined && value !== "") {
-        // Si es tipo 'number' o 'currency', aseguramos que sea convertible a número
+        // if es tipo 'number' o 'currency', Ensure que sea convertible a número
         if (def.type === "number" || def.type === "currency") {
           const numValue = parseFloat(value);
           if (isNaN(numValue)) {
             throw new Error(`Field '${def.name}' must be a valid number.`);
           }
-          // Opcional: Si quieres guardar el valor como número en el JSON (no string),
-          // puedes convertirlo aquí, pero el parseo de Multer/JSON.parse
+          // Opcional: if quieres guardar the valor como número en the JSON (no string),
+          // puedes convertirlo aquí, pero the parseo de Multer/JSON.parse
           // a menudo lo deja como string, lo cual MySQL acepta en JSON.
         }
       }
@@ -422,13 +422,13 @@ class InventoryItemService {
   }
 
   /**
-   * Obtiene el historial de precios del producto
+   * gets the history de precios del producto
    * @param {*} itemId
    * @param {*} userId
    * @returns
    */
   async getItemPriceHistory(itemId, userId) {
-    // Verificamos que el ítem pertenezca al usuario por seguridad
+    // We verify that the item belongs to the user for security
     const item = await prisma.inventoryItem.findUnique({
       where: { id: parseInt(itemId) },
       select: { container: { select: { userId: true } } },
@@ -438,7 +438,7 @@ class InventoryItemService {
       throw new Error("Ítem no encontrado o acceso denegado");
     }
 
-    // Obtenemos el historial
+    // we get the history
     const history = await prisma.priceHistory.findMany({
       where: { inventoryItemId: parseInt(itemId) },
       orderBy: { createdAt: "asc" }, // De más antiguo a más reciente para la gráfica
@@ -452,8 +452,8 @@ class InventoryItemService {
   }
 
   /**
-   * Obtiene los ítems de un contenedor y tipo de activo específicos,
-   * aplicando filtros sobre campos personalizados y calculando totales.
+   * gets the ítems de a container and tipo de activo específicos,
+   * aplicando filtros sobre campos personalizados and calculando totales.
    */
   async getItems({
     containerId,
@@ -461,7 +461,7 @@ class InventoryItemService {
     userId,
     aggregationFilters = {},
   }) {
-    // 1. Validar y convertir IDs
+    // 1. Validar and convertir IDs
     const cId = parseInt(containerId);
     const aTId = parseInt(assetTypeId);
 
@@ -471,7 +471,7 @@ class InventoryItemService {
       );
     }
 
-    // 2. Obtener definiciones de campos personalizados (para saber cuáles son sumables)
+    // 2. get definiciones de campos personalizados (for saber cuáles son sumables)
     const allFieldDefinitions = await prisma.customFieldDefinition.findMany({
       where: { assetTypeId: aTId },
       select: { id: true, name: true, type: true, isSummable: true },
@@ -481,7 +481,7 @@ class InventoryItemService {
       (def) => def.isSummable,
     );
 
-    // 3. Consulta Base a Prisma (Seguridad: filtramos por userId del contenedor)
+    // 3. Query the DB via Prisma (security: filter by the container's userId)
     const allItems = await prisma.inventoryItem.findMany({
       where: {
         containerId: cId,
@@ -497,10 +497,10 @@ class InventoryItemService {
       },
     });
 
-    // 4. Filtrado en Memoria (JS) para campos dinámicos (Custom Fields)
+    // 4. Filtrado en Memoria (JS) for campos dinámicos (Custom Fields)
     let filteredItems = allItems;
     if (Object.keys(aggregationFilters).length > 0) {
-      // Tomamos el primer filtro (puedes extenderlo a múltiples si lo necesitas)
+      // Tomamos the first filtro (puedes extenderlo a múltiples if lo necesitas)
       const fieldId = Object.keys(aggregationFilters)[0].toString();
       const filterValue = String(aggregationFilters[fieldId]).trim();
 
@@ -517,10 +517,10 @@ class InventoryItemService {
       });
     }
 
-    // 5. Cálculo de Agregaciones (Sumas y Conteos)
+    // 5. Cálculo de Agregaciones (Sumas and Conteos)
     const aggregationResults = {};
 
-    // Conteo de la selección actual
+    // Conteo de the selección actual
     if (Object.keys(aggregationFilters).length > 0) {
       aggregationResults[`count_${Object.keys(aggregationFilters)[0]}`] =
         filteredItems.length;
@@ -542,24 +542,24 @@ class InventoryItemService {
       aggregationResults[`sum_${fieldKey}`] = totalSum;
     }
 
-    // 6. MAPEO AL DTO (Transformación para Flutter)
-    // Aquí es donde convertimos los datos crudos de Prisma en objetos limpios
+    // 6. Mapping to DTO (transformation for Flutter)
+    // Aquí es donde convertimos the data crudos de Prisma en objetos limpios
     const dtoItems = filteredItems.map((item) =>
       new InventoryItemDTO(item).toJSON(),
     );
 
-    // 7. Cálculo del Valor Total de Mercado de la selección
+    // 7. Calculation of the Total Market Value of the selection
     const totalMarketSelection = dtoItems.reduce(
       (acc, item) => acc + (item.totalMarketValue || 0),
       0,
     );
-    // 8. ESTRUCTURA DE RETORNO (Clave para evitar el error de 'definitions')
-    // Retornamos 'items' y 'totals' al primer nivel para que el router los encuentre fácil
+    // 8. ESTRUCTURA DE RETORNO (Clave for evitar the error de 'definitions')
+    // Return 'items' and 'totals' at the top level so the router can find them easily
     return {
       success: true,
       items: dtoItems, // Lista de ítems procesados
       totals: {
-        // Objeto de totales que el router busca
+        // Objeto de totales que the router searches
         definitions: summableFieldDefinitions,
         aggregations: aggregationResults,
         marketValueTotal: parseFloat(totalMarketSelection.toFixed(2)),
@@ -613,7 +613,7 @@ class InventoryItemService {
       throw new Error("Invalid ID format provided.");
     }
 
-    // 3. LÓGICA DE ASSET TYPE Y CANTIDAD
+    // 3. LÓGICA DE ASSET TYPE and CANTIDAD
     const assetType = await prisma.assetType.findUnique({
       where: { id: aTId },
     });
@@ -627,7 +627,7 @@ class InventoryItemService {
       quantity = !isNaN(parsedQty) && parsedQty > 0 ? parsedQty : undefined;
     }
 
-    // 4. PARSEO DE CUSTOM FIELDS Y CAMPOS NUMÉRICOS (Importante para Prisma)
+    // 4. PARSEO DE CUSTOM FIELDS and CAMPOS NUMÉRICOS (Important for Prisma)
     let parsedCustomFields = undefined;
     if (customFieldValues) {
       parsedCustomFields =
@@ -636,7 +636,7 @@ class InventoryItemService {
           : customFieldValues;
     }
 
-    // 🔑 TRUCO: Convertimos marketValue a número si existe en restOfData
+    // 🔑 TRUCO: Convertimos marketValue a número if existe en restOfData
     if (
       restOfData.marketValue !== undefined ||
       restOfData.market_value !== undefined
@@ -654,7 +654,7 @@ class InventoryItemService {
     // PASO A: ELIMINACIÓN DE IMÁGENES
     // ===========================================
     if (imageIdsToDelete && imageIdsToDelete.length > 0) {
-      // Aseguramos que sea array (a veces llega como string desde el cliente)
+      // Ensure que sea array (a veces llega como string from the cliente)
       const idsArray = Array.isArray(imageIdsToDelete)
         ? imageIdsToDelete
         : [imageIdsToDelete];
@@ -669,7 +669,7 @@ class InventoryItemService {
 
       for (const img of imagesToDelete) {
         const filename = path.basename(img.url);
-        // Asegúrate de que UPLOAD_DIR_ABSOLUTE esté definido al inicio del archivo
+        // Make sure UPLOAD_DIR_ABSOLUTE is defined at the top of the file
         const imagePath = path.join(UPLOAD_DIR_ABSOLUTE, filename);
         try {
           if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
@@ -686,7 +686,7 @@ class InventoryItemService {
     }
 
     // ===========================================
-    // PASO B: ACTUALIZAR EL ITEM PRINCIPAL
+    // PASO B: update the ITEM PRINCIPAL
     // ===========================================
     const finalSerialNumber =
       serialNumber === "" ||
@@ -748,7 +748,7 @@ class InventoryItemService {
     }
 
     // ===========================================
-    // PASO D: TRANSACCIÓN Y DTO FINAL 🏆
+    // PASO D: TRANSACCIÓN and DTO FINAL 🏆
     // ===========================================
     await prisma.$transaction(updateActions);
 
@@ -759,21 +759,21 @@ class InventoryItemService {
 
     if (!finalItem) throw new Error("Item not found after update.");
 
-    // E. Alerta de Stock Bajo
+    // E. Low Stock Alert
 
     await alertService.checkAndNotifyLowStock(userId, finalItem);
 
-    // Retornamos la instancia del DTO
+    // Return the DTO instance
     return new InventoryItemDTO(finalItem).toJSON();
   }
 
   async getAllItemsForUser(userId) {
     try {
-      // 🔑 Consultamos todos los ítems que pertenecen a contenedores del usuario
+      // 🔑 Query all items that belong to the user's containers
       const items = await prisma.inventoryItem.findMany({
         where: {
           container: {
-            userId: userId, // Filtramos por el dueño del contenedor
+            userId: userId, // Filter by the owner of the container
           },
         },
         include: {
@@ -786,8 +786,8 @@ class InventoryItemService {
         },
       });
 
-      // El frontend (Flutter) espera un objeto con la lista y definiciones
-      // Para el Dashboard, las definiciones de agregación pueden ir vacías
+      // the frontend (Flutter) espera a objeto with the lista and definiciones
+      // for the Dashboard, the definiciones de agregación pueden ir vacías
       return {
         items: items,
         aggregationDefinitions: [],
@@ -803,7 +803,7 @@ class InventoryItemService {
     containerId,
     assetTypeId,
     itemsData,
-    // userId // Lo dejamos como comentario ya que la ruta ya verificó el acceso
+    // userId // Lo dejamos como comentario ya que the route ya verificó the acceso
   }) {
     const cId = parseInt(containerId);
     const aTId = parseInt(assetTypeId);
@@ -812,7 +812,7 @@ class InventoryItemService {
       throw new Error("Invalid Container ID or Asset Type ID.");
     }
 
-    // 1. OBTENER EL TIPO DE ACTIVO para verificar si es seriado
+    // 1. get the TIPO DE ACTIVO for Verify if es seriado
     const assetType = await prisma.assetType.findUnique({
       where: { id: aTId },
     });
@@ -821,17 +821,17 @@ class InventoryItemService {
       throw new Error("Asset Type not found.");
     }
 
-    // 2. Obtener las definiciones de campos personalizados UNA VEZ para validación.
+    // 2. get the definiciones de campos personalizados a VEZ for validación.
     const fieldDefinitions = await prisma.customFieldDefinition.findMany({
       where: { assetTypeId: aTId },
     });
 
-    // Lista para almacenar las inserciones exitosas.
+    // List to store successful insertions.
     const itemsToCreate = [];
     const validationErrors = [];
     let successCount = 0;
 
-    // 3. PRE-PROCESAMIENTO Y VALIDACIÓN DE CADA ÍTEM
+    // 3. PRE-PROCESAMIENTO and VALIDACIÓN DE CADA ÍTEM
     for (let i = 0; i < itemsData.length; i++) {
       const item = itemsData[i];
 
@@ -857,7 +857,7 @@ class InventoryItemService {
         continue;
       }
 
-      // El frontend ya envió 'name' y 'description', más los campos personalizados.
+      // The frontend already sent 'name' and 'description', plus the custom fields.
       const name = item.name;
       const description = item.description || null;
 
@@ -899,24 +899,24 @@ class InventoryItemService {
           !isNaN(parsedMinStock) && parsedMinStock >= 0 ? parsedMinStock : 0;
       }
 
-      // Los campos personalizados vienen directos (no como JSON string escapado)
+      // the campos personalizados vienen directos (no como JSON string escapado)
       const customFieldValues = item.customFieldValues || {};
 
-      // Validar datos básicos
+      // Validar data básicos
       if (!name || name.trim() === "") {
         validationErrors.push({ row: i + 2, message: "Name is required." });
         continue;
       }
 
       try {
-        // Validar los campos personalizados (usando la función existente)
+        // Validar the campos personalizados (using the función existente)
         await this.validateCustomFieldValues(
           aTId,
           customFieldValues,
           fieldDefinitions,
         );
 
-        // Si la validación pasa, preparar el objeto para Prisma
+        // if the validación pasa, preparar the objeto for Prisma
         itemsToCreate.push({
           containerId: cId,
           assetTypeId: aTId,
@@ -925,7 +925,7 @@ class InventoryItemService {
           description: description,
           quantity: quantity,
           minStock: minStock,
-          // Almacena los customFieldValues como objeto JSON en la DB
+          // Store customFieldValues as a JSON object in the DB
           customFieldValues: customFieldValues,
         });
         successCount++;
@@ -935,8 +935,8 @@ class InventoryItemService {
       }
     }
 
-    // 5. INSERCIÓN MASIVA EN LA BASE DE DATOS
-    // Si no hay ítems válidos, lanzamos un error que el controlador captura.
+    // 5. INSERCIÓN MASIVA EN the BASE DE data
+    // if no hay ítems válidos, lanzamos a error que the controlador captura.
     if (itemsToCreate.length === 0 && validationErrors.length > 0) {
       const errorSummary = validationErrors
         .map((e) => `Row ${e.row}: ${e.message}`)
@@ -947,16 +947,16 @@ class InventoryItemService {
     }
 
     if (itemsToCreate.length > 0) {
-      // Usamos createMany para la inserción masiva.
-      // Esta es la forma más rápida y eficiente en Prisma/SQL.
+      // Use CreateteMany for the inserción masiva.
+      // Esta es the forma más rápida and eficiente en Prisma/SQL.
       await prisma.inventoryItem.createMany({
         data: itemsToCreate,
-        // Omite registros duplicados si tienes una clave única. (No necesario aquí)
+        // Omite registros duplicados if tienes a clave única. (No necesario aquí)
         // skipDuplicates: true,
       });
     }
 
-    // 6. Devolver el resumen
+    // 6. Devolver the resumen
     return {
       count: itemsToCreate.length,
       totalRows: itemsData.length,
@@ -969,18 +969,18 @@ class InventoryItemService {
   }
 
   // ----------------------------------------------------
-  // 🔑 MÉTODO DE ELIMINACIÓN CON BORRADO DE ARCHIVOS
+  // 🔑 MÉTODO DE ELIMINACIÓN with BORRADO DE ARCHIVOS
   // ----------------------------------------------------
   async deleteItem(itemId, userId) {
-    // 1. Encontrar el ítem para obtener las URLs de las imágenes
+    // 1. Encontrar the ítem for get the URLs de the imágenes
     const itemToDelete = await prisma.inventoryItem.findFirst({
       where: {
         id: itemId,
         container: {
-          userId: userId, // Verificar la propiedad
+          userId: userId, // Verify la propiedad
         },
       },
-      // 💡 Incluir las imágenes es FUNDAMENTAL
+      // 💡 Incluir the imágenes es FUNDAMENTAL
       include: {
         images: true,
       },
@@ -990,18 +990,18 @@ class InventoryItemService {
       throw new Error("Item not found or access denied.");
     }
 
-    // 2. BORRAR ARCHIVOS DEL DISCO
-    // Las URLs en DB tienen formato /images/items/item-xxx.jpg
+    // 2. DELETE FILES FROM disk
+    // the URLs en DB tienen formato /images/items/item-xxx.jpg
     // UPLOAD_DIR_ABSOLUTE apunta a uploads/inventory
-    // → hay que quitar el prefijo /images/ para obtener items/item-xxx.jpg
-    //   y unirlo con UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
+    // → hay que quitar the prefijo /images/ for get items/item-xxx.jpg
+    //   and unirlo with UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
     if (itemToDelete.images && itemToDelete.images.length > 0) {
       const staticPrefix = AppConstants.STATIC_URL_PREFIX.replace(/\/+$/, "");
 
       for (const image of itemToDelete.images) {
         let relativePath = image.url;
 
-        // Quitamos el prefijo estático (/images) para quedarnos con items/archivo.jpg
+        // Quitamos the prefijo estático (/images) for quedarnos with items/archivo.jpg
         if (relativePath.startsWith(staticPrefix + "/")) {
           relativePath = relativePath.substring(staticPrefix.length + 1);
         } else if (relativePath.startsWith("/")) {
@@ -1028,10 +1028,10 @@ class InventoryItemService {
       }
     }
 
-    // 3. BORRAR REGISTRO DE LA BASE DE DATOS
-    // Usamos `delete` en el registro específico. Si el esquema tiene
-    // `ON DELETE CASCADE` en la relación de imágenes, la eliminación de la DB
-    // también borrará automáticamente los registros de `InventoryItemImage`.
+    // 3. BORRAR REGISTRO DE the BASE DE data
+    // Use `delete` on the specific record. if the schema has
+    // `ON DELETE CASCADE` on the image relation, the DB deletion
+    // también borrará automáticamente the registros de `InventoryItemImage`.
     try {
       await prisma.inventoryItem.delete({
         where: { id: itemId },
@@ -1057,7 +1057,7 @@ class InventoryItemService {
   }
 
   async syncItemMarketValue(itemId, userId) {
-    // 1. Obtener el ítem (Usa Number() en lugar de parseInt para mayor seguridad)
+    // 1. get the ítem (Use Number() en lugar de parseInt for mayor security)
     const item = await prisma.inventoryItem.findUnique({
       where: { id: Number(itemId) },
       include: { container: true },
@@ -1071,7 +1071,7 @@ class InventoryItemService {
       throw new Error("El ítem no tiene un código de barras asociado");
     }
 
-    // 2. Consultar el servicio de UPC
+    // 2. Consultar the service de UPC
     const marketData = await upcService.getMarketDataByBarcode(
       userId,
       item.barcode,
@@ -1083,12 +1083,12 @@ class InventoryItemService {
 
     const newPrice = Number(marketData.suggestedPrice);
 
-    // 3. Transacción para asegurar la integridad
+    // 3. Transacción for Ensurer the integridad
     const updatedItem = await prisma.$transaction(async (tx) => {
-      // --- LÓGICA DE TIEMPO CORRECTA CON TEMPORAL ---
+      // --- LÓGICA DE TIEMPO CORRECTA with TEMPORAL ---
       const now = Temporal.Now.zonedDateTimeISO();
 
-      // Creamos el inicio y fin del día de forma inmutable
+      // Create the start and end of day immutably
       const startOfToday = now.with({
         hour: 0,
         minute: 0,
@@ -1102,11 +1102,11 @@ class InventoryItemService {
         millisecond: 999,
       });
 
-      // IMPORTANTE: Convertimos a Date para que Prisma pueda filtrar en la DB
+      // Important: Convertimos a Date so that Prisma pueda filtrar en the DB
       const startDate = new Date(startOfToday.epochMilliseconds);
       const endDate = new Date(endOfToday.epochMilliseconds);
 
-      // 🔍 Buscar registro de hoy
+      // 🔍 Search registro de hoy
       const existingEntryToday = await tx.priceHistory.findFirst({
         where: {
           inventoryItemId: item.id,
@@ -1130,13 +1130,13 @@ class InventoryItemService {
             price: newPrice,
             currency: marketData.currency || "USD",
             inventoryItem: { connect: { id: item.id } },
-            // Enviamos un Date a Prisma
+            // Enviamos a Date a Prisma
             createdAt: new Date(now.epochMilliseconds),
           },
         });
       }
 
-      // B. Actualizar el ítem principal
+      // B. update the ítem principal
       return await tx.inventoryItem.update({
         where: { id: item.id },
         data: {
@@ -1154,24 +1154,24 @@ class InventoryItemService {
         },
       });
     });
-    // 4. Devolver mediante DTO (que ahora usa tus campos .xxxTemporal)
+    // 4. Devolver mediante DTO (que ahora Use tus campos .xxxTemporal)
     return new InventoryItemDTO(updatedItem).toJSON();
   }
 
   /**
-   * Actualiza el valor de mercado de todos los ítems con código de barras
-   * de un assetType concreto. Procesa en serie para respetar los rate limits
-   * de la API de UPC. Devuelve un resumen con éxitos, skips y errores.
+   * updates the valor de mercado de todos the ítems with código de barras
+   * de a assetType concreto. Procesa en serie for respetar the rate limits
+   * de the API de UPC. returns a resumen with éxitos, skips and errores.
    */
   async syncAssetTypeMarketValues(assetTypeId, containerId, userId) {
-    // 1. Verificar que el contenedor pertenece al usuario
+    // 1. Verify that the container belongs to the user
     const container = await prisma.container.findFirst({
       where: { id: Number(containerId), userId },
     });
     if (!container)
       throw new Error("Contenedor no encontrado o acceso denegado");
 
-    // 2. Obtener todos los ítems del assetType que tengan barcode
+    // 2. get all items of the assetType that have a barcode
     const items = await prisma.inventoryItem.findMany({
       where: {
         assetTypeId: Number(assetTypeId),
@@ -1191,7 +1191,7 @@ class InventoryItemService {
 
     if (items.length === 0) return results;
 
-    // 3. Procesar en serie — evita saturar la API de UPC con llamadas paralelas
+    // 3. Procesar en serie — evita saturar the API de UPC with llamadas paralelas
     for (const item of items) {
       try {
         await this.syncItemMarketValue(item.id, userId);
@@ -1202,7 +1202,7 @@ class InventoryItemService {
           status: "updated",
         });
       } catch (err) {
-        // "La API no devolvió un precio" → skip sin error crítico
+        // "the API no returned a precio" → skip without error crítico
         if (err.message.includes("precio") || err.message.includes("price")) {
           results.skipped++;
           results.details.push({
@@ -1222,7 +1222,7 @@ class InventoryItemService {
         }
       }
 
-      // Pequeña pausa entre llamadas para respetar el rate limit de UPC (trial: 100/día)
+      // Small pause between calls to respect the UPC rate limit (trial: 100/day)
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
@@ -1245,7 +1245,7 @@ class InventoryItemService {
   }
 
   async generatePrintLabelPDF(itemId, userId, res, queryOptions = {}, req = null) {
-    // 1. Buscamos el ítem asegurando que pertenezca al usuario
+    // 1. Search for the item ensuring it belongs to the user
     const item = await prisma.inventoryItem.findFirst({
       where: {
         id: itemId,
@@ -1310,17 +1310,17 @@ class InventoryItemService {
 
     // --- 📝 BLOQUE DE TEXTO DINÁMICO ---
 
-    // El inicio vertical depende de si la etiqueta es pequeña o no
+    // the vertical start depends on whether the label is small or not
     let currentY = isSmall ? padding : qrY + qrSize * 0.05;
 
     const titleFontSize = isSmall
       ? Math.max(mmHeight * 0.14, 6)
       : Math.max(mmHeight * 0.16, 7.5);
 
-    // Definimos un límite de altura para el texto (aprox 65% del área segura)
+    // Define a height limit for the text (approx 65% of the safe area)
     const maxTitleHeight = safeHeight * 0.65;
 
-    // 4. Nombre del ítem (Flexible: 1, 2 o 3 líneas)
+    // 4. Item name (Flexible: 1, 2 or 3 lines)
     doc
       .fillColor("#000000")
       .fontSize(titleFontSize)
@@ -1334,18 +1334,18 @@ class InventoryItemService {
       });
 
     // --- POSICIONAMIENTO RELATIVO ---
-    // doc.y se actualiza automáticamente al final del texto anterior
+    // doc.and updates automatically at the end of the previous text
     const infoFontSize = titleFontSize * 0.8;
     let dynamicY = doc.y + (isSmall ? 1 : 2);
 
-    // Guardia de seguridad: que el ID no se salga del borde inferior
+    // Security guard: ensure the ID does not overflow the bottom edge
     const bottomLimit = height - (infoFontSize + padding);
     if (dynamicY > bottomLimit) {
       dynamicY = bottomLimit - 1;
     }
 
     if (isSmall) {
-      // DISEÑO COMPACTO (S): ID y Medida en una sola línea
+      // DISEÑO COMPACTO (S): ID and Medida en a sola línea
       doc
         .fillColor("#444444")
         .fontSize(infoFontSize)
@@ -1360,7 +1360,7 @@ class InventoryItemService {
           },
         );
     } else {
-      // DISEÑO ESTÁNDAR (M/L): Cascada de ID y Badge
+      // DISEÑO ESTÁNDAR (M/L): Cascada de ID and Badge
       doc
         .fillColor("#444444")
         .fontSize(infoFontSize)
@@ -1371,7 +1371,7 @@ class InventoryItemService {
       const badgeWidth = colTextWidth * 0.9;
       const badgeHeight = infoFontSize * 1.5;
 
-      // Solo dibujamos el badge si queda espacio suficiente en la etiqueta
+      // only dibujamos the badge if queda espacio suficiente en the etiqueta
       if (badgeY + badgeHeight < height - padding) {
         doc
           .roundedRect(textX, badgeY, badgeWidth, badgeHeight, 2)

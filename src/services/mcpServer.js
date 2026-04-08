@@ -1,7 +1,7 @@
-// services/mcpServer.js
-// Servidor MCP de Invenicum — define las herramientas que Gemini puede invocar.
-// Cada tool tiene: nombre, descripción (para que Gemini entienda cuándo usarla),
-// parámetros (esquema JSON) y una función execute que hace el trabajo real.
+﻿// services/mcpServer.js
+// Invenicum MCP server — defines the tools that Gemini can invoke.
+// Each tool has: name, description (so Gemini understands when to use it),
+// parameters (JSON schema), and an execute function that does the real work.
 
 const prisma = require("../middleware/prisma");
 const axios = require("axios");
@@ -9,7 +9,8 @@ const cheerio = require("cheerio");
 const { getBase64FromUrl } = require("../middleware/utils");
 
 // ---------------------------------------------------------------------------
-// DEFINICIONES DE TOOLS (lo que Gemini ve)
+// ---------------------------------------------------------------------------
+// TOOL DEFINITIONS (what Gemini sees)
 // ---------------------------------------------------------------------------
 
 const TOOL_DEFINITIONS = [
@@ -18,7 +19,7 @@ const TOOL_DEFINITIONS = [
     name: "navigate",
     description:
       "Navega a una sección de la app. Úsala cuando el usuario quiera ir a un lugar: " +
-      "su inventario, préstamos, configuración, dashboard, preferencias, etc.",
+      "your inventory, loans, settings, dashboard, preferences, etc.",
     parameters: {
       type: "object",
       properties: {
@@ -38,11 +39,11 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Escáner ───────────────────────────────────────────────────────────────
+  // ── Scanner ───────────────────────────────────────────────────────────────
   {
     name: "open_scanner",
     description:
-      "Abre el escáner de códigos de barras de la app. " +
+      "Open the app's barcode scanner. " +
       "Úsala cuando el usuario quiera escanear un producto o código QR.",
     parameters: {
       type: "object",
@@ -51,13 +52,13 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Inventario: buscar ────────────────────────────────────────────────────
+  // ── Inventory: Search ────────────────────────────────────────────────────
   {
     name: "search_assets",
     description:
-      "Busca activos en el inventario del usuario por nombre. " +
+      "Search user inventory assets by name. " +
       "Úsala cuando el usuario pregunte por un objeto concreto, quiera saber si tiene algo, " +
-      "o pida listar elementos de su inventario.",
+      "or ask to list items in your inventory.",
     parameters: {
       type: "object",
       properties: {
@@ -74,11 +75,11 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Inventario: crear activo ──────────────────────────────────────────────
+  // ── Inventory: Create asset ──────────────────────────────────────────────
   {
     name: "create_asset",
     description:
-      "Crea un nuevo activo en el inventario. " +
+      "Create a new asset in the inventory. " +
       "Úsala cuando el usuario quiera añadir un objeto a un contenedor/categoría específica. " +
       "Necesitas containerId, assetTypeId y locationId — búscalos primero si no los tienes.",
     parameters: {
@@ -98,7 +99,7 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Contenedores: listar ──────────────────────────────────────────────────
+  // ── Containers: List ──────────────────────────────────────────────────
   {
     name: "list_containers",
     description:
@@ -112,11 +113,11 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Contenedores: crear ───────────────────────────────────────────────────
+  // ── Containers: Create ───────────────────────────────────────────────────
   {
     name: "create_container",
     description:
-      "Crea un nuevo contenedor en el inventario del usuario. " +
+      "Create a new container in the user's inventory. " +
       "Un contenedor agrupa categorías de activos (ej: 'Mi colección de cómics', 'Bodega').",
     parameters: {
       type: "object",
@@ -133,11 +134,11 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Plantillas: crear ─────────────────────────────────────────────────────
+  // ── Templates: Create ─────────────────────────────────────────────────────
   {
     name: "create_template",
     description:
-      "Genera una plantilla de tipo de activo con campos personalizados. " +
+      "Generate an asset type template with custom fields. " +
       "Úsala cuando el usuario quiera organizar un tipo de colección nueva " +
       "(vinilos, libros, Funko Pops, herramientas, videojuegos, joyería, etc.). " +
       "OBLIGATORIO: siempre incluye entre 5 y 8 campos relevantes para ese tipo de objeto. " +
@@ -145,10 +146,10 @@ const TOOL_DEFINITIONS = [
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Nombre de la plantilla." },
+        name: { type: "string", description: "Template name." },
         description: {
           type: "string",
-          description: "Breve descripción de para qué sirve la plantilla.",
+          description: "Brief description of what the template is for.",
         },
         category: {
           type: "string",
@@ -206,16 +207,16 @@ const TOOL_DEFINITIONS = [
     },
   },
 
-  // ── Extracción de producto desde URL ─────────────────────────────────────
+  // ── Product Extraction from URL ─────────────────────────────────────
   {
     name: "extract_product_from_url",
     description:
-      "Extrae información de un producto desde una URL web (nombre, descripción, imagen, precio). " +
-      "Úsala cuando el usuario comparta un enlace y quiera guardar ese producto en su inventario.",
+      "Extracts product information from a web URL (name, description, image, price). " +
+      "Use this when the user shares a link and wants to save that product in their inventory.",
     parameters: {
       type: "object",
       properties: {
-        url: { type: "string", description: "URL del producto a analizar." },
+        url: { type: "string", description: "URL of the product to analyze." },
       },
       required: ["url"],
     },
@@ -223,7 +224,7 @@ const TOOL_DEFINITIONS = [
 ];
 
 // ---------------------------------------------------------------------------
-// IMPLEMENTACIONES DE TOOLS (lo que realmente ejecuta el código)
+// TOOL IMPLEMENTATIONS (what actually executes the code)
 // ---------------------------------------------------------------------------
 
 async function executeTool(toolName, toolArgs, context) {
@@ -246,7 +247,7 @@ async function executeTool(toolName, toolArgs, context) {
       };
     }
 
-    // ── open_scanner ─────────────────────────────────────────────────────────
+    // ── Navigation ───────────────────────────────────────────────────────────
     case "open_scanner": {
       return { action: "OPEN_SCANNER", data: {} };
     }
@@ -259,12 +260,12 @@ async function executeTool(toolName, toolArgs, context) {
           container: { userId },
           name: { contains: toolArgs.query },
         },
+        take: limit,
         include: {
           container: { select: { name: true } },
           assetType: { select: { name: true } },
           location: { select: { name: true } },
         },
-        take: limit,
       });
 
       return {
@@ -274,18 +275,17 @@ async function executeTool(toolName, toolArgs, context) {
           name: a.name,
           container: a.container.name,
           category: a.assetType.name,
-          location: a.location?.name ?? "Sin ubicación",
-          quantity: a.quantity,
+          location: a.location?.name ?? null,
         })),
       };
     }
 
-    // ── create_asset ─────────────────────────────────────────────────────────
+    // ── create_asset ──────────────────────────────────────────────────────────
     case "create_asset": {
       const newAsset = await prisma.inventoryItem.create({
         data: {
           name: toolArgs.name,
-          description: toolArgs.description ?? null,
+          description: toolArgs.description ?? "",
           quantity: toolArgs.quantity ?? 1,
           minStock: 0,
           condition: "loose",
@@ -326,7 +326,7 @@ async function executeTool(toolName, toolArgs, context) {
       };
     }
 
-    // ── create_container ─────────────────────────────────────────────────────
+    // ── create_container ──────────────────────────────────────────────────────
     case "create_container": {
       const container = await prisma.container.create({
         data: {
@@ -344,7 +344,7 @@ async function executeTool(toolName, toolArgs, context) {
       };
     }
 
-    // ── create_template ──────────────────────────────────────────────────────
+    // ── create_template ───────────────────────────────────────────────────────
     case "create_template": {
       console.log(
         "[MCP create_template] toolArgs recibidos:",
@@ -361,34 +361,34 @@ async function executeTool(toolName, toolArgs, context) {
       ]);
 
       if (!Array.isArray(toolArgs.fields)) {
-        throw new Error("create_template requiere el parámetro fields como array.");
+        throw new Error("create_template requires the fields parameter as an array.");
       }
 
       if (toolArgs.fields.length < 5 || toolArgs.fields.length > 8) {
-        throw new Error("create_template requiere entre 5 y 8 campos.");
+        throw new Error("create_template requires between 5 and 8 fields.");
       }
 
       const fields = toolArgs.fields.map((rawField, index) => {
         if (!rawField || typeof rawField !== "object") {
-          throw new Error(`El campo #${index + 1} no tiene formato válido.`);
+          throw new Error(`Field #${index + 1} is not a valid object.`);  
         }
 
         const name = String(rawField.name ?? "").trim();
         if (!name) {
-          throw new Error(`El campo #${index + 1} requiere name.`);
+          throw new Error(`Field #${index + 1} requires a name.`);
         }
 
         const type = String(rawField.type ?? "").toLowerCase().trim();
         if (!allowedTypes.has(type)) {
           throw new Error(
-            `El campo \"${name}\" tiene type inválido: \"${rawField.type}\".`,
+            `Field "${name}" has an invalid type: "${rawField.type}".`,
           );
         }
 
         if (type === "dropdown") {
           if (!Array.isArray(rawField.options)) {
             throw new Error(
-              `El campo dropdown \"${name}\" requiere options (array).`,
+              `Dropdown field "${name}" requires options (array).`,
             );
           }
 
@@ -399,7 +399,7 @@ async function executeTool(toolName, toolArgs, context) {
           const uniqueOptions = [...new Set(options.map((o) => o.toLowerCase()))];
           if (uniqueOptions.length < 3 || uniqueOptions.length > 6) {
             throw new Error(
-              `El campo dropdown \"${name}\" debe tener entre 3 y 6 opciones.`,
+              `Dropdown field "${name}" must have between 3 and 6 options.`,
             );
           }
 
@@ -454,8 +454,7 @@ async function executeTool(toolName, toolArgs, context) {
         $('meta[name="twitter:image"]').attr("content");
       if (ogImage && ogImage.startsWith("/"))
         ogImage = `${baseUrl.origin}${ogImage}`;
-
-      // Capturamos bloques JSON-LD (donde suele estar el EAN/Barcode y la Marca)
+      // Capture JSON-LD blocks (where EAN/Barcode and Brand are usually found)
       const jsonLdData = [];
       $('script[type="application/ld+json"]').each((i, el) => {
         try {
@@ -463,7 +462,7 @@ async function executeTool(toolName, toolArgs, context) {
         } catch (_) {}
       });
 
-      // Limpieza del HTML para el texto visible
+      // Limpieza del HTML for the texto visible
       $("script, style, nav, footer, header, aside, noscript").remove();
       const cleanText = $("body")
         .text()
@@ -481,26 +480,26 @@ async function executeTool(toolName, toolArgs, context) {
             role: "user",
             parts: [
               {
-                text: `Analiza el contenido de esta URL y extrae la mayor cantidad de información técnica del producto.
+                text: `Analyze the content of this URL and extract as much technical information about the product as possible.
         
         URL: ${toolArgs.url}
-        Imagen sugerida: ${ogImage ?? "null"}
-        Metadatos extra: ${jsonLdData.join(" ")}
-        Texto visible: ${cleanText}
+        Suggested image: ${ogImage ?? "null"}
+        Extra metadata: ${jsonLdData.join(" ")}
+        Visible text: ${cleanText}
 
-        Busca específicamente: nombre, descripción detallada, precio, moneda, imagen (URL), código de barras (EAN/GTIN/UPC), marca (brand), categoría y dimensiones si existen.
+        Specifically look for: name, detailed description, price, currency, image (URL), barcode (EAN/GTIN/UPC), brand, category, and dimensions if available.
 
-        Responde ESTRICTAMENTE con este formato JSON:
+        Respond STRICTLY in this JSON format:
         {
-          "name": "nombre del producto",
-          "description": "descripción resumida",
-          "imageUrl": "URL de la mejor imagen",
+          "name": "product name",
+          "description": "short description",
+          "imageUrl": "URL of the best image representing the product",
           "price": 0.0,
           "currency": "EUR/USD/etc",
-          "barcode": "número de código de barras o null",
-          "brand": "marca del producto",
-          "category": "categoría",
-          "specifications": { "campo": "valor" }
+          "barcode": "product barcode or null",
+          "brand": "product brand",
+          "category": "product category",
+          "specifications": { "field": "value" }
         }`,
               },
             ],
@@ -517,7 +516,7 @@ async function executeTool(toolName, toolArgs, context) {
 
       if (Array.isArray(extracted)) extracted = extracted[0] ?? {};
 
-      // 2. Intentar convertir a Base64 si hay imagen
+      // 2. Try to convert to Base64 if there is an image
       if (extracted.imageUrl?.startsWith("http")) {
         try {
           extracted.imageUrl = await getBase64FromUrl(extracted.imageUrl);
@@ -526,12 +525,12 @@ async function executeTool(toolName, toolArgs, context) {
 
       return {
         action: "PRODUCT_EXTRACT",
-        data: extracted, // Ahora contiene barcode, brand, etc.
+        data: extracted, // Now contains barcode, brand, etc.
       };
     }
 
     default:
-      throw new Error(`Tool desconocida: ${toolName}`);
+      throw new Error(`Unknown tool: ${toolName}`);
   }
 }
 

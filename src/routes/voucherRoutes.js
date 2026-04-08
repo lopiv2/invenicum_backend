@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const voucherService = require("../services/voucherService");
@@ -7,7 +7,7 @@ const path = require("path");
 const fs = require("fs");
 const { Temporal } = require('@js-temporal/polyfill');
 
-// process.cwd() en lugar de __dirname para coincidir con upload.js
+// process.cwd() en lugar de __dirname for coincidir with upload.js
 const UPLOAD_DIR = path.resolve(process.cwd(),
     process.env.UPLOAD_FOLDER || "uploads/inventory", "vouchers");
 
@@ -36,7 +36,7 @@ router.post("/voucher-config", verifyToken, upload.single("logo"), async (req, r
   }
 });
 
-// GET: Obtener configuración global
+// GET: get configuración global
 router.get("/voucher-config", verifyToken, async (req, res) => {
   try {
     const result = await voucherService.getGlobalConfig();

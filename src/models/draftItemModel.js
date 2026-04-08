@@ -1,22 +1,22 @@
-class DraftItemDTO {
+﻿class DraftItemDTO {
   constructor(aiData) {
     // Campos básicos garantizados
     this.name = aiData.name || "";
     this.description = aiData.description || "";
     
-    // Metadatos dinámicos de la IA (Map<String, String>)
+    // Metadatos dinámicos de the IA (Map<String, String>)
     this.customFieldValues = aiData.customFieldValues || {};
 
     // Imagen principal (Base64 o URL)
     this.imageUrl = aiData.images?.[0]?.url || null;
 
-    // Galería compatible con tu DTO de Inventario
+    // Galería compatible with tu DTO de Inventario
     this.images = aiData.images ? aiData.images.map((img, index) => ({
       url: img.url,
       order: index
     })) : [];
 
-    // Valores por defecto para inicializar controladores en el Front
+    // Valores by default for inicializar controladores en the Front
     this.quantity = 1;
     this.minStock = 0;
     // Acepta tanto market_value (clave de IA) como marketValue (camelCase)

@@ -1,15 +1,15 @@
-const axios = require("axios");
+﻿const axios = require("axios");
 const integrationService = require("../services/integrationsService");
 
 class UpcService {
   /**
-   * Obtiene datos de mercado y extrae el valor de precio sugerido
+   * Gets market data and extracts the suggested price value
    */
 
   async getMarketDataByBarcode(userId, barcode) {
     if (!barcode) return null;
 
-    // 1. Obtener configuración de la API Key
+    // 1. Get API Key configuration
     const upcConfig = await integrationService.getUpcApiKey(userId);
     const isPro = !!(upcConfig && upcConfig.apiKey);
 
@@ -20,7 +20,7 @@ class UpcService {
     const headers = {
       Accept: "application/json",
       user_key: isPro ? upcConfig.apiKey : undefined,
-      key_type: isPro ? "free" : undefined, // Ajustar según el tipo de cuenta
+      key_type: isPro ? "free" : undefined, // Adjust according to account type
     };
 
     try {
@@ -34,31 +34,31 @@ class UpcService {
 
       const item = data.items[0];
 
-      // --- CÁLCULO DEL PRECIO MEDIO BASADO EN UPC ---
+      // --- CALCULATION OF THE AVERAGE PRICE BASED ON UPC ---
       const high = item.highest_recorded_price || 0;
       const low = item.lowest_recorded_price || 0;
 
-      // Calculamos la media entre el máximo y el mínimo histórico registrado por UPC
+      // Calculate the average between the highest and lowest historical price recorded by UPC
       let averagePrice = 0;
       if (high > 0 && low > 0) {
         averagePrice = (high + low) / 2;
       } else {
-        // Si uno de los dos es 0, usamos el que esté disponible
+        // If one of the two is 0, use the one that is available
         averagePrice = high || low || 0;
       }
 
       return {
         title: item.title,
-        suggestedPrice: averagePrice, // Media aritmética de los registros históricos
-        marketRangeLow: low, // Mínimo histórico para la UI
-        marketRangeHigh: high, // Máximo histórico para la UI
+        suggestedPrice: averagePrice, // Arithmetic mean of historical records
+        marketRangeLow: low, // Historical minimum for the UI
+        marketRangeHigh: high, // Historical maximum for the UI
         currency: "USD",
         brand: item.brand,
         images: item.images || [],
       };
     } catch (error) {
       console.error(
-        "Error en Servicio UPC:",
+        "Error in UPC Service:",
         error.response?.data || error.message,
       );
       return null;

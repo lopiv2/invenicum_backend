@@ -1,4 +1,4 @@
-const prisma = require("../middleware/prisma");
+﻿const prisma = require("../middleware/prisma");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
 const { Temporal } = require("@js-temporal/polyfill");
@@ -16,12 +16,12 @@ const scrypt = promisify(crypto.scrypt);
 class UserService {
 
   // ───────────────────────────────────────────────────────────────────────────
-  // PRIMER USO
+  // FIRST USE
   // ───────────────────────────────────────────────────────────────────────────
 
   /**
-   * Comprueba si la tabla de usuarios está vacía.
-   * @returns {Promise<boolean>} true si no hay ningún usuario, false si ya hay alguno.
+   * Checks if the user table is empty.
+   * @returns {Promise<boolean>} true if there are no users, false if there is at least one.
    */
   async isFirstRun() {
     const count = await prisma.user.count();
@@ -29,30 +29,29 @@ class UserService {
   }
 
   /**
-   * Crea el primer usuario administrador de la plataforma.
-   * Está protegido: si ya existe algún usuario devuelve forbidden en lugar
-   * de crear uno nuevo, evitando que el endpoint /setup sea explotable.
+   * Creates the first admin user of the platform.
+   * It is protected: if a user already exists, returns forbidden instead
+   * of creating a new one, preventing the /setup route from being exploitable.
    *
    * @param {{ name: string, email: string, password: string }} userData
    */
   async createFirstAdmin({ name, email, password }) {
     try {
-      // 1. Comprobación de seguridad: solo permitimos esto si no hay usuarios
+      // 1. Security check: only allow this if there are no users
       const existingCount = await prisma.user.count();
       if (existingCount > 0) {
         return {
           success: false,
           forbidden: true,
           message:
-            "Ya existe al menos un usuario. El endpoint de setup está deshabilitado.",
+            "A user already exists. The setup endpoint is disabled.",
         };
       }
 
-      // 2. Hash de la contraseña con el mismo sistema Scrypt que usa register()
+      // 2. Hash the password with the same Scrypt system used by register()
       const hashedPassword = await hashPassword(password);
 
-      // 3. Crear el usuario. No asignamos rol por campo (si no tienes el campo
-      //    'role' en tu schema simplemente no lo incluyas).
+      // 3. Create the user. We do not assign a role by field (if you do not have the 'role' field in your schema, just do not include it).
       const newUser = await prisma.user.create({
         data: {
           name,
@@ -62,7 +61,7 @@ class UserService {
       });
 
       console.log(
-        `[SETUP] Primer administrador creado con id=${newUser.id} email=${newUser.email}`,
+        `[SETUP] Created first admin: id=${newUser.id}, email=${newUser.email}`,
       );
 
       return {
@@ -76,24 +75,24 @@ class UserService {
     } catch (error) {
       console.error("[SETUP ERROR]:", error.message);
 
-      // P2002 → unique constraint (email duplicado, aunque no debería pasar
-      // dado el chequeo de count anterior, pero por si acaso)
+      // P2002 → unique constraint (duplicate email, although it should not happen
+      // given the previous count check, but just in case)
       if (error.code === "P2002") {
         return {
           success: false,
-          message: "Ya existe un usuario con ese correo electrónico.",
+          message: "A user with that email already exists.",
         };
       }
 
       return {
         success: false,
-        message: error.message || "Error al crear el administrador",
+        message: error.message || "Error creating the admin user",
       };
     }
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // MÉTODOS EXISTENTES (sin cambios)
+  // EXISTING METHODS (without changes)
   // ───────────────────────────────────────────────────────────────────────────
 
   async register(userData) {
@@ -107,7 +106,7 @@ class UserService {
       if (existingUser) {
         return {
           success: false,
-          message: "El usuario ya existe",
+          message: "A user with that email already exists.",
         };
       }
 
@@ -123,7 +122,7 @@ class UserService {
 
       return {
         success: true,
-        message: "Usuario registrado exitosamente",
+        message: "User registered successfully",
         user: {
           id: parseInt(newUser.id),
           email: newUser.email,
@@ -134,7 +133,7 @@ class UserService {
       console.error("[REGISTER ERROR]:", error.message);
       return {
         success: false,
-        message: error.message || "Error al registrar usuario",
+        message: error.message || "Error registering user",
       };
     }
   }
@@ -162,7 +161,7 @@ class UserService {
       if (error.code === "P2002") {
         return {
           success: false,
-          message: "El username ya está en uso por otro usuario",
+          message: "The username is already in use by another user",
         };
       }
       throw error;
@@ -174,7 +173,7 @@ class UserService {
       const cleanHandle = handle.trim().replace(/^@/, "").toLowerCase();
 
       if (!cleanHandle) {
-        return { success: false, message: "Username inválido" };
+        return { success: false, message: "Invalid username" };
       }
 
       const response = await axios.get(
@@ -197,10 +196,10 @@ class UserService {
       };
     } catch (error) {
       if (error.response && error.response.status === 404) {
-        return { success: false, message: "El usuario de GitHub no existe" };
+        return { success: false, message: "The GitHub user does not exist" };
       }
-      console.error("Error en GitHub Service:", error.message);
-      return { success: false, message: "Error al conectar con GitHub" };
+      console.error("Error in GitHub Service:", error.message);
+      return { success: false, message: "Error connecting to GitHub" };
     }
   }
 
@@ -262,7 +261,7 @@ class UserService {
       if (!user || !isPasswordValid) {
         return {
           success: false,
-          message: "Credenciales incorrectas",
+          message: "Wrong username or password",
         };
       }
 
@@ -274,7 +273,7 @@ class UserService {
 
       return {
         success: true,
-        message: "Login exitoso",
+        message: "Login successful",
         token: token,
         user: new UserDTO(user).toJSON(),
       };
@@ -282,7 +281,7 @@ class UserService {
       console.error("[LOGIN ERROR]:", error.message);
       return {
         success: false,
-        message: error.message || "Error en el servidor",
+        message: error.message || "Internal server error",
       };
     }
   }
@@ -297,7 +296,7 @@ class UserService {
         },
       });
 
-      if (!user) return { success: false, message: "Usuario no encontrado" };
+      if (!user) return { success: false, message: "User not found" };
 
       return {
         success: true,
@@ -321,7 +320,7 @@ class UserService {
       if (existingLink && existingLink.id !== userId) {
         return {
           success: false,
-          message: "Esta cuenta de GitHub ya está vinculada a otro perfil.",
+          message: "This GitHub account is already linked to another profile.",
         };
       }
 
@@ -347,7 +346,7 @@ class UserService {
 
       return {
         success: true,
-        message: "Identidad de GitHub vinculada correctamente",
+        message: "GitHub identity linked successfully",
         data: new UserDTO(updatedUser).toJSON(),
       };
     } catch (error) {
@@ -355,12 +354,12 @@ class UserService {
       if (error.code === "P2002") {
         return {
           success: false,
-          message: "El ID de GitHub ya existe en el sistema.",
+          message: "The GitHub ID already exists in the system.",
         };
       }
       return {
         success: false,
-        message: "Error interno al procesar la vinculación con GitHub",
+        message: "Internal error while processing GitHub identity linking",
       };
     }
   }
@@ -372,7 +371,7 @@ class UserService {
       });
 
       if (!user) {
-        return { success: false, message: "Usuario no encontrado" };
+        return { success: false, message: "User not found" };
       }
 
       const isMatch = await verifyPassword(currentPassword, user.password);
@@ -380,7 +379,7 @@ class UserService {
       if (!isMatch) {
         return {
           success: false,
-          message: "La contraseña actual es incorrecta",
+          message: "Current password is incorrect",
         };
       }
 
@@ -391,12 +390,12 @@ class UserService {
         data: { password: hashedPassword },
       });
 
-      return { success: true, message: "Contraseña actualizada correctamente" };
+      return { success: true, message: "Password updated successfully" };
     } catch (error) {
-      console.error("Error en userService.changePassword:", error);
+      console.error("Error in userService.changePassword:", error);
       return {
         success: false,
-        message: "Error al cambiar la contraseña",
+        message: "Error while changing password",
       };
     }
   }

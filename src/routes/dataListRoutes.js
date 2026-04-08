@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware");
 const dataListService = require("../services/dataListService");
@@ -11,7 +11,7 @@ router.use((req, res, next) => {
     next();
 });
 
-// Obtener todas las listas de datos de un contenedor
+// get todas the listas de data de a container
 router.get("/containers/:containerId/datalists", verifyToken, async (req, res) => {
     try {
         const containerId = parseInt(req.params.containerId);
@@ -40,7 +40,7 @@ router.get("/containers/:containerId/datalists", verifyToken, async (req, res) =
     }
 });
 
-// Crear una nueva lista de datos
+// Create a new lista de data
 router.post("/containers/:containerId/datalists", verifyToken, async (req, res) => {
     try {
         const containerId = parseInt(req.params.containerId);
@@ -69,7 +69,7 @@ router.post("/containers/:containerId/datalists", verifyToken, async (req, res) 
     }
 });
 
-// Obtener una lista de datos específica
+// get a lista de data específica
 router.get("/datalists/:id", verifyToken, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -98,7 +98,7 @@ router.get("/datalists/:id", verifyToken, async (req, res) => {
     }
 });
 
-// Actualizar una lista de datos
+// update a lista de data
 router.put("/datalists/:id", verifyToken, async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -127,7 +127,7 @@ router.put("/datalists/:id", verifyToken, async (req, res) => {
     }
 });
 
-// Eliminar una lista de datos
+// delete a lista de data
 router.delete("/datalists/:id", verifyToken, async (req, res) => {
     try {
         const id = parseInt(req.params.id);

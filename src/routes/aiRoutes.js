@@ -1,4 +1,4 @@
-// routes/aiRoutes.js
+﻿// routes/aiRoutes.js
 const express = require("express");
 const router = express.Router();
 const aiService = require("../services/aiService");
@@ -19,7 +19,7 @@ router.post("/chat/save-template", verifyToken, async (req, res) => {
     const userId = req.user.id;
     const { templateData } = req.body; // El objeto 'data' generado por Gemini
 
-    // Usamos el ID generado o uno nuevo
+    // Use the ID generado o one new
     const finalTemplate = {
       id: `tpl_ai_${Temporal.Now.instant().epochMilliseconds}`,
       ...templateData,
@@ -27,7 +27,7 @@ router.post("/chat/save-template", verifyToken, async (req, res) => {
       author: "Veni AI",
     };
 
-    // Guardamos directamente en la biblioteca del usuario
+    // Guardamos directamente en the biblioteca del Use
     await templateService.saveTemplateToUser(userId, finalTemplate);
 
     res.status(200).json({ success: true, message: "Plantilla guardada" });
@@ -42,8 +42,8 @@ router.post("/chat/veni", verifyToken, async (req, res) => {
     const { message, context } = req.body;
     const userId = req.user.id;
 
-    // SAY_HELLO_INITIAL es un comando interno — no se guarda en el historial
-    // para que no aparezca al cargar el historial de conversación.
+    // SAY_HELLO_INITIAL es a comando interno — no se guarda en the history
+    // so that no aparezca al cargar the history de conversación.
     if (message !== "SAY_HELLO_INITIAL") {
       await aiService.saveMessage(userId, message, true);
     }
@@ -51,16 +51,16 @@ router.post("/chat/veni", verifyToken, async (req, res) => {
     const updatedContext = { 
       ...context, 
       userId: userId,
-      locale: context?.locale || 'es' // Fallback a español si no viene
+      locale: context?.locale || 'es' // Fallback a español if not viene
     };
 
-    // 2. PROCESAR CON LA IA
+    // 2. PROCESAR with the IA
     const result = await aiService.processChatConversation(
       message,
       updatedContext,
     );
 
-    // 3. GUARDAR RESPUESTA DE LA IA (Lo que dice Veni)
+    // 3. GUARDAR Response DE the IA (Lo que dice Veni)
     if (result && result.answer) {
       await aiService.saveMessage(userId, result.answer, false);
     }
@@ -84,7 +84,7 @@ router.post("/extract", verifyToken, async (req, res) => {
         .json({ success: false, message: "La URL es obligatoria" });
     }
 
-    // Definimos campos por defecto si la App no envía específicos
+    // Definimos campos by default if the App no envía específicos
     const targetFields = fields || [
       "Nombre",
       "Precio",
@@ -92,7 +92,7 @@ router.post("/extract", verifyToken, async (req, res) => {
       "Especificaciones",
     ];
 
-    // PASO CLAVE: Pasamos el userId al servicio para que él gestione la API Key
+    // PASO CLAVE: Pasamos the userId al service so that él gestione the API Key
     const result = await aiService.extractInfoFromUrl(
       url,
       targetFields,
@@ -106,7 +106,7 @@ router.post("/extract", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("❌ Error en Ruta AI:", error.message);
 
-    // Si el error es específicamente por falta de configuración
+    // if the error es específicamente por falta de configuración
     if (
       error.message.includes("configuración") ||
       error.message.includes("activa")
@@ -133,7 +133,7 @@ router.post("/extract", verifyToken, async (req, res) => {
   }
 });
 
-// 1. Obtener historial (Solo últimas 24h)
+// 1. get history (only últimas 24h)
 router.get("/chat/history", verifyToken, async (req, res) => {
   try {
     const history = await aiService.getRecentHistory(req.user.id);
@@ -143,13 +143,13 @@ router.get("/chat/history", verifyToken, async (req, res) => {
   }
 });
 
-// 2. Borrar historial de chat del usuario
+// 2. Delete user chat history
 router.delete("/chat/history", verifyToken, async (req, res) => {
   try {
     await aiService.purgeHistory(req.user.id);
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ error: "Error al borrar historial" });
+    res.status(500).json({ error: "Error deleting chat history" });
   }
 });
 

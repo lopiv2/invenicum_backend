@@ -1,17 +1,17 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const loanService = require("../services/loanService");
 const authMiddleware = require("../middleware/authMiddleware");
 
-// 🔒 Aplicar middleware de autenticación a todas las rutas
+// 🔒 Aplicar middleware de autenticación a todas the ROUTES
 router.use(authMiddleware);
 
-// Nota: Eliminamos formatLoanResponse y formatLoansResponse porque 
-// el service ahora devuelve .toJSON() del LoanDTO.
+// Nota: Eliminamos formatLoanResponse and formatLoansResponse porque 
+// the service ahora returns .toJSON() del LoanDTO.
 
 /**
  * GET /api/v1/loans
- * Dashboard: Obtiene todos los préstamos del usuario
+ * Dashboard: gets todos the loans del use
  */
 router.get("/loans", async (req, res) => {
   try {
@@ -44,7 +44,7 @@ router.post("/containers/:containerId/loans", async (req, res) => {
     const { containerId } = req.params;
     const userId = req.user.id; // 🔑 Extraemos el userId del token
     
-    // Pasamos userId por separado para asegurar la propiedad
+    // Pasamos userId por separado for Ensurer the propiedad
     const newLoan = await loanService.createLoan(containerId, req.body, userId);
     res.status(201).json(newLoan);
   } catch (error) {
@@ -69,7 +69,7 @@ router.put("/containers/:containerId/loans/:loanId/return", async (req, res) => 
 
 /**
  * PUT /api/v1/containers/:containerId/loans/:loanId
- * Actualización general del préstamo
+ * Actualización general del loan
  */
 router.put("/containers/:containerId/loans/:loanId", async (req, res) => {
   try {

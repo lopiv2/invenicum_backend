@@ -1,4 +1,4 @@
-const { Temporal } = require('@js-temporal/polyfill');
+﻿const { Temporal } = require('@js-temporal/polyfill');
 
 class AlertDTO {
   constructor(data) {
@@ -11,8 +11,8 @@ class AlertDTO {
     this.isRead = Boolean(data.isRead || data.is_read);
     this.isEvent = Boolean(data.isEvent || data.is_event);
     
-    // --- MANEJO DE FECHAS CON TEMPORAL ---
-    // 1. Usamos el campo de la extensión si existe, si no, fallback seguro a String
+    // --- MANEJO DE FECHAS with TEMPORAL ---
+    // 1. Use the campo de the extensión if existe; if no, fallback seguro a String
     this.createdAt = data.createdAtTemporal 
       ? data.createdAtTemporal.toString() 
       : (data.createdAt ? new Date(data.createdAt).toISOString() : Temporal.Now.instant().toString());
@@ -32,7 +32,7 @@ class AlertDTO {
   }
 
   toJSON() {
-    // Al usar esparcimiento (...this), ya incluimos todo lo del constructor
+    // Al Use esparcimiento (...this), ya incluimos todo lo del constructor
     return { ...this };
   }
 }

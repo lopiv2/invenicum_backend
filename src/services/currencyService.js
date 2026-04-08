@@ -1,4 +1,4 @@
-// backend/services/currencyService.js
+﻿// backend/services/currencyService.js
 const axios = require('axios');
 const { Temporal } = require('@js-temporal/polyfill');
 
@@ -6,7 +6,7 @@ class CurrencyService {
   constructor() {
     this.rates = null;
     this.lastUpdate = null;
-    // Cache de 12 horas
+    // 12-hour cache
     this.CACHE_DURATION_HOURS = 12; 
   }
 
@@ -26,8 +26,8 @@ class CurrencyService {
       this.lastUpdate = now;
       return this.rates;
     } catch (error) {
-      // También aplicamos la regla de interpolación aquí por seguridad
-      console.error(`Error obteniendo divisas: ${error.message}`);
+      // We also apply the interpolation rule here for security
+      console.error(`Error getting currencies: ${error.message}`);
       return this.rates || { "USD": 1, "EUR": 0.92, "GBP": 0.78 };
     }
   }

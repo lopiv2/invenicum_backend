@@ -1,4 +1,4 @@
-class UserPreferencesDTO {
+﻿class UserPreferencesDTO {
   constructor(prismaPreferences) {
     const prefs = prismaPreferences || {};
 
@@ -36,12 +36,12 @@ class UserPreferencesDTO {
     if (body.aiModel) prismaData.aiModel = body.aiModel;
     if (body.aiProvider) prismaData.aiProvider = body.aiProvider;
 
-    // --- MAPEO DE TEMA A PRISMA ---
+    // --- Mapping DE TEMA A PRISMA ---
     if (body.useSystemTheme !== undefined) {
       prismaData.useSystemTheme = body.useSystemTheme;
 
-      // 🛡️ REGLA DE NEGOCIO: Si activamos el modo automático,
-      // forzamos el modo oscuro manual a false.
+      // 🛡️ REGLA DE NEGOCIO: if activamos the modo automático,
+      // forzamos the modo oscuro manual a false.
       if (body.useSystemTheme === true) {
         prismaData.isDarkMode = false;
       }

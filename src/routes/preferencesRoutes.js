@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const router = express.Router();
 const preferencesService = require("../services/preferencesService");
 const verifyToken = require("../middleware/authMiddleware");
@@ -28,10 +28,10 @@ router.use((req, res, next) => {
 // PUT /api/v1/preferences/notifications
 router.put("/notifications", verifyToken, async (req, res) => {
   try {
-    // 1. Obtenemos el ID del usuario del token
+    // 1. we get the ID del Use del token
     const userId = req.user.id;
 
-    // 2. Llamamos al servicio (necesitaremos crear este método en preferencesService)
+    // 2. we call al service (necesitaremos Create este método en preferencesService)
     const result = await preferencesService.updateNotificationSettings(
       userId,
       req.body,
@@ -56,7 +56,7 @@ router.patch("/ai-status", verifyToken, async (req, res) => {
   try {
     const { aiEnabled } = req.body;
 
-    // Validación básica: verificamos que no sea undefined (ya que es un booleano)
+    // Validación básica: We verify que no sea undefined (ya que es a booleano)
     if (aiEnabled === undefined) {
       return res.status(400).json({
         success: false,
@@ -64,7 +64,7 @@ router.patch("/ai-status", verifyToken, async (req, res) => {
       });
     }
 
-    // Usamos el método unificado del servicio
+    // Use the método unificado del service
     const result = await preferencesService.updateAiEnabled(
       req.user.id,
       aiEnabled,
@@ -93,7 +93,7 @@ router.get("/theme", verifyToken, async (req, res) => {
 // GET /api/v1/preferences/custom-themes
 router.get("/custom-themes", verifyToken, async (req, res) => {
   try {
-    // req.user.id viene del middleware verifyToken
+    // req.Use.id viene del middleware verifyToken
     const themes = await preferencesService.getCustomThemes(req.user.id);
 
     res.json({
@@ -111,7 +111,7 @@ router.patch("/visual-settings", verifyToken, async (req, res) => {
   try {
     const { useSystemTheme, isDarkMode } = req.body;
 
-    // Usamos el método unificado que ya actualiza la tabla UserPreferences
+    // Use the método unificado que ya updates the tabla UserPreferences
     const result = await preferencesService.updatePreferences(req.user.id, {
       useSystemTheme,
       isDarkMode,
@@ -221,8 +221,8 @@ router.delete("/custom-themes/:id", verifyToken, async (req, res) => {
 });
 
 // GET /api/v1/preferences/ai-models
-// Devuelve los modelos disponibles por proveedor para que Flutter
-// construya el selector dinámicamente sin hardcodear nada en el frontend.
+// returns the modelos disponibles por proveedor so that Flutter
+// construya the selector dinámicamente without hardcodear nada en the frontend.
 router.get("/ai-models", verifyToken, (req, res) => {
   res.json({ success: true, data: AI_MODELS });
 });
@@ -241,7 +241,7 @@ router.patch("/ai-provider", verifyToken, async (req, res) => {
       });
     }
 
-    // 2. Validar que existan modelos para ese proveedor
+    // 2. Validar que existan modelos for ese proveedor
     const modelsForProvider = AI_MODELS[aiProvider];
     if (!modelsForProvider) {
       throw new Error(
@@ -251,13 +251,13 @@ router.patch("/ai-provider", verifyToken, async (req, res) => {
 
     const validModelsIds = modelsForProvider.map((m) => m.id);
 
-    // 3. Determinar el modelo final
-    // Si el frontend envía aiModel y no es válido, devolvemos 400
-    // para evitar que se guarde silenciosamente otro modelo por defecto.
+    // 3. Determine the final model
+    // If the frontend sends aiModel and it is not valid, return 400
+    // to avoid silently saving a different default model.
     if (aiModel && !validModelsIds.includes(aiModel)) {
       return res.status(400).json({
         success: false,
-        message: `Modelo inválido para ${aiProvider}: ${aiModel}`,
+        message: `Invalid model for ${aiProvider}: ${aiModel}`,
         validModels: validModelsIds,
       });
     }
