@@ -17,13 +17,13 @@ model User {
   username        String?          @unique @db.VarChar(30)
   githubHandle    String?          @unique @map("github_handle")
   githubId        String?          @unique
-  githubToken     String?          @db.Text // Guardaremos el token cifrado
+  githubToken     String?          @db.Text // The token will be stored encrypted
   githubLinkedAt  DateTime?        @map("github_linked_at")
   avatarUrl       String?  @db.Text
-  // Relaciones añadidas
-  themeConfig     UserThemeConfig? // Relación 1:1 con la configuración activa
-  savedThemes     CustomTheme[]    // Relación 1:N con temas guardados
-  preferences     UserPreferences? // Relación 1:1 con preferencias del usuario
+  // User relations
+  themeConfig     UserThemeConfig? // 1:1 relation to the active theme configuration
+  savedThemes     CustomTheme[]    // 1:N relation to saved themes
+  preferences     UserPreferences? // 1:1 relation to user preferences
   integrations    UserIntegration[]
   loans           Loan[]
   containers      Container[]
@@ -35,21 +35,21 @@ model User {
 }
 
 // ============================================
-// SISTEMA DE INTEGRACIONES EXTERNAS 🔗
+// EXTERNAL INTEGRATIONS SYSTEM 🔗
 // ============================================
 model UserIntegration {
   id        Int      @id @default(autoincrement())
-  type      String   // "gemini", "telegram", "whatsapp", "ebay", "price_charting", "qr_labels"
-  config    Json     // Almacenará los tokens/claves (preferiblemente cifrados)
+  type      String   // "gemini", "telegram", "whatsapp"
+  config    Json     // Will store the tokens/keys (preferably encrypted)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  // Relación con User
+  // Relation with User
   userId    Int      @map("user_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, type]) // Un usuario solo tiene una config por tipo de servicio
+  @@unique([userId, type]) // A user can only have one config per service type
   @@map("user_integration")
 }
 
@@ -60,21 +60,21 @@ model ChatMessage {
   isUser    Boolean
   createdAt DateTime @default(now())
 
-  @@index([userId, createdAt]) // Para que las consultas sean rápidas
+  @@index([userId, createdAt]) // For fast queries
 }
 
-// Configuración del tema que el usuario tiene aplicado actualmente
+// Theme configuration currently applied by the user
 model UserThemeConfig {
   id              Int      @id @default(autoincrement())
   themeColor      String   @default("#1A237E") // Hexadecimal
-  themeBrightness String   @default("light")   // "light" o "dark"
+  themeBrightness String   @default("light")   // "light" or "dark"
   userId          Int      @unique
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_theme_config")
 }
 
-// Biblioteca de temas creados por el usuario
+// Library of themes created by the user
 model CustomTheme {
   id              String   @id @default(uuid())
   name            String
@@ -86,7 +86,7 @@ model CustomTheme {
   @@map("custom_theme")
 }
 
-// Para no repetir la misma búsqueda (ej: "Pikachu" en "es")
+// To avoid repeating the same search (e.g., "Pikachu" in "es")
 model EnrichedCache {
   id          String   @id @default(uuid())
   source      String
@@ -99,24 +99,24 @@ model EnrichedCache {
   @@map("enriched_cache")
 }
 
-//Mapeador de Apis para cache
+// API mapper for cache
 model ApiMapper {
   id            String   @id @default(uuid())
   source        String   // 'pokemon', 'bgg', 'books'
   structureHash String   @unique 
-  mappingJson   Json     // Instrucciones de mapeo
+  mappingJson   Json     // Mapping instructions
   locale        String   @default("en") 
   createdAt     DateTime @default(now())
 
   @@map("api_mapper")
 }
 
-// Preferencias generales del usuario (idioma, tema, etc.)
+// General user preferences (language, theme, etc.)
 model UserPreferences {
   id              Int      @id @default(autoincrement())
-  language        String   @default("en")   // Código de idioma (es, en, etc.)
+  language        String   @default("en")   // Language code (es, en, etc.)
   currency        String   @default("USD")
-  // --- CONFIGURACIÓN DE TEMA ---
+  // --- THEME CONFIGURATION ---
   useSystemTheme  Boolean  @default(true) @map("use_system_theme")
   
   isDarkMode      Boolean  @default(false) @map("is_dark_mode")
@@ -126,15 +126,15 @@ model UserPreferences {
   createdAt       DateTime @default(now())  @map("created_at")
   updatedAt       DateTime @updatedAt       @map("updated_at")
   channelOrder    String  @default("telegram,email") @map("channel_order")
-  // --- CONFIGURACIÓN DE ALERTAS ---
-  alertStockLow       Boolean @default(true)  @map("alert_stock_low")     // Alerta de stock bajo
-  alertPreSales       Boolean @default(true)  @map("alert_pre_sales")    // Tu alerta de preventas
-  alertLoanReminders  Boolean @default(true)  @map("alert_loan_reminders") // Tu recordatorio de préstamos
+  // --- ALERTS CONFIGURATION ---
+  alertStockLow       Boolean @default(true)  @map("alert_stock_low")     // Low stock alert
+  alertPreSales       Boolean @default(true)  @map("alert_pre_sales")    // Your pre-sales alert
+  alertLoanReminders  Boolean @default(true)  @map("alert_loan_reminders") // Your loan reminder
   
-  // --- NUEVAS PROPUESTAS ---
-  alertOverdueLoans   Boolean @default(true)  @map("alert_overdue_loans") // Préstamos ya vencidos
-  alertMaintenance    Boolean @default(false) @map("alert_maintenance")    // Mantenimiento preventivo
-  alertPriceChange    Boolean @default(false) @map("alert_price_change")   // Cambios bruscos de valor (Marketplace)
+  // --- NEW PROPOSALS ---
+  alertOverdueLoans   Boolean @default(true)  @map("alert_overdue_loans") // Overdue loans
+  alertMaintenance    Boolean @default(false) @map("alert_maintenance")    // Preventive maintenance
+  alertPriceChange    Boolean @default(false) @map("alert_price_change")   // Sudden value changes (Marketplace)
   
   userId          Int      @unique
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -143,7 +143,7 @@ model UserPreferences {
 }
 
 // ============================================
-// SISTEMA DE PLUGINS DINÁMICOS (Server-Driven UI) 🔌
+// DYNAMIC PLUGINS SYSTEM (Server-Driven UI) 🔌
 // ============================================
 
 model Plugin {
@@ -156,7 +156,7 @@ model Plugin {
   isPublic     Boolean  @default(true) @map("is_public")
   authorAvatar String?  @db.Text
 
-  // 🚩 CAMBIO CLAVE: Solo guardamos el String del handle de GitHub
+  // 🚩 KEY CHANGE: We only store the GitHub handle string
   author       String?  @map("author_handle") 
 
   createdAt    DateTime @default(now()) @map("created_at")
@@ -171,15 +171,15 @@ model UserPlugin {
   id        Int      @id @default(autoincrement())
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relación con User
+  // Relation with User
   userId    Int      @map("user_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   isActive  Boolean  @default(true) @map("is_active")
-  // Relación con Plugin
+  // Relation with Plugin
   pluginId  String   @map("plugin_id")
   plugin    Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, pluginId]) // Un usuario no puede instalar el mismo plugin dos veces
+  @@unique([userId, pluginId]) // A user cannot install the same plugin twice
   @@map("user_plugin")
 }
 
@@ -193,9 +193,9 @@ model Container {
   userId        Int
   user          User            @relation(fields: [userId], references: [id])
   items         InventoryItem[]
-  // RELACIÓN AÑADIDA: Un contenedor puede tener muchos tipos de activo
+  // ADDED RELATION: A container can have many asset types
   assetTypes    AssetType[]
-  // RELACIÓN AÑADIDA: Un contenedor puede tener muchas listas de datos
+  // ADDED RELATION: A container can have many data lists
   dataLists     DataList[]
   locations     Location[]
   loans         Loan[]

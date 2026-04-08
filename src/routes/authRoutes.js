@@ -89,6 +89,7 @@ router.post("/setup", async (req, res) => {
 router.get("/github/config", (req, res) => {
   const hasClientId = Boolean(process.env.GITHUB_CLIENT_ID);
   const hasClientSecret = Boolean(process.env.GITHUB_CLIENT_SECRET);
+  const redirectUri = process.env.GITHUB_REDIRECT_URI || null;
   const missingKeys = [
     ...(!hasClientId ? ["GITHUB_CLIENT_ID"] : []),
     ...(!hasClientSecret ? ["GITHUB_CLIENT_SECRET"] : []),
@@ -97,37 +98,44 @@ router.get("/github/config", (req, res) => {
   res.json({
     success: true,
     clientId: hasClientId ? process.env.GITHUB_CLIENT_ID : null,
+    redirectUri,
     isConfigured: hasClientId && hasClientSecret,
     missingKeys,
   });
 });
 
 router.post("/github/complete", verifyToken, async (req, res) => {
-  const { code } = req.body;
+  const { code, redirectUri } = req.body;
   const userId = req.user.userId || req.user.id;
 
   if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET) {
     return res.status(503).json({
       success: false,
       message:
-        "GitHub OAuth no está configurado en el servidor. Faltan GITHUB_CLIENT_ID y/o GITHUB_CLIENT_SECRET.",
+        "GitHub OAuth is not configured on the server. Missing GITHUB_CLIENT_ID and/or GITHUB_CLIENT_SECRET.",
     });
   }
 
   if (!code) {
     return res
       .status(400)
-      .json({ success: false, message: "Código no proporcionado" });
+      .json({ success: false, message: "Code not provided" });
   }
 
   try {
+    const tokenPayload = {
+      client_id: process.env.GITHUB_CLIENT_ID,
+      client_secret: process.env.GITHUB_CLIENT_SECRET,
+      code: code,
+    };
+
+    if (typeof redirectUri === "string" && redirectUri.trim()) {
+      tokenPayload.redirect_uri = redirectUri.trim();
+    }
+
     const tokenResponse = await axios.post(
       "https://github.com/login/oauth/access_token",
-      {
-        client_id: process.env.GITHUB_CLIENT_ID,
-        client_secret: process.env.GITHUB_CLIENT_SECRET,
-        code: code,
-      },
+      tokenPayload,
       { headers: { Accept: "application/json" } },
     );
 
@@ -135,7 +143,7 @@ router.post("/github/complete", verifyToken, async (req, res) => {
     if (!accessToken) {
       return res
         .status(400)
-        .json({ success: false, message: "Token de GitHub inválido" });
+        .json({ success: false, message: "Invalid access token" });
     }
 
     const userRes = await axios.get("https://api.github.com/user", {
@@ -168,7 +176,7 @@ router.post("/github/complete", verifyToken, async (req, res) => {
     console.error("[GITHUB ERROR]:", error.response?.data || error.message);
     return res.status(500).json({
       success: false,
-      message: "Error al vincular con GitHub",
+      message: "Error linking with GitHub",
     });
   }
 });
@@ -179,7 +187,7 @@ router.post("/login", async (req, res) => {
     if (!username || !password) {
       return res
         .status(400)
-        .json({ success: false, message: "Faltan credenciales" });
+        .json({ success: false, message: "Missing credentials" });
     }
 
     const result = await userService.login({ username, password });
@@ -198,7 +206,7 @@ router.post("/login", async (req, res) => {
       user: result.user,
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: "Error interno" });
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -209,26 +217,26 @@ router.post("/register", async (req, res) => {
     if (!email || !password || !name) {
       return res.status(400).json({
         success: false,
-        message: "Todos los campos son requeridos",
+        message: "All fields are required: email, password, name",
       });
     }
 
     const newUser = await userService.register({ email, password, name });
 
-    console.log(`[REGISTRO] Nuevo usuario registrado: ${email}`);
+    console.log(`[REGISTER] New user registered: ${email}`);
     return res.status(201).json({
       success: true,
-      message: "Usuario registrado exitosamente",
+      message: "User registered successfully",
       data: newUser,
     });
   } catch (error) {
     console.error(
-      `[ERROR][REGISTRO] Error al intentar registrar usuario:`,
+      `[ERROR][REGISTER] Error registering user:`,
       error.message,
     );
     return res.status(500).json({
       success: false,
-      message: error.message || "Error en el servidor",
+      message: error.message || "Internal server error",
     });
   }
 });
@@ -246,7 +254,7 @@ router.post("/github/disconnect", verifyToken, async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "Server error during GitHub disconnection",
+      message: "Internal server error during GitHub disconnection",
     });
   }
 });
@@ -267,12 +275,12 @@ router.get("/me", verifyToken, async (req, res) => {
     });
   } catch (error) {
     console.error(
-      `[ERROR][ME] Error al obtener datos del usuario:`,
+      `[ERROR][ME] Error fetching user data:`,
       error.message,
     );
     return res.status(500).json({
       success: false,
-      message: "Error al obtener datos del usuario",
+      message: "Error fetching user data",
     });
   }
 });
@@ -285,7 +293,7 @@ router.post("/change-password", verifyToken, async (req, res) => {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        message: "Ambas contraseñas son requeridas",
+        message: "Both passwords are required",
       });
     }
 
@@ -300,13 +308,13 @@ router.post("/change-password", verifyToken, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Contraseña actualizada correctamente",
+      message: "Password updated successfully",
     });
   } catch (error) {
     console.error("[ERROR][CHANGE-PASSWORD]:", error.message);
     return res.status(500).json({
       success: false,
-      message: "Error interno al cambiar la contraseña",
+      message: "Internal error while changing password",
     });
   }
 });
@@ -314,7 +322,7 @@ router.post("/change-password", verifyToken, async (req, res) => {
 router.post("/logout", (req, res) => {
   res.status(200).json({
     success: true,
-    message: "Sesión cerrada exitosamente",
+    message: "Session closed successfully",
   });
 });
 

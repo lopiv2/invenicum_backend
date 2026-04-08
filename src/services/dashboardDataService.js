@@ -4,41 +4,47 @@ const { Temporal } = require('@js-temporal/polyfill');
 
 class DashboardDataService {
   async getGlobalStatsFromDb(userId) {
-    try {
-      const userId_int = Number(userId);
+    const userId_int = Number(userId);
 
-      const [
-        totalContainers,
-        totalItems,
-        totalAssets,
-        totalValue,
-        topItems,
-        expiringToday,
-      ] = await Promise.all([
-        prisma.container.count({ where: { userId: userId_int } }),
-        prisma.inventoryItem.count({
-          where: { container: { userId: userId_int } },
-        }),
-        prisma.assetType.count({
-          where: { container: { userId: userId_int } },
-        }),
-        inventoryItemService.getGlobalTotalValue(userId_int),
-        this.getTopLoanedItems(userId_int, 5),
-        this.getLoansExpiringToday(userId_int),
-      ]);
-
+    if (!Number.isFinite(userId_int)) {
       return {
-        totalContainers,
-        totalItems,
-        totalAssets,
-        totalValue: totalValue || 0.0,
-        topLoanedItems: topItems,
-        loansExpiringToday: expiringToday,
+        totalContainers: 0,
+        totalItems: 0,
+        totalAssets: 0,
+        totalValue: 0.0,
+        topLoanedItems: [],
+        loansExpiringToday: [],
       };
-    } catch (error) {
-      console.error("Error in DashboardDataService:", error);
-      throw new Error("Error al consultar los datos del dashboard.");
     }
+
+    const results = await Promise.allSettled([
+      prisma.container.count({ where: { userId: userId_int } }),
+      prisma.inventoryItem.count({
+        where: { container: { userId: userId_int } },
+      }),
+      prisma.assetType.count({
+        where: { container: { userId: userId_int } },
+      }),
+      inventoryItemService.getGlobalTotalValue(userId_int),
+      this.getTopLoanedItems(userId_int, 5),
+      this.getLoansExpiringToday(userId_int),
+    ]);
+
+    const pick = (index, fallback) => {
+      const result = results[index];
+      if (result.status === "fulfilled") return result.value;
+      console.error("Dashboard metric failed:", result.reason);
+      return fallback;
+    };
+
+    return {
+      totalContainers: pick(0, 0),
+      totalItems: pick(1, 0),
+      totalAssets: pick(2, 0),
+      totalValue: pick(3, 0.0) || 0.0,
+      topLoanedItems: pick(4, []),
+      loansExpiringToday: pick(5, []),
+    };
   }
 
   async getLoansExpiringToday(userId) {
