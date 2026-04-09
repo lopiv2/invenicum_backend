@@ -163,15 +163,16 @@ jobs:
             }
 
             const sha = context.sha;
-            const ref = `refs/tags/${tag}`;
+            const fullRef = `refs/tags/${tag}`;
+            const refForUpdate = fullRef.replace(/^refs\//, '');
 
             try {
-              await github.rest.git.createRef({ owner, repo, ref, sha });
+              await github.rest.git.createRef({ owner, repo, ref: fullRef, sha });
               console.log(`Tag ${tag} created in ${owner}/${repo}`);
             } catch (error) {
               if (error.status === 422) {
-                // ref already exists -> update it
-                await github.rest.git.updateRef({ owner, repo, ref, sha, force: true });
+                // ref already exists -> update it using the API path segment without the leading 'refs/'
+                await github.rest.git.updateRef({ owner, repo, ref: refForUpdate, sha, force: true });
                 console.log(`Tag ${tag} updated in ${owner}/${repo}`);
               } else {
                 throw error;
