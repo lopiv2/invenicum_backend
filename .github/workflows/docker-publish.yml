@@ -20,8 +20,9 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+  id-token: write
 
 concurrency:
   group: docker-publish-${{ github.ref }}
@@ -40,6 +41,29 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
+
+      - name: Create backend tag (if requested)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tag = context.payload.inputs.version;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.sha;
+            const fullRef = `refs/tags/${tag}`;
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: fullRef, sha });
+              console.log(`Tag ${tag} created in ${owner}/${repo}`);
+            } catch (error) {
+              if (error.status === 422) {
+                await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha, force: true });
+                console.log(`Tag ${tag} updated in ${owner}/${repo}`);
+              } else {
+                throw error;
+              }
+            }
 
       - name: Checkout frontend
         uses: actions/checkout@v4
@@ -122,12 +146,12 @@ jobs:
             APP_VERSION=${{ steps.vars.outputs.app_version }}
 
       - name: Sync version tag to frontend repo
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.version != '')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
           script: |
-            const tag = context.ref.replace('refs/tags/', '');
+            const tag = (context.ref && context.ref.startsWith('refs/tags/')) ? context.ref.replace('refs/tags/', '') : context.payload.inputs.version;
             const owner = 'lopiv2';
             const repo = 'Invenicum';
             const sha = context.sha;
