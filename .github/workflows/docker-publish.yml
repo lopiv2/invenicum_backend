@@ -14,6 +14,14 @@ on:
         description: "Version semantica opcional (ej: 1.2.3)"
         required: false
         type: string
+      skip_build:
+        description: "Si 'true', omite el paso de build/push para pruebas"
+        required: false
+        type: string
+      run_tag_sync:
+        description: "Si 'true', fuerza la ejecución del paso de sincronizar tag (útil con workflow_dispatch)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -44,7 +52,7 @@ jobs:
           ref: ${{ env.FRONTEND_REF }}
           path: frontend-src
           # Si FRONTEND_REPO_TOKEN existe, se usa; si no, usa el token por defecto.
-          token: ${{ secrets.FRONTEND_REPO_TOKEN || github.token }}
+          token: ${{ secrets.FRONTEND_REPO_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -104,6 +112,7 @@ jobs:
           echo "path=${FRONTEND_PATH}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        if: ${{ github.event.inputs.skip_build != 'true' }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -118,6 +127,25 @@ jobs:
 
       - name: Sync version tag to frontend repo
         if: startsWith(github.ref, 'refs/tags/v')
+        # Paso de debugging: verifica que el token configurado tenga acceso al repo frontend
+      - name: Debug FRONTEND release token
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_tag_sync == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG=${GITHUB_REF#refs/tags/}
+          OWNER=lopiv2
+          REPO=Invenicum
+          echo "Comprobando acceso a ${OWNER}/${REPO} para tag ${TAG}"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.FRONTEND_RELEASE_TOKEN }}" https://api.github.com/repos/${OWNER}/${REPO})
+          echo "GitHub API status: $STATUS"
+          if [[ "$STATUS" -ne 200 ]]; then
+            echo "El token parece inválido o no tiene acceso al repositorio frontend (HTTP $STATUS)" >&2
+            exit 1
+          fi
+
+      - name: Sync version tag to frontend repo
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_tag_sync == 'true')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
@@ -133,7 +161,7 @@ jobs:
               console.log(`Tag ${tag} created in ${owner}/${repo}`);
             } catch (error) {
               if (error.status === 422) {
-                await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha, force: true });
+                await github.rest.git.updateRef({ owner, repo, ref: `refs/tags/${tag}`, sha, force: true });
                 console.log(`Tag ${tag} updated in ${owner}/${repo}`);
               } else {
                 throw error;
