@@ -4,7 +4,7 @@ const { verifyProxyJwt } = require('../lib/jwtValidator');
 
 class GitHubConstants {
   static DEFAULT_OWNER = "lopiv2";
-
+  static MAIN_REPO = "invenicum";
   static DEFAULT_REPO = "invenicum-market-repository";
 
   static get owner() {
@@ -14,6 +14,11 @@ class GitHubConstants {
   static get repo() {
     return process.env.GITHUB_REPO_NAME || this.DEFAULT_REPO;
   }
+
+  static get mainRepo() {
+    return process.env.GITHUB_MAIN_REPO || this.MAIN_REPO;
+  }
+
 
   static get pluginRepoUrl() {
     return (

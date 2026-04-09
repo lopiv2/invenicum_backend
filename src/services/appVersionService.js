@@ -1,15 +1,8 @@
+
 const axios = require("axios");
 const semver = require("semver");
 const { GitHubConstants } = require("../config/githubConstants");
-
 class AppVersionService {
-  get _owner() {
-    return GitHubConstants.owner;
-  }
-
-  get _repo() {
-    return GitHubConstants.repo;
-  }
 
   _normalizeVersion(version) {
     const raw = String(version || "").trim().replace(/^v/i, "");
@@ -30,11 +23,12 @@ class AppVersionService {
     const normalizedCurrent = this._normalizeVersion(currentVersion);
 
     const response = await axios.get(
-      `https://api.github.com/repos/${this._owner}/${this._repo}/releases/latest`,
+      `https://api.github.com/repos/${GitHubConstants.owner}/${GitHubConstants.mainRepo}/releases/latest`,
       {
         timeout: 8000,
         headers: {
           Accept: "application/vnd.github+json",
+          "User-Agent": "Invenicum-App-Server",
         },
       },
     );
@@ -48,14 +42,18 @@ class AppVersionService {
     const updateAvailable = semver.lt(normalizedCurrent, latestVersion);
     const forceUpdate = semver.lt(normalizedCurrent, minSupportedVersion);
 
+    const releaseUrl = response.data?.html_url || null;
+
     return {
       currentVersion: normalizedCurrent,
       latestVersion,
       minSupportedVersion,
       updateAvailable,
+      hasUpdate: updateAvailable,
       forceUpdate,
       isSupported: !forceUpdate,
-      releaseUrl: response.data?.html_url || null,
+      releaseUrl,
+      releasesUrl: releaseUrl,
       publishedAt: response.data?.published_at || null,
       notes: response.data?.body || "",
     };

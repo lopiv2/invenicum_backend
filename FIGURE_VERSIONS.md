@@ -1,6 +1,6 @@
-# Lista de nombres para versiones (figuras de acción)
+# List of names for releases (action figures)
 
-Este archivo contiene 20 nombres únicos de figuras de acción que se usarán como nombres para las versiones del proyecto. Se usarán en orden desde el primero hasta el último sin repetirse. La convención de versión será semántica: la primera publicación será `1.0.0 "<Nombre 1>"`, y cada aumento de versión mayor usará el siguiente nombre de la lista.
+This file contains 20 unique action-figure names that will be used as names for project releases. They should be used in order from the first to the last without repeating. The versioning convention is semantic: the first release will be `1.0.0 "<Name 1>"`, and each subsequent major release should use the next name in the list.
 
 1. He-Man
 2. Destro
@@ -14,21 +14,21 @@ Este archivo contiene 20 nombres únicos de figuras de acción que se usarán co
 10. Wolverine
 11. Iron Man
 12. Captain America
-13. G.I. Joe (Roadblock)
+13. Roadblock
 14. Megatron
 15. Ryu
 16. Scorpion
-17. Buzz Lightyear
-18. Buzz Aldrin (figura conmemorativa)
+17. Bumblebee
+18. Buzz Aldrin
 19. The Punisher
 20. Ghost Rider
 
 ---
 
-Instrucciones de uso:
+Usage instructions:
 
-- Usar los nombres en orden desde 1 hasta 20, sin repetir.
-- Al crear la primera release: `1.0.0 "Centinela Estelar"`.
-- Para la siguiente release mayor (2.0.0): `2.0.0 "Forjador de Relámpagos"`, y así sucesivamente.
-- Si se necesita documentar la asociación versión→nombre, añadir una entrada en el changelog o en la nota de la release en GitHub con el nombre entre comillas.
+- Use the names in order from 1 to 20, without repeating.
+- When creating the first release, use: `1.0.0 "He-Man"`.
+- For the next major release (2.0.0): `2.0.0 "Destro"`, and so on.
+- If you need to document the version→name mapping, add an entry in the changelog or include the name in the GitHub release notes.
 
