@@ -18,10 +18,6 @@ on:
         description: "Si 'true', omite el paso de build/push para pruebas"
         required: false
         type: string
-      run_tag_sync:
-        description: "Si 'true', fuerza la ejecución del paso de sincronizar tag (útil con workflow_dispatch)"
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -52,7 +48,7 @@ jobs:
           ref: ${{ env.FRONTEND_REF }}
           path: frontend-src
           # Si FRONTEND_REPO_TOKEN existe, se usa; si no, usa el token por defecto.
-          token: ${{ secrets.FRONTEND_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.FRONTEND_REPO_TOKEN || github.token }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -125,77 +121,26 @@ jobs:
             API_URL=/api/v1
             APP_VERSION=${{ steps.vars.outputs.app_version }}
 
-      - name: Debug FRONTEND release token
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_tag_sync == 'true')
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG=${GITHUB_REF#refs/tags/}
-          OWNER=lopiv2
-          REPO=Invenicum
-          echo "Comprobando acceso a ${OWNER}/${REPO} para tag ${TAG}"
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${{ secrets.FRONTEND_RELEASE_TOKEN }}" https://api.github.com/repos/${OWNER}/${REPO})
-          echo "GitHub API status: $STATUS"
-          if [[ "$STATUS" -ne 200 ]]; then
-            echo "El token parece inválido o no tiene acceso al repositorio frontend (HTTP $STATUS)" >&2
-            exit 1
-          fi
-
       - name: Sync version tag to frontend repo
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_tag_sync == 'true')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
           script: |
+            const tag = context.ref.replace('refs/tags/', '');
             const owner = 'lopiv2';
             const repo = 'Invenicum';
-
-            // Determinar el tag: preferir push de tag, si no usar el input 'version' en workflow_dispatch
-            let tag = null;
-            if (context.ref && context.ref.startsWith('refs/tags/')) {
-              tag = context.ref.replace('refs/tags/', '');
-            } else if (context.payload && context.payload.inputs && context.payload.inputs.version) {
-              tag = context.payload.inputs.version;
-            }
-
-            if (!tag) {
-              throw new Error('No se encontró un tag. Ejecuta el workflow desde un push de tag o proporciona `version` en inputs.');
-            }
-
             const sha = context.sha;
-            const fullRef = `refs/tags/${tag}`;
-            const refForUpdate = fullRef.replace(/^refs\//, '');
+            const ref = `refs/tags/${tag}`;
 
             try {
-              await github.rest.git.createRef({ owner, repo, ref: fullRef, sha });
+              await github.rest.git.createRef({ owner, repo, ref, sha });
               console.log(`Tag ${tag} created in ${owner}/${repo}`);
             } catch (error) {
               if (error.status === 422) {
-                // ref already exists -> update it using the API path segment without the leading 'refs/'
-                await github.rest.git.updateRef({ owner, repo, ref: refForUpdate, sha, force: true });
+                await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha, force: true });
                 console.log(`Tag ${tag} updated in ${owner}/${repo}`);
               } else {
                 throw error;
               }
             }
-
-      - name: Dispatch frontend update workflow
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.FRONTEND_REPO_TOKEN || secrets.GITHUB_TOKEN }}
-          script: |
-            // Dispatch the frontend workflow to update its version/reference
-            const owner = 'lopiv2';
-            const repo = 'Invenicum';
-            // Use the resolved app version from earlier step; fall back to tag if needed
-            const version = '${{ steps.vars.outputs.app_version }}' || (context.ref && context.ref.replace('refs/tags/', ''));
-
-            console.log(`Dispatching frontend workflow with version=${version}`);
-            await github.actions.createWorkflowDispatch({
-              owner,
-              repo,
-              workflow_id: 'update-version.yml',
-              ref: 'main',
-              inputs: { version }
-            });
