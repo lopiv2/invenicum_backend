@@ -1,29 +1,3 @@
-name: Build and Publish Docker Image
-
-on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '.github/workflows/**'
-      - '**/*.md'
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version description"
-        required: false
-        type: string
-
-permissions:
-  contents: read
-  packages: write
-
-concurrency:
-  group: docker-publish-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -117,7 +91,7 @@ jobs:
             API_URL=/api/v1
             APP_VERSION=${{ steps.vars.outputs.app_version }}
 
-      - name: Sync tag to frontend repo (create/update ref)
+      - name: Sync version tag to frontend repo
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/github-script@v7
         with:
@@ -125,47 +99,18 @@ jobs:
           script: |
             const tag = context.ref.replace('refs/tags/', '');
             const owner = 'lopiv2';
-            const repo = 'invenicum';
-            const desiredSha = context.sha;
+            const repo = 'Invenicum';
+            const sha = context.sha;
             const ref = `refs/tags/${tag}`;
 
-            async function shaExistsInRepo(sha) {
-              try {
-                await github.rest.git.getCommit({ owner, repo, commit_sha: sha });
-                return true;
-              } catch (e) {
-                return false;
-              }
-            }
-
-            async function getFallbackSha() {
-              const branch = process.env.FRONTEND_REF || 'main';
-              const resp = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
-              return resp.data.object.sha;
-            }
-
             try {
-              let targetSha = desiredSha;
-              const exists = await shaExistsInRepo(desiredSha);
-              if (!exists) {
-                console.log(`Desired sha ${desiredSha} not found in ${owner}/${repo}, using fallback branch ${process.env.FRONTEND_REF || 'main'}`);
-                targetSha = await getFallbackSha();
-              }
-
-              // Try to create the tag ref
-              try {
-                await github.rest.git.createRef({ owner, repo, ref, sha: targetSha });
-                console.log(`Created tag ${tag} -> ${targetSha} in ${owner}/${repo}`);
-              } catch (createErr) {
-                if (createErr.status === 422) {
-                  // Tag exists, update it
-                  await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha: targetSha, force: true });
-                  console.log(`Updated tag ${tag} -> ${targetSha} in ${owner}/${repo}`);
-                } else {
-                  throw createErr;
-                }
-              }
+              await github.rest.git.createRef({ owner, repo, ref, sha });
+              console.log(`Tag ${tag} created in ${owner}/${repo}`);
             } catch (error) {
-              core.setFailed && core.setFailed(error.message || String(error));
-              throw error;
+              if (error.status === 422) {
+                await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha, force: true });
+                console.log(`Tag ${tag} updated in ${owner}/${repo}`);
+              } else {
+                throw error;
+              }
             }

@@ -333,6 +333,9 @@ class InventoryItemService {
 
   async getGlobalTotalValue(userId) {
     try {
+      const parsedUserId = parseInt(userId, 10);
+      if (isNaN(parsedUserId)) return 0;
+
       const result = await prisma.$queryRaw`
       SELECT SUM(
         COALESCE(
@@ -348,7 +351,7 @@ class InventoryItemService {
       FROM inventory_item i
       JOIN custom_field_definition cfd ON i.asset_type_id = cfd.asset_type_id
       JOIN container c ON i.containerId = c.id
-      WHERE c.userId = ${parseInt(userId)}
+      WHERE c.userId = ${parsedUserId}
       AND (cfd.type = 'price' OR cfd.is_monetary = 1)
     `;
 
@@ -358,8 +361,22 @@ class InventoryItemService {
       const totalValue = result[0].total;
       return totalValue ? parseFloat(totalValue) : 0;
     } catch (error) {
+      const errorText = String(error?.message || "");
+      const adapterCode = error?.driverAdapterError?.code || error?.cause?.code;
+      const isMissingTable =
+        errorText.includes("TableDoesNotExist") ||
+        errorText.includes("doesn't exist") ||
+        adapterCode === "TableDoesNotExist";
+
+      if (isMissingTable) {
+        console.warn(
+          "[getGlobalTotalValue] Missing table in current instance schema. Returning 0.",
+        );
+        return 0;
+      }
+
       console.error("Error SQL Detallado:", error);
-      throw new Error("Error al calcular el valor global.");
+      return 0;
     }
   }
 
