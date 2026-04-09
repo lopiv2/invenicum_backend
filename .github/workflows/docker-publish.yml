@@ -117,7 +117,7 @@ jobs:
             API_URL=/api/v1
             APP_VERSION=${{ steps.vars.outputs.app_version }}
 
-      - name: Create Release in frontend repo
+      - name: Sync tag to frontend repo (create/update ref)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/github-script@v7
         with:
@@ -127,46 +127,42 @@ jobs:
             const owner = 'lopiv2';
             const repo = 'invenicum';
             const desiredSha = context.sha;
+            const ref = `refs/tags/${tag}`;
 
-            async function resolveTargetSha() {
+            async function shaExistsInRepo(sha) {
               try {
-                await github.rest.git.getCommit({ owner, repo, commit_sha: desiredSha });
-                return desiredSha;
+                await github.rest.git.getCommit({ owner, repo, commit_sha: sha });
+                return true;
               } catch (e) {
-                const branch = process.env.FRONTEND_REF || 'main';
-                const resp = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
-                return resp.data.object.sha;
+                return false;
               }
             }
 
+            async function getFallbackSha() {
+              const branch = process.env.FRONTEND_REF || 'main';
+              const resp = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+              return resp.data.object.sha;
+            }
+
             try {
-              const targetSha = await resolveTargetSha();
-              // Create or update a release; createRelease will create tag if needed
+              let targetSha = desiredSha;
+              const exists = await shaExistsInRepo(desiredSha);
+              if (!exists) {
+                console.log(`Desired sha ${desiredSha} not found in ${owner}/${repo}, using fallback branch ${process.env.FRONTEND_REF || 'main'}`);
+                targetSha = await getFallbackSha();
+              }
+
+              // Try to create the tag ref
               try {
-                const release = await github.rest.repos.createRelease({
-                  owner,
-                  repo,
-                  tag_name: tag,
-                  target_commitish: targetSha,
-                  name: `${tag} - Release synched from backend`,
-                  body: `Automated release created from backend repository tag ${tag}.`,
-                  draft: false,
-                  prerelease: false,
-                });
-                console.log(`Release created: ${release.data.html_url}`);
-              } catch (createError) {
-                if (createError.status === 422) {
-                  // Release already exists. Update it.
-                  const releases = await github.rest.repos.listReleases({ owner, repo });
-                  const existing = releases.data.find(r => r.tag_name === tag);
-                  if (existing) {
-                    await github.rest.repos.updateRelease({ owner, repo, release_id: existing.id, tag_name: tag, target_commitish: targetSha, name: `${tag} - Release synched from backend`, body: `Updated automated release.` });
-                    console.log(`Release updated for tag ${tag}`);
-                  } else {
-                    throw createError;
-                  }
+                await github.rest.git.createRef({ owner, repo, ref, sha: targetSha });
+                console.log(`Created tag ${tag} -> ${targetSha} in ${owner}/${repo}`);
+              } catch (createErr) {
+                if (createErr.status === 422) {
+                  // Tag exists, update it
+                  await github.rest.git.updateRef({ owner, repo, ref: `tags/${tag}`, sha: targetSha, force: true });
+                  console.log(`Updated tag ${tag} -> ${targetSha} in ${owner}/${repo}`);
                 } else {
-                  throw createError;
+                  throw createErr;
                 }
               }
             } catch (error) {
