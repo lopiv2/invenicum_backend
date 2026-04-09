@@ -20,37 +20,50 @@ on:
         type: string
 
 permissions:
-  contents: read
-  packages: write
+            const owner = 'lopiv2';
+            const repo = 'Invenicum';
 
-concurrency:
-  group: docker-publish-${{ github.ref }}
-  cancel-in-progress: true
+            // Determinar el tag: preferir push de tag, si no usar el input 'version' en workflow_dispatch
+            let tag = null;
+            if (context.ref && context.ref.startsWith('refs/tags/')) {
+              tag = context.ref.replace('refs/tags/', '');
+            } else if (context.payload && context.payload.inputs && context.payload.inputs.version) {
+              tag = context.payload.inputs.version;
+            }
 
-jobs:
-  docker:
-    runs-on: ubuntu-latest
+            if (!tag) {
+              throw new Error('No se encontró un tag. Ejecuta el workflow desde un push de tag o proporciona `version` en inputs.');
+            }
 
-    env:
-      IMAGE_NAME: ghcr.io/lopiv2/invenicum
-      FRONTEND_REPOSITORY: lopiv2/Invenicum
-      FRONTEND_REF: main
-      FRONTEND_SUBPATH: invenicum
+            // Para crear el tag en el repo frontend necesitamos un SHA que exista en ese repo.
+            // Obtenemos el SHA de la rama objetivo del frontend (`main` por defecto).
+            let sha = null;
+            try {
+              const targetBranch = '${{ env.FRONTEND_REF }}' || 'main';
+              const refRes = await github.rest.git.getRef({ owner, repo, ref: `heads/${targetBranch}` });
+              sha = refRes.data.object.sha;
+              console.log(`Using ${owner}/${repo}@${targetBranch} sha=${sha} to create tag ${tag}`);
+            } catch (err) {
+              // Fallback: usar context.sha (menos fiable si proviene del backend repo)
+              console.warn('No se pudo obtener la ref del frontend; usando context.sha como fallback');
+              sha = context.sha;
+            }
 
-    steps:
-      - name: Checkout backend
-        uses: actions/checkout@v4
+            const fullRef = `refs/tags/${tag}`;
+            const refForUpdate = `tags/${tag}`;
 
-      - name: Checkout frontend
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.FRONTEND_REPOSITORY }}
-          ref: ${{ env.FRONTEND_REF }}
-          path: frontend-src
-          # Si FRONTEND_REPO_TOKEN existe, se usa; si no, usa el token por defecto.
-          token: ${{ secrets.FRONTEND_REPO_TOKEN || github.token }}
-
-      - name: Set up Docker Buildx
+            try {
+              await github.rest.git.createRef({ owner, repo, ref: fullRef, sha });
+              console.log(`Tag ${tag} created in ${owner}/${repo}`);
+            } catch (error) {
+              if (error.status === 422) {
+                // ref already exists -> update it (API expects ref without leading 'refs/')
+                await github.rest.git.updateRef({ owner, repo, ref: refForUpdate, sha, force: true });
+                console.log(`Tag ${tag} updated in ${owner}/${repo}`);
+              } else {
+                throw error;
+              }
+            }
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
