@@ -168,3 +168,22 @@ jobs:
                 throw error;
               }
             }
+            // Create or update a GitHub Release in the frontend repo linking to the backend package
+            try {
+              const imageUrl = `https://ghcr.io/lopiv2/invenicum:${tag}`;
+              let release;
+              try {
+                release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
+                await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: tag, body: `Docker image: ${imageUrl}\n\nPull with:\n	docker pull ${imageUrl}` });
+                console.log(`Release ${tag} updated in ${owner}/${repo}`);
+              } catch (errGet) {
+                if (errGet.status === 404) {
+                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: tag, body: `Docker image: ${imageUrl}\n\nPull with:\n	docker pull ${imageUrl}`, draft: false, prerelease: false });
+                  console.log(`Release ${tag} created in ${owner}/${repo}`);
+                } else {
+                  throw errGet;
+                }
+              }
+            } catch (err) {
+              console.warn('Failed to create/update release in frontend:', err);
+            }
