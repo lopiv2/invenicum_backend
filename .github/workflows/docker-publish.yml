@@ -147,9 +147,21 @@ jobs:
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
           script: |
-            const tag = context.ref.replace('refs/tags/', '');
             const owner = 'lopiv2';
             const repo = 'Invenicum';
+
+            // Determinar el tag: preferir push de tag, si no usar el input 'version' en workflow_dispatch
+            let tag = null;
+            if (context.ref && context.ref.startsWith('refs/tags/')) {
+              tag = context.ref.replace('refs/tags/', '');
+            } else if (context.payload && context.payload.inputs && context.payload.inputs.version) {
+              tag = context.payload.inputs.version;
+            }
+
+            if (!tag) {
+              throw new Error('No se encontró un tag. Ejecuta el workflow desde un push de tag o proporciona `version` en inputs.');
+            }
+
             const sha = context.sha;
             const ref = `refs/tags/${tag}`;
 
@@ -158,7 +170,8 @@ jobs:
               console.log(`Tag ${tag} created in ${owner}/${repo}`);
             } catch (error) {
               if (error.status === 422) {
-                await github.rest.git.updateRef({ owner, repo, ref: `refs/tags/${tag}`, sha, force: true });
+                // ref already exists -> update it
+                await github.rest.git.updateRef({ owner, repo, ref, sha, force: true });
                 console.log(`Tag ${tag} updated in ${owner}/${repo}`);
               } else {
                 throw error;
