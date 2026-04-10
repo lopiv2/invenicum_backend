@@ -13,7 +13,19 @@ RUN flutter pub get
 COPY --from=frontend . .
 
 RUN flutter config --enable-web
-RUN flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=${APP_VERSION}
+# Determine the APP_VERSION to pass to the Flutter build:
+# - If the build-arg APP_VERSION was provided (not the default 0.0.0), use it.
+# - Otherwise, attempt to read the version from pubspec.yaml and coerce it (strip +build metadata).
+RUN set -eux; \
+		if [ "${APP_VERSION}" != "0.0.0" ]; then \
+			BUILD_VERSION="${APP_VERSION}"; \
+		else \
+			BUILD_VERSION=$(grep '^version:' pubspec.yaml | head -n1 | awk '{print $2}' || echo "0.0.0"); \
+			BUILD_VERSION=$(echo "$BUILD_VERSION" | sed -E 's/\+.*$//; s/^v//;'); \
+			if [ -z "$BUILD_VERSION" ]; then BUILD_VERSION="0.0.0"; fi; \
+		fi; \
+		echo "Using APP_VERSION=$BUILD_VERSION"; \
+		flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=$BUILD_VERSION
 
 
 FROM node:20-bookworm-slim AS backend-deps
