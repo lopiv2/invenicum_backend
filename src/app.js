@@ -90,7 +90,7 @@ console.log(`[Static] Serving ${STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`);
 
 if (HAS_WEB_BUILD) {
   app.use(express.static(WEB_BUILD_DIR));
-  console.log(`[Web] Sirviendo frontend web desde ${WEB_BUILD_DIR}`);
+  console.log(`[Web] Serving web frontend from ${WEB_BUILD_DIR}`);
 }
 
 // ----------------------------------------------------

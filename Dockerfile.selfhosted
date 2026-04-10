@@ -25,7 +25,9 @@ RUN set -eux; \
 			if [ -z "$BUILD_VERSION" ]; then BUILD_VERSION="0.0.0"; fi; \
 		fi; \
 		echo "Using APP_VERSION=$BUILD_VERSION"; \
-		flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=$BUILD_VERSION
+			flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=$BUILD_VERSION && \
+			# Write a small file so we can inspect the embedded APP_VERSION inside the built web assets
+			printf "%s" "$BUILD_VERSION" > build/web/APP_VERSION.txt
 
 
 FROM node:20-bookworm-slim AS backend-deps
