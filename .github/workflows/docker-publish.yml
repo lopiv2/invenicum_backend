@@ -1,14 +1,6 @@
 name: Build and Publish Docker Image
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-      - '.github/workflows/**'
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
