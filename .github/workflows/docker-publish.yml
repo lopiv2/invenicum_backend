@@ -168,12 +168,33 @@ jobs:
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
           script: |
+            const fs = require('fs');
+            const path = require('path');
+
             const tag = (context.ref && context.ref.startsWith('refs/tags/')) ? context.ref.replace('refs/tags/', '') : context.payload.inputs.version;
             const owner = 'lopiv2';
             const repo = 'Invenicum';
             // Use the checked-out frontend commit SHA (set by the workflow) when available
             const sha = process.env.FRONTEND_SHA || context.sha;
             const ref = `refs/tags/${tag}`;
+
+            // Helper: get figure name by major version from FIGURE_VERSIONS.md
+            function getFigureNameForMajor(major) {
+              try {
+                const filePath = path.resolve(process.cwd(), 'FIGURE_VERSIONS.md');
+                if (!fs.existsSync(filePath)) return null;
+                const file = fs.readFileSync(filePath, 'utf8');
+                const lines = file.split(/\r?\n/);
+                const items = lines
+                  .map(l => l.trim())
+                  .filter(l => /^\d+\.\s+/.test(l));
+                const idx = major - 1;
+                if (idx >= 0 && idx < items.length) return items[idx].replace(/^\d+\.\s+/, '');
+                return null;
+              } catch (e) {
+                return null;
+              }
+            }
 
             try {
               await github.rest.git.createRef({ owner, repo, ref, sha });
@@ -186,18 +207,24 @@ jobs:
                 throw error;
               }
             }
+
+            // Compute major and map to a figure name to use in the Release title
+            const major = parseInt(tag.replace(/^v/, '').split('.')[0], 10) || null;
+            const figureName = major ? getFigureNameForMajor(major) : null;
+            const releaseTitle = figureName ? `${tag} — ${figureName}` : tag;
+
             // Create or update a GitHub Release in the frontend repo linking to the backend package
             try {
               const imageUrl = `https://ghcr.io/lopiv2/invenicum:${tag}`;
               let release;
               try {
                 release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
-                await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: tag, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}` });
-                console.log(`Release ${tag} updated in ${owner}/${repo}`);
+                await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}` });
+                console.log(`Release ${tag} updated in ${owner}/${repo} with title: ${releaseTitle}`);
               } catch (errGet) {
                 if (errGet.status === 404) {
-                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: tag, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}`, draft: false, prerelease: false });
-                  console.log(`Release ${tag} created in ${owner}/${repo}`);
+                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}`, draft: false, prerelease: false });
+                  console.log(`Release ${tag} created in ${owner}/${repo} with title: ${releaseTitle}`);
                 } else {
                   throw errGet;
                 }
