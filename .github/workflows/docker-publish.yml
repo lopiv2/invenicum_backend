@@ -181,8 +181,16 @@ jobs:
             // Helper: get figure name by major version from FIGURE_VERSIONS.md
             function getFigureNameForMajor(major) {
               try {
-                const filePath = path.resolve(process.cwd(), 'FIGURE_VERSIONS.md');
-                if (!fs.existsSync(filePath)) return null;
+                const candidates = [
+                  path.resolve(process.cwd(), 'FIGURE_VERSIONS.md'),
+                  path.resolve(process.cwd(), 'frontend-src', 'FIGURE_VERSIONS.md'),
+                  path.resolve(process.cwd(), 'frontend-src', 'invenicum', 'FIGURE_VERSIONS.md')
+                ];
+                let filePath = null;
+                for (const p of candidates) {
+                  if (fs.existsSync(p)) { filePath = p; break; }
+                }
+                if (!filePath) return null;
                 const file = fs.readFileSync(filePath, 'utf8');
                 const lines = file.split(/\r?\n/);
                 const items = lines
