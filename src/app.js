@@ -115,6 +115,12 @@ app.get("/", (req, res) => {
 
 // Use the ROUTES with the API version
 const API_BASE_PATH = "/api/" + API_VERSION;
+// Exponer las mismas imágenes también bajo el prefijo de la API
+// (algunos clientes hacen la petición a /api/v1/images/...)
+app.use(API_BASE_PATH + STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
+console.log(
+  `[Static] Serving ${API_BASE_PATH + STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`,
+);
 app.use((req, res, next) => {
   console.log(`[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`);
   next();
