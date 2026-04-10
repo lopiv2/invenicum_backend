@@ -12,7 +12,12 @@ class AppVersionService {
     const coerced = semver.coerce(raw);
     if (coerced?.version) return coerced.version;
 
-    throw new Error("Invalid currentVersion format");
+    // If we cannot coerce to a semver, fallback to a safe default '0.0.0'
+    // instead of throwing. This prevents the whole version check endpoint
+    // from failing when the frontend was built with a non-semver APP_VERSION
+    // (for example a short git SHA). The backend will then compare against
+    // the latest release normally and indicate an update is available.
+    return '0.0.0';
   }
 
   async checkVersion(currentVersion) {
