@@ -14,6 +14,10 @@ on:
         description: "Version semantica opcional (ej: 1.2.3)"
         required: false
         type: string
+      release_name:
+        description: "Nombre humano para el release (solo para workflow_dispatch)"
+        required: false
+        type: string
       skip_build:
         description: "Si 'true', omite el paso de build/push para pruebas"
         required: false
@@ -168,41 +172,11 @@ jobs:
         with:
           github-token: ${{ secrets.FRONTEND_RELEASE_TOKEN }}
           script: |
-            const fs = require('fs');
-            const path = require('path');
-
             const tag = (context.ref && context.ref.startsWith('refs/tags/')) ? context.ref.replace('refs/tags/', '') : context.payload.inputs.version;
             const owner = 'lopiv2';
             const repo = 'Invenicum';
-            // Use the checked-out frontend commit SHA (set by the workflow) when available
             const sha = process.env.FRONTEND_SHA || context.sha;
             const ref = `refs/tags/${tag}`;
-
-            // Helper: get figure name by major version from FIGURE_VERSIONS.md
-            function getFigureNameForMajor(major) {
-              try {
-                const candidates = [
-                  path.resolve(process.cwd(), 'FIGURE_VERSIONS.md'),
-                  path.resolve(process.cwd(), 'frontend-src', 'FIGURE_VERSIONS.md'),
-                  path.resolve(process.cwd(), 'frontend-src', 'invenicum', 'FIGURE_VERSIONS.md')
-                ];
-                let filePath = null;
-                for (const p of candidates) {
-                  if (fs.existsSync(p)) { filePath = p; break; }
-                }
-                if (!filePath) return null;
-                const file = fs.readFileSync(filePath, 'utf8');
-                const lines = file.split(/\r?\n/);
-                const items = lines
-                  .map(l => l.trim())
-                  .filter(l => /^\d+\.\s+/.test(l));
-                const idx = major - 1;
-                if (idx >= 0 && idx < items.length) return items[idx].replace(/^\d+\.\s+/, '');
-                return null;
-              } catch (e) {
-                return null;
-              }
-            }
 
             try {
               await github.rest.git.createRef({ owner, repo, ref, sha });
@@ -216,12 +190,10 @@ jobs:
               }
             }
 
-            // Compute major and map to a figure name to use in the Release title
-            const major = parseInt(tag.replace(/^v/, '').split('.')[0], 10) || null;
-            const figureName = major ? getFigureNameForMajor(major) : null;
-            const releaseTitle = figureName ? `${tag} — ${figureName}` : tag;
+            // Use provided release name (for workflow_dispatch) or fall back to tag
+            const providedName = context.payload && context.payload.inputs && context.payload.inputs.release_name ? context.payload.inputs.release_name : null;
+            const releaseTitle = providedName && providedName.trim().length > 0 ? providedName.trim() : tag;
 
-            // Create or update a GitHub Release in the frontend repo linking to the backend package
             try {
               const imageUrl = `https://ghcr.io/lopiv2/invenicum:${tag}`;
               let release;
