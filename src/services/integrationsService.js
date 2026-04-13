@@ -1334,6 +1334,11 @@ class IntegrationService {
       finalData.marketValue = parseFloat(aiPrice) || 0;
     }
 
+    // Forzar que siempre exista el campo description
+    if (typeof finalData.description !== "string") {
+      finalData.description = "";
+    }
+
     let cacheImageUrl = null;
     if (finalData.images?.[0]?.url?.startsWith("http")) {
       try {

@@ -211,14 +211,27 @@ jobs:
 
             try {
               const imageUrl = `https://ghcr.io/lopiv2/invenicum:${tag}`;
+              const imageInfo = `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}`;
               let release;
               try {
                 release = (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data;
-                await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}` });
-                console.log(`Release ${tag} updated in ${owner}/${repo} with title: ${releaseTitle}`);
+                const oldBody = release.body || '';
+                const bodyHasImage = oldBody.includes(imageUrl) || oldBody.includes(`docker pull ${imageUrl}`);
+                const newBody = bodyHasImage ? oldBody : (oldBody + "\n\n" + imageInfo).trim();
+
+                if (release.draft === true) {
+                  // Publish the draft but preserve/append body
+                  await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: newBody, draft: false, prerelease: false });
+                  console.log(`Draft release ${tag} published in ${owner}/${repo} with title: ${releaseTitle}`);
+                } else {
+                  // Already published: update body by appending image info if missing
+                  await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: newBody });
+                  console.log(`Release ${tag} updated in ${owner}/${repo} with title: ${releaseTitle}`);
+                }
               } catch (errGet) {
                 if (errGet.status === 404) {
-                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}`, draft: false, prerelease: false });
+                  // No release exists: create a published release with image info
+                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: imageInfo, draft: false, prerelease: false });
                   console.log(`Release ${tag} created in ${owner}/${repo} with title: ${releaseTitle}`);
                 } else {
                   throw errGet;
