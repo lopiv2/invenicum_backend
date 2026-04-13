@@ -32,16 +32,13 @@ async function seedUsers() {
 
   for (const user of defaultUsers) {
     try {
-      // 1. Generamos the hash siempre so that, if cambias the pass en the array, se actualice en the DB
       const hashedPassword = await hashPassword(user.password);
 
-      // 2. Use upsert for Create o update
       await prisma.user.upsert({
         where: { email: user.email },
         update: {
           name: user.name,
-          password: hashedPassword, // Esto permite que si cambias la pass en el código, se actualice en la DB
-          // Agrega aquí otros campos if quieres que se sobreescriban
+          password: hashedPassword, 
         },
         create: {
           email: user.email,
