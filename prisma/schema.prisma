@@ -32,6 +32,8 @@ model User {
   plugins         UserPlugin[]
   createdTemplates AssetTemplate[] @relation("TemplateCreator")
   savedTemplates   UserTemplate[]
+
+  @@map("user")
 }
 
 // ============================================
@@ -61,6 +63,7 @@ model ChatMessage {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt]) // For fast queries
+  @@map("chat_message")
 }
 
 // Theme configuration currently applied by the user
@@ -199,6 +202,8 @@ model Container {
   dataLists     DataList[]
   locations     Location[]
   loans         Loan[]
+
+  @@map("container")
 }
 
 // ============================================

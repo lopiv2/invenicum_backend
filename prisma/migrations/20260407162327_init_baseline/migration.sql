@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE `User` (
+CREATE TABLE `user` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `email` VARCHAR(191) NOT NULL,
     `password` VARCHAR(191) NOT NULL,
@@ -11,10 +11,10 @@ CREATE TABLE `User` (
     `github_linked_at` DATETIME(3) NULL,
     `avatarUrl` TEXT NULL,
 
-    UNIQUE INDEX `User_email_key`(`email`),
-    UNIQUE INDEX `User_username_key`(`username`),
-    UNIQUE INDEX `User_github_handle_key`(`github_handle`),
-    UNIQUE INDEX `User_githubId_key`(`githubId`),
+    UNIQUE INDEX `user_email_key`(`email`),
+    UNIQUE INDEX `user_username_key`(`username`),
+    UNIQUE INDEX `user_github_handle_key`(`github_handle`),
+    UNIQUE INDEX `user_githubId_key`(`githubId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -33,14 +33,14 @@ CREATE TABLE `user_integration` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `ChatMessage` (
+CREATE TABLE `chat_message` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `userId` INTEGER NOT NULL,
     `text` TEXT NOT NULL,
     `isUser` BOOLEAN NOT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    INDEX `ChatMessage_userId_createdAt_idx`(`userId`, `createdAt`),
+    INDEX `chat_message_userId_createdAt_idx`(`userId`, `createdAt`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -147,7 +147,7 @@ CREATE TABLE `user_plugin` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `Container` (
+CREATE TABLE `container` (
     `id` INTEGER NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(191) NOT NULL,
     `description` VARCHAR(191) NULL,
@@ -361,34 +361,34 @@ CREATE TABLE `user_template` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- AddForeignKey
-ALTER TABLE `user_integration` ADD CONSTRAINT `user_integration_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `user_integration` ADD CONSTRAINT `user_integration_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `user_theme_config` ADD CONSTRAINT `user_theme_config_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `user_theme_config` ADD CONSTRAINT `user_theme_config_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `custom_theme` ADD CONSTRAINT `custom_theme_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `custom_theme` ADD CONSTRAINT `custom_theme_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `user_preferences` ADD CONSTRAINT `user_preferences_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `user_preferences` ADD CONSTRAINT `user_preferences_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `user_plugin` ADD CONSTRAINT `user_plugin_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `user_plugin` ADD CONSTRAINT `user_plugin_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `user_plugin` ADD CONSTRAINT `user_plugin_plugin_id_fkey` FOREIGN KEY (`plugin_id`) REFERENCES `plugin`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `Container` ADD CONSTRAINT `Container_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `container` ADD CONSTRAINT `container_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `location` ADD CONSTRAINT `location_parent_id_fkey` FOREIGN KEY (`parent_id`) REFERENCES `location`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `location` ADD CONSTRAINT `location_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `Container`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `location` ADD CONSTRAINT `location_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `container`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `asset_type` ADD CONSTRAINT `asset_type_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `Container`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `asset_type` ADD CONSTRAINT `asset_type_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `container`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `custom_field_definition` ADD CONSTRAINT `custom_field_definition_asset_type_id_fkey` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_type`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -400,13 +400,13 @@ ALTER TABLE `custom_field_definition` ADD CONSTRAINT `custom_field_definition_da
 ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_location_id_fkey` FOREIGN KEY (`location_id`) REFERENCES `location`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_assigned_to_user_id_fkey` FOREIGN KEY (`assigned_to_user_id`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_assigned_to_user_id_fkey` FOREIGN KEY (`assigned_to_user_id`) REFERENCES `user`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_asset_type_id_fkey` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_type`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `Container`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `inventory_item` ADD CONSTRAINT `inventory_item_containerId_fkey` FOREIGN KEY (`containerId`) REFERENCES `container`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `price_history` ADD CONSTRAINT `price_history_inventoryItemId_fkey` FOREIGN KEY (`inventoryItemId`) REFERENCES `inventory_item`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
@@ -415,7 +415,7 @@ ALTER TABLE `price_history` ADD CONSTRAINT `price_history_inventoryItemId_fkey` 
 ALTER TABLE `inventory_item_image` ADD CONSTRAINT `inventory_item_image_inventory_item_id_fkey` FOREIGN KEY (`inventory_item_id`) REFERENCES `inventory_item`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE `data_list` ADD CONSTRAINT `data_list_container_id_fkey` FOREIGN KEY (`container_id`) REFERENCES `Container`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `data_list` ADD CONSTRAINT `data_list_container_id_fkey` FOREIGN KEY (`container_id`) REFERENCES `container`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `asset_type_image` ADD CONSTRAINT `asset_type_image_asset_type_id_fkey` FOREIGN KEY (`asset_type_id`) REFERENCES `asset_type`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
