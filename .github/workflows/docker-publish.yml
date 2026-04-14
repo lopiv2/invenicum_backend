@@ -42,8 +42,8 @@ jobs:
       - name: Setup Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: "npm"
 
       - name: Create backend tag (if requested)
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' }}
@@ -163,7 +163,7 @@ jobs:
             echo "frontend_sha=" >> "$GITHUB_OUTPUT"
           fi
         env:
-          GIT_TERMINAL_PROMPT: '0'
+          GIT_TERMINAL_PROMPT: "0"
 
       - name: Build and push
         if: ${{ github.event.inputs.skip_build != 'true' }}
@@ -231,7 +231,7 @@ jobs:
               } catch (errGet) {
                 if (errGet.status === 404) {
                   // No release exists: create a published release with image info
-                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: imageInfo, draft: false, prerelease: false });
+                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: imageInfo, draft: false, prerelease: false, generate_release_notes: true });
                   console.log(`Release ${tag} created in ${owner}/${repo} with title: ${releaseTitle}`);
                 } else {
                   throw errGet;

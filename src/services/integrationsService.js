@@ -289,7 +289,11 @@ class IntegrationService {
               );
             }
 
-            if (status === 404 || lowerMsg.includes("model") || lowerMsg.includes("not found")) {
+            if (
+              status === 404 ||
+              lowerMsg.includes("model") ||
+              lowerMsg.includes("not found")
+            ) {
               throw new Error(
                 `El modelo de Gemini no está disponible: ${config.model || DEFAULT_MODELS[AI_PROVIDERS.GEMINI]}`,
               );
@@ -441,7 +445,7 @@ class IntegrationService {
           };
       }
     } catch (error) {
-            // if the error comes from the Google SDK, it's usually in error.response.data or error.message
+      // if the error comes from the Google SDK, it's usually in error.response.data or error.message
       const googleError = error.response?.data?.error?.message || error.message;
 
       let msg = googleError || "Error de conexión";
@@ -907,7 +911,13 @@ class IntegrationService {
     return result;
   }
 
-  async getEnrichedItem(userId, query, source, locale = "es") {
+  async getEnrichedItem(
+    userId,
+    query,
+    source,
+    locale = "es",
+    fieldOptions = null,
+  ) {
     const normalizedQuery = query.toLowerCase().trim();
 
     // --- CAPA 1: CACHÉ DE RESULTADO FINAL ---
@@ -1005,7 +1015,6 @@ class IntegrationService {
               image: imageObj?.value || imageObj || null,
             };
           });
-
           return {
             multipleResults: true,
             source: "bgg",
@@ -1015,7 +1024,7 @@ class IntegrationService {
         }
 
         const selectedId = Array.isArray(results) ? results[0].id : results.id;
-        console.log(`🎯 Juego único seleccionado ID: ${selectedId}`);
+        console.log(`🎯 Game selected ID: ${selectedId}`);
 
         const detailRes = await axios.get(PROXY_URL, {
           params: { action: "thing", id: selectedId },
@@ -1093,14 +1102,28 @@ class IntegrationService {
     }
 
     // if llegamos aquí, tenemos rawData de a only item → procesamos with IA
-    return this._processWithAI(userId, rawData, contextHint, source, normalizedQuery, locale);
+    return this._processWithAI(
+      userId,
+      rawData,
+      contextHint,
+      source,
+      normalizedQuery,
+      locale,
+      fieldOptions,
+    );
   }
 
   /**
    * Procesa a item seleccionado por the frontend tras elegir de the lista de candidatos.
    * gets the detalles completos and pasa por Capa 3+ (Mapping + IA + post-procesado).
    */
-  async processSelectedItem(userId, source, itemId, locale = "es") {
+  async processSelectedItem(
+    userId,
+    source,
+    itemId,
+    locale = "es",
+    fieldOptions = null,
+  ) {
     let rawData = "";
     let contextHint = "";
 
@@ -1155,19 +1178,36 @@ class IntegrationService {
     }
 
     const cacheKey = `${source}_${itemId}`;
-    return this._processWithAI(userId, rawData, contextHint, source, cacheKey, locale);
+    return this._processWithAI(
+      userId,
+      rawData,
+      contextHint,
+      source,
+      cacheKey,
+      locale,
+      fieldOptions,
+    );
   }
 
   /**
    * CAPA 3+: Mapping, IA, post-procesado and caché.
    * Función interna reutilizada por getEnrichedItem and processSelectedItem.
    */
-  async _processWithAI(userId, rawData, contextHint, source, cacheKey, locale) {
+  async _processWithAI(
+    userId,
+    rawData,
+    contextHint,
+    source,
+    cacheKey,
+    locale,
+    fieldOptions = null,
+  ) {
     // Pre-extract price from raw data BEFORE calling the AI.
     // More reliable than depending on the model for exact numeric values.
     let preExtractedPrice = 0;
     try {
-      const rawJson = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
+      const rawJson =
+        typeof rawData === "string" ? JSON.parse(rawData) : rawData;
       preExtractedPrice = extractMarketPrice(rawJson) || 0;
     } catch (_) {}
 
@@ -1210,7 +1250,13 @@ class IntegrationService {
 
     if (isNewStructure) {
       // if the estructura es new, pedimos the Mapping and the enriquecimiento completo
-      finalPrompt = generateUniversalPrompt(contextHint, rawData, locale, true);
+      finalPrompt = generateUniversalPrompt(
+        contextHint,
+        rawData,
+        locale,
+        true,
+        fieldOptions,
+      );
     } else {
       // if ya conocemos the estructura, mapeamos localmente without volver a llamar a the IA
       const extractedData = this.applyLocalMapping(
@@ -1224,14 +1270,21 @@ class IntegrationService {
         customFieldValues: extractedData.customFieldValues || {},
         marketValue: parseFloat(extractedData.market_value) || 0,
       };
+
+      if (fieldOptions) {
+        finalData.customFieldValues = await this._normalizeDropdownValues(
+          userId,
+          finalData.customFieldValues,
+          fieldOptions,
+          locale,
+        );
+      }
     }
     if (isNewStructure) {
       // --- FASE DE IA (only when the estructura es new) ---
       const aiData = await this.getActiveAiClient(userId);
       if (!aiData)
-        throw new Error(
-          "No AI provider configured. Go to Integrations.",
-        );
+        throw new Error("No AI provider configured. Go to Integrations.");
       const { client, model, provider } = aiData;
       let rawText = "";
 
@@ -1383,6 +1436,87 @@ class IntegrationService {
       .catch(() => {});
 
     return draft;
+  }
+
+  async _normalizeDropdownValues(
+    userId,
+    customFieldValues,
+    fieldOptions,
+    locale,
+  ) {
+    const fieldsToNormalize = Object.entries(fieldOptions).filter(
+      ([fieldName, options]) =>
+        options.length > 0 && customFieldValues[fieldName] !== undefined,
+    );
+
+    if (!fieldsToNormalize.length) return customFieldValues;
+
+    const prompt = `
+You are a data normalizer. For each field below, map the "current value" to the closest option in the "valid options" list.
+The current values may be in a different language than the valid options. Use semantic meaning to find the best match.
+Locale: ${locale}
+
+Fields to normalize:
+${fieldsToNormalize
+  .map(
+    ([field, options]) =>
+      `- Field "${field}": current value = "${customFieldValues[field]}", valid options = [${options.map((o) => `"${o}"`).join(", ")}]`,
+  )
+  .join("\n")}
+
+Respond ONLY with a JSON object where each key is the field name and the value is the best matching option from the valid options list.
+If no option matches semantically, keep the original value.
+Example: { "Format": "Tapa dura", "Language": "Inglés" }
+`.trim();
+
+    try {
+      const aiData = await this.getActiveAiClient(userId);
+      if (!aiData) return customFieldValues;
+      const { client, model, provider } = aiData;
+
+      let rawText = "";
+      if (provider === AI_PROVIDERS.GEMINI) {
+        const result = await client.models.generateContent({
+          model,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0,
+            },
+          },
+        });
+        rawText = result.candidates[0].content.parts[0].text;
+      } else if (provider === AI_PROVIDERS.OPENAI) {
+        const result = await client.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "system",
+              content: "Respond ONLY with a valid JSON object.",
+            },
+            { role: "user", content: prompt },
+          ],
+          temperature: 0,
+          response_format: { type: "json_object" },
+        });
+        rawText = result.choices[0].message.content;
+      } else if (provider === AI_PROVIDERS.CLAUDE) {
+        const result = await client.messages.create({
+          model,
+          max_tokens: 512,
+          system: "Respond ONLY with a valid JSON object.",
+          messages: [{ role: "user", content: prompt }],
+        });
+        rawText = result.content.find((b) => b.type === "text")?.text ?? "{}";
+      }
+
+      const normalized = JSON.parse(rawText.replace(/```json|```/g, "").trim());
+      return { ...customFieldValues, ...normalized };
+    } catch (e) {
+      console.error("⚠️ Error normalizing dropdown values:", e.message);
+      return customFieldValues; // fallback: devolver sin cambios
+    }
   }
 }
 module.exports = new IntegrationService();
