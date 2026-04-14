@@ -12,16 +12,20 @@
  */
 function extractMarketPrice(data) {
   const HIGH_PRIORITY = [
-    "marketPrice", "market_price",       // TCGPlayer: precio de mercado
-    "marketValue", "market_value",
+    "marketPrice",
+    "market_price", // TCGPlayer: precio de mercado
+    "marketValue",
+    "market_value",
   ];
   const LOW_PRIORITY = [
-    "midPrice", "mid_price",             // TCGPlayer: precio medio
-    "trend",                             // CardMarket: precio tendencia actual
-    "avg30",                             // CardMarket: media 30 días
-    "avg7",                              // CardMarket: media 7 días
-    "avg",                               // CardMarket: media general
-    "suggestedPrice", "suggested_price",
+    "midPrice",
+    "mid_price", // TCGPlayer: precio medio
+    "trend", // CardMarket: precio tendencia actual
+    "avg30", // CardMarket: media 30 días
+    "avg7", // CardMarket: media 7 días
+    "avg", // CardMarket: media general
+    "suggestedPrice",
+    "suggested_price",
     "highest_price",
   ];
 
@@ -79,6 +83,7 @@ function generateUniversalPrompt(
   rawData,
   locale = "es",
   isNewStructure = true,
+  fieldOptions = null,
 ) {
   const languageMap = {
     es: "Español",
@@ -92,13 +97,24 @@ function generateUniversalPrompt(
 
   // if ya tenemos the Mapping, the prompt es mucho más corto and barato (ahorro de tokens)
   if (!isNewStructure) {
+    const dropdownConstraints = fieldOptions
+      ? `\nFor these fields, the value in customFieldValues MUST be one of the listed options (choose the closest semantic match, translate if necessary):\n${Object.entries(
+          fieldOptions,
+        )
+          .map(
+            ([field, opts]) =>
+              `- "${field}": [${opts.map((o) => `"${o}"`).join(", ")}]`,
+          )
+          .join("\n")}\n`
+      : "";
     return `
       Actúa como un Redactor Creativo. 
       Tu tarea es convertir estos datos técnicos ya filtrados en una ficha atractiva en **${targetLanguage}**.
 
       DATOS TÉCNICOS:
       ${rawData}
-
+      ${dropdownConstraints}
+      
       REQUERIMIENTOS:
       1. Redacta una descripción narrativa de 2-3 párrafos basada en los datos.
       2. Asegúrate de que el nombre y los valores de los campos estén correctamente traducidos.
@@ -158,4 +174,8 @@ function generateUniversalPrompt(
   `;
 }
 
-module.exports = { getBase64FromUrl, generateUniversalPrompt, extractMarketPrice };
+module.exports = {
+  getBase64FromUrl,
+  generateUniversalPrompt,
+  extractMarketPrice,
+};

@@ -2,7 +2,7 @@
 const router = express.Router();
 const integrationService = require("../services/integrationsService");
 const verifyToken = require("../middleware/authMiddleware");
-const { Temporal } = require('@js-temporal/polyfill');
+const { Temporal } = require("@js-temporal/polyfill");
 
 // Middleware de logging
 router.use((req, res, next) => {
@@ -79,24 +79,23 @@ router.get("/status", verifyToken, async (req, res) => {
 router.get("/enrich", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { query, source, locale } = req.query;
+    const { query, source, locale, fieldOptions } = req.query;
 
-    // Validaciones básicas
+    // Basic validation
     if (!query) {
       return res
         .status(400)
         .json({ error: "El parámetro 'query' es obligatorio" });
     }
 
-    // we call a the función universal (by default bgg if no viene source)
     const enrichedItem = await integrationService.getEnrichedItem(
       userId,
       query,
       source || "bgg",
       locale || "es",
+      fieldOptions,
     );
 
-    // Devolvemos the DTO final generado por Gemini
     res.status(200).json({
       success: true,
       data: enrichedItem,
