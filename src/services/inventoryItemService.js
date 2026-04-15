@@ -1247,18 +1247,43 @@ class InventoryItemService {
   }
 
   async getTotalMarketValue(userId) {
-    const result = await prisma.inventoryItem.aggregate({
+    // Fetch items with their assetType to get possessionFieldId
+    const items = await prisma.inventoryItem.findMany({
       where: {
         container: {
           userId: userId,
         },
+        assetType: {
+          possessionFieldId: {
+            not: null,
+          },
+        },
       },
-      _sum: {
+      select: {
         marketValue: true,
+        customFieldValues: true,
+        assetType: {
+          select: {
+            possessionFieldId: true,
+          },
+        },
       },
     });
 
-    return result._sum.marketValue || 0;
+    // Filter items where possessionField is true
+    let totalValue = 0;
+    for (const item of items) {
+      const possessionFieldId = item.assetType.possessionFieldId;
+      const customValues = item.customFieldValues || {};
+      const possessionValue = customValues[possessionFieldId];
+
+      // Only count items where possession field is true
+      if (possessionValue === true) {
+        totalValue += item.marketValue || 0;
+      }
+    }
+
+    return totalValue;
   }
 
   async generatePrintLabelPDF(itemId, userId, res, queryOptions = {}, req = null) {
