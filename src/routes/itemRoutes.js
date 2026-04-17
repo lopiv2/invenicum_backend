@@ -5,6 +5,7 @@ const router = express.Router();
 const verifyToken = require("../middleware/authMiddleware"); // Asumimos que es tu middleware de autenticación
 const containerService = require("../services/containerService");
 const inventoryItemService = require("../services/inventoryItemService");
+const axios = require('axios');
 const multer = require("multer");
 const path = require("path");
 const { Temporal } = require('@js-temporal/polyfill');
@@ -327,7 +328,7 @@ router.get(
 );
 
 // ===============================================
-// route DE CreateCION
+// Creation Route
 // POST /items
 // ===============================================
 router.post("/items", verifyToken, upload.array("images"), async (req, res) => {
@@ -518,7 +519,7 @@ router.patch(
 );
 
 // ===============================================
-// route DE BORRADO (DELETE)
+// DELETE ROUTE
 // DELETE /items/:id
 // ===============================================
 router.delete("/items/:id", verifyToken, async (req, res) => {
@@ -661,6 +662,44 @@ router.get(
     } catch (error) {
       console.error("Error verifying quantity:", error);
       res.status(500).json({ success: false, error: error.message });
+    }
+  },
+);
+
+// ===============================================
+// Proxy para descargar imagen por URL y devolver bytes
+// POST /items/image-url-to-base64  { url: string }
+// Requiere token para evitar abuso; quitar `verifyToken` si se desea público
+// ===============================================
+router.post(
+  "/items/image-url-to-base64",
+  verifyToken,
+  async (req, res) => {
+    try {
+      const { url } = req.body;
+
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ success: false, message: "URL is required" });
+      }
+
+      // Descargamos la imagen como arraybuffer
+      const response = await axios.get(url, {
+        responseType: "arraybuffer",
+        timeout: 15000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; Invenicum/1.0)",
+          Accept: "image/*,*/*;q=0.8",
+        },
+      });
+
+      const contentType = response.headers["content-type"] || "image/jpeg";
+
+      res.setHeader("Content-Type", contentType);
+      // Enviamos los bytes directamente para que el front los reciba como bytes
+      return res.send(Buffer.from(response.data, "binary"));
+    } catch (error) {
+      console.error("Error proxying image:", error?.message || error);
+      return res.status(500).json({ success: false, message: "Error fetching image", error: error?.message || String(error) });
     }
   },
 );
