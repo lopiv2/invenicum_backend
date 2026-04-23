@@ -202,6 +202,8 @@ model Container {
   dataLists     DataList[]
   locations     Location[]
   loans         Loan[]
+  // Relation: a container can have many scrapers
+  scrapers      Scraper[]
 
   @@map("container")
 }
@@ -504,5 +506,36 @@ model UserTemplate {
 
   @@unique([userId, templateId]) // Un usuario no guarda la misma plantilla dos veces
   @@map("user_template")
+}
+
+// ============================================
+// NUEVOS MODELOS: Scraper y ScraperField
+// Guarda configuraciones de scrapers basados en XPath
+// ============================================
+model Scraper {
+  id         Int            @id @default(autoincrement())
+  name       String
+  url        String         // URL donde probar/detectar el mapping
+  urlPattern String?        @map("url_pattern") // opcional: patrón para asociar automáticamente
+  createdAt  DateTime       @default(now())
+  // Relación opcional con Container para asociar scrapers a un contenedor específico
+  containerId Int?          @map("container_id")
+  container   Container?    @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  fields     ScraperField[]
+
+  @@map("scraper")
+}
+
+model ScraperField {
+  id        Int     @id @default(autoincrement())
+  name      String  // nombre lógico del campo (ej: title, price)
+  xpath     String  // expresión XPath para extraer el valor
+  order     Int?    @default(0)
+
+  scraperId Int     @map("scraper_id")
+  scraper   Scraper @relation(fields: [scraperId], references: [id], onDelete: Cascade)
+
+  @@map("scraper_field")
 }
 

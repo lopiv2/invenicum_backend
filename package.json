@@ -21,11 +21,11 @@
     "@js-temporal/polyfill": "^0.5.1",
     "@octokit/rest": "^22.0.1",
     "@prisma/adapter-mariadb": "^7.4.0",
+    "@xmldom/xmldom": "^0.9.10",
     "axios": "^1.13.4",
     "bwip-js": "^4.8.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
-    
     "dotenv": "^17.2.2",
     "exceljs": "4.4.1-prerelease.0",
     "express": "^5.1.0",
@@ -36,14 +36,14 @@
     "openai": "^6.32.0",
     "pdfkit": "^0.18.0",
     "resend": "^6.9.3",
-    "semver": "^7.7.4"
+    "semver": "^7.7.4",
+    "xpath": "^0.0.34"
   },
   "devDependencies": {
     "@prisma/client": "^7.7.0",
     "concurrently": "^9.2.1",
     "prisma": "^7.7.0"
-  }
-  ,
+  },
   "overrides": {
     "rimraf": "^4.0.0"
   }
