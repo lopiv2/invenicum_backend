@@ -5,9 +5,9 @@ const prisma = require("../../src/middleware/prisma");
 
 
 
-// npm run db:reset  - if quieres resetear the base de data and cargar the data
-// npm run db:seed  - if only quieres cargar the data
-// npx prisma migrate deploy - if only quieres aplicar migraciones without cargar data
+// npm run db:reset  - if only wants to reset the database and loading the data
+// npm run db:seed  - if only wants to load the data
+// npx prisma migrate deploy - if only wants to apply migrations without loading data
 
 const defaultUsers = [
   {

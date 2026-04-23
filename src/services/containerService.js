@@ -10,10 +10,14 @@ const CONTAINER_INCLUDE = {
       images: true,
     },
   },
+  scrapers: {
+    include: {
+      fields: true,
+    },
+  },
   // Optional: if you want inventory items to also be loaded
   // NOTE: for GET /containers, loading ALL items can be very heavy.
   // It is better to load them only in getContainerById if strictly necessary, or exclude them here.
-  items: false,
 };
 
 class ContainerService {
@@ -26,9 +30,7 @@ class ContainerService {
   async createContainer(userId, data) {
     try {
       if (!userId || !data.name) {
-        throw new Error(
-          "User ID and container name are required",
-        );
+        throw new Error("User ID and container name are required");
       }
 
       const container = await prisma.container.create({
@@ -63,10 +65,7 @@ class ContainerService {
    */
   async getContainers(userId) {
     try {
-      console.log(
-        "Searching containers and asset types for user:",
-        userId,
-      );
+      console.log("Searching containers and asset types for user:", userId);
 
       const containers = await prisma.container.findMany({
         where: {
@@ -90,7 +89,7 @@ class ContainerService {
   }
 
   /**
-  * gets a specific container by ID, verifying ownership.
+   * gets a specific container by ID, verifying ownership.
    * @param {number} id - ID del container.
    * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
@@ -109,7 +108,7 @@ class ContainerService {
       if (!container) {
         return {
           success: false,
-            message: "Container not found or access denied.",
+          message: "Container not found or access denied.",
         };
       }
 
@@ -127,7 +126,7 @@ class ContainerService {
   }
 
   /**
-  * updates a specific container by ID, verifying ownership.
+   * updates a specific container by ID, verifying ownership.
    * @param {number} id - ID del container a update.
    * @param {number} userId - ID del Use propietario.
    * @param {object} data - data for update ({name, description}).
@@ -168,7 +167,7 @@ class ContainerService {
     } catch (error) {
       console.error("Error updating container:", error);
 
-        if (error.code === "P2025") {
+      if (error.code === "P2025") {
         return {
           success: false,
           message: "Container not found or access denied.",
@@ -183,7 +182,7 @@ class ContainerService {
   }
 
   /**
-  * deletes a specific container by ID, verifying ownership.
+   * deletes a specific container by ID, verifying ownership.
    * @param {number} id - ID del container a delete.
    * @param {number} userId - ID del Use propietario.
    * @returns {Promise<{success: boolean, message?: string, data?: object}>}
@@ -206,7 +205,7 @@ class ContainerService {
     } catch (error) {
       console.error("Error deleting container:", error);
 
-        if (error.code === "P2025") {
+      if (error.code === "P2025") {
         return {
           success: false,
           message: "Container not found or access denied.",
@@ -220,7 +219,7 @@ class ContainerService {
   }
 
   /**
-  * Performs a global asset search for a specific user.
+   * Performs a global asset search for a specific user.
    * @param {number} userId - ID del Use.
    * @param {string} query - Texto a Search.
    */
