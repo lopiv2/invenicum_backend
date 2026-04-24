@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE `user_preferences` ADD COLUMN `show_asset_type_logo` BOOLEAN NOT NULL DEFAULT true;

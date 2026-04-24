@@ -20,9 +20,22 @@ router.get("/", verifyToken, async (req, res) => {
 
 router.use((req, res, next) => {
   console.log(
-    `[DEBUG] Método: ${req.method} | Path solicitado: ${req.path} | Full URL: ${req.originalUrl}`,
+    `[DEBUG] Method: ${req.method} | Path solicited: ${req.path} | Full URL: ${req.originalUrl}`,
   );
   next();
+});
+
+// PATCH /api/v1/preferences
+router.patch("/", verifyToken, async (req, res) => {
+  try {
+    const result = await preferencesService.updatePreferences(
+      req.user.id,
+      req.body,
+    );
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 // PUT /api/v1/preferences/notifications
