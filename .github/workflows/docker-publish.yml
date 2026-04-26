@@ -73,9 +73,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            # Use tag name (without refs/tags/)
             echo "frontend_ref=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            BRANCH="${GITHUB_REF#refs/heads/}"
+
+          # comprobar si existe en frontend repo
+            if git ls-remote --exit-code --heads https://github.com/${FRONTEND_REPOSITORY}.git "$BRANCH" > /dev/null 2>&1; then
+              echo "frontend_ref=$BRANCH" >> "$GITHUB_OUTPUT"
+            else
+              echo "frontend_ref=${FRONTEND_REF}" >> "$GITHUB_OUTPUT"
+            fi
+
           else
             echo "frontend_ref=${FRONTEND_REF}" >> "$GITHUB_OUTPUT"
           fi
