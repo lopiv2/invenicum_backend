@@ -13,7 +13,7 @@ jobs:
       - name: Delete SHA-only package versions
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.Invenicum_docker }}
           script: |
             const package_name = "invenicum";
 
