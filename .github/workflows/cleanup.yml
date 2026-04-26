@@ -15,30 +15,41 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const org = "lopiv2";
+            const username = "lopiv2";
             const package_name = "invenicum";
 
+            // Lista todos los paquetes del usuario para verificar el nombre exacto
+            const pkgList = await github.rest.packages.listPackagesForUser({
+              username,
+              package_type: "container",
+            });
+            console.log("Paquetes encontrados:", pkgList.data.map(p => p.name));
+
             const versions = await github.paginate(
-              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
               {
                 package_type: "container",
                 package_name,
-                org,
+                username,
                 per_page: 100,
               }
             );
+
+            console.log(`Total de versiones encontradas: ${versions.length}`);
 
             for (const version of versions) {
               const tags = version.metadata?.container?.tags || [];
               const hasSemver = tags.some(t => /^v?\d+\.\d+\.\d+/.test(t));
               const hasShaOnly = tags.length > 0 && tags.every(t => t.startsWith("sha-"));
 
+              console.log(`Version ${version.id} | tags: [${tags.join(", ")}] | hasSemver: ${hasSemver} | hasShaOnly: ${hasShaOnly}`);
+
               if (!hasSemver && hasShaOnly) {
-                console.log(`Deleting version ${version.id} with tags:`, tags);
-                await github.rest.packages.deletePackageVersionForOrg({
+                console.log(`  → Eliminando versión ${version.id}`);
+                await github.rest.packages.deletePackageVersionForUser({
                   package_type: "container",
                   package_name,
-                  org,
+                  username,
                   package_version_id: version.id,
                 });
               }
