@@ -1,0 +1,25 @@
+name: Cleanup Untagged Packages
+
+on:
+  # Se ejecuta automáticamente todos los domingos a medianoche
+  schedule:
+    - cron: '0 0 * * 0'
+  # Permite ejecutarlo manualmente desde la pestaña Actions
+  workflow_dispatch:
+
+jobs:
+  delete-untagged:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write # Necesario para poder borrar
+    steps:
+      - name: Delete untagged versions
+        uses: actions/delete-package-versions@v5
+        with:
+          # Nombre de tu paquete (el que ves en GitHub Packages)
+          package-name: 'invenicum' 
+          package-type: 'container'
+          # Borrar SOLO las que no tienen etiqueta
+          delete-only-untagged-versions: 'true'
+          # Token automático de GitHub
+          token: ${{ secrets.GITHUB_TOKEN }}
