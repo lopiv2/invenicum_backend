@@ -14,39 +14,39 @@ jobs:
       packages: write # Necesario para poder borrar
     steps:
       - name: Delete SHA-only package versions
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const owner = context.repo.owner;
-          const repo = context.repo.repo;
-          const package_name = "invenicum";
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const package_name = "invenicum";
 
-          const versions = await github.paginate(
-            github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
-            {
-              package_type: "container",
-              package_name,
-              org: owner,
-              per_page: 100,
-            }
-          );
-
-          for (const version of versions) {
-            const tags = version.metadata?.container?.tags || [];
-
-            const hasSemver = tags.some(t => /^v?\d+\.\d+\.\d+/.test(t));
-            const hasShaOnly = tags.every(t => t.startsWith("sha-"));
-
-            // 🔥 BORRAR SOLO SI ES SOLO SHA
-            if (!hasSemver && hasShaOnly) {
-              console.log(`Deleting version ${version.id} with tags:`, tags);
-
-              await github.rest.packages.deletePackageVersionForOrg({
+            const versions = await github.paginate(
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+              {
                 package_type: "container",
                 package_name,
                 org: owner,
-                package_version_id: version.id,
-              });
+                per_page: 100,
+              }
+            );
+
+            for (const version of versions) {
+              const tags = version.metadata?.container?.tags || [];
+
+              const hasSemver = tags.some(t => /^v?\d+\.\d+\.\d+/.test(t));
+              const hasShaOnly = tags.every(t => t.startsWith("sha-"));
+
+              // 🔥 BORRAR SOLO SI ES SOLO SHA
+              if (!hasSemver && hasShaOnly) {
+                console.log(`Deleting version ${version.id} with tags:`, tags);
+
+                await github.rest.packages.deletePackageVersionForOrg({
+                  package_type: "container",
+                  package_name,
+                  org: owner,
+                  package_version_id: version.id,
+                });
+              }
             }
-          }
