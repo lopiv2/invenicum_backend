@@ -23,7 +23,7 @@ jobs:
             const package_name = "invenicum";
 
             const versions = await github.paginate(
-              github.rest.packages.getAllPackageVersionsForPackageOwnedByOrg,
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
               {
                 package_type: "container",
                 package_name,
