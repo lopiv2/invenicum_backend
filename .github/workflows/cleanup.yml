@@ -15,29 +15,35 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const username = "lopiv2";
             const package_name = "invenicum";
 
-            // Lista todos los paquetes del usuario para verificar el nombre exacto
-            const pkgList = await github.rest.packages.listPackagesForUser({
-              username,
-              package_type: "container",
-            });
-            console.log("Paquetes encontrados:", pkgList.data.map(p => p.name));
+            // Paginación manual para evitar que octokit resuelva el endpoint incorrecto
+            let page = 1;
+            let allVersions = [];
 
-            const versions = await github.paginate(
-              github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
-              {
-                package_type: "container",
-                package_name,
-                username,
-                per_page: 100,
-              }
-            );
+            while (true) {
+              const response = await github.request(
+                "GET /user/packages/{package_type}/{package_name}/versions",
+                {
+                  package_type: "container",
+                  package_name,
+                  per_page: 100,
+                  page,
+                }
+              );
 
-            console.log(`Total de versiones encontradas: ${versions.length}`);
+              const batch = response.data;
+              console.log(`Página ${page}: ${batch.length} versiones`);
 
-            for (const version of versions) {
+              if (batch.length === 0) break;
+              allVersions = allVersions.concat(batch);
+              if (batch.length < 100) break;
+              page++;
+            }
+
+            console.log(`Total versiones encontradas: ${allVersions.length}`);
+
+            for (const version of allVersions) {
               const tags = version.metadata?.container?.tags || [];
               const hasSemver = tags.some(t => /^v?\d+\.\d+\.\d+/.test(t));
               const hasShaOnly = tags.length > 0 && tags.every(t => t.startsWith("sha-"));
@@ -46,11 +52,13 @@ jobs:
 
               if (!hasSemver && hasShaOnly) {
                 console.log(`  → Eliminando versión ${version.id}`);
-                await github.rest.packages.deletePackageVersionForUser({
-                  package_type: "container",
-                  package_name,
-                  username,
-                  package_version_id: version.id,
-                });
+                await github.request(
+                  "DELETE /user/packages/{package_type}/{package_name}/versions/{package_version_id}",
+                  {
+                    package_type: "container",
+                    package_name,
+                    package_version_id: version.id,
+                  }
+                );
               }
             }
