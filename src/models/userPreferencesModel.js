@@ -4,6 +4,7 @@
 
     this.language = prefs.language || "en";
     this.currency = prefs.currency || "USD";
+    this.showAssetTypeLogo = prefs.showAssetTypeLogo ?? true;
     this.aiEnabled = prefs.aiEnabled ?? true;
     this.aiModel = prefs.aiModel;
     this.aiProvider = prefs.aiProvider;
@@ -32,6 +33,8 @@
 
     if (body.language) prismaData.language = body.language;
     if (body.currency) prismaData.currency = body.currency;
+    if (body.showAssetTypeLogo !== undefined)
+      prismaData.showAssetTypeLogo = Boolean(body.showAssetTypeLogo);
     if (body.aiEnabled !== undefined) prismaData.aiEnabled = body.aiEnabled;
     if (body.aiModel) prismaData.aiModel = body.aiModel;
     if (body.aiProvider) prismaData.aiProvider = body.aiProvider;

@@ -119,6 +119,7 @@ model UserPreferences {
   id              Int      @id @default(autoincrement())
   language        String   @default("en")   // Language code (es, en, etc.)
   currency        String   @default("USD")
+  showAssetTypeLogo   Boolean @default(true) @map("show_asset_type_logo")
   // --- THEME CONFIGURATION ---
   useSystemTheme  Boolean  @default(true) @map("use_system_theme")
   
