@@ -115,26 +115,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           SHORT_SHA="${GITHUB_SHA::7}"
           APP_VERSION="$SHORT_SHA"
 
-          TAGS="${IMAGE_NAME}:latest,${IMAGE_NAME}:sha-${SHORT_SHA}"
+          # Base: siempre el SHA para trazabilidad
+          TAGS="${IMAGE_NAME}:sha-${SHORT_SHA}"
 
           INPUT_VERSION="${{ github.event.inputs.version || '' }}"
-          if [[ -n "$INPUT_VERSION" ]]; then
-            APP_VERSION="$INPUT_VERSION"
-            TAGS="${TAGS},${IMAGE_NAME}:${INPUT_VERSION}"
-          fi
 
-          # If this run was triggered by a tag, extract the tag name.
-          # Accept tags both with and without a leading 'v' (e.g. v1.2.3 or 1.2.3).
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG_VERSION="${GITHUB_REF#refs/tags/}"
-            # Strip a leading 'v' if present to normalize to semver (1.2.3)
-            TAG_VERSION="${TAG_VERSION#v}"
-            APP_VERSION="$TAG_VERSION"
-            TAGS="${TAGS},${IMAGE_NAME}:${TAG_VERSION}"
+            APP_VERSION="${TAG_VERSION#v}"  # v1.2.0-beta.2 → 1.2.0-beta.2
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            APP_VERSION="$INPUT_VERSION"
+          fi
+
+          # Tag de versión explícita
+          TAGS="${TAGS},${IMAGE_NAME}:${APP_VERSION}"
+
+          # Tags flotantes según si es beta o estable
+          if [[ "$APP_VERSION" == *"beta"* ]]; then
+            TAGS="${TAGS},${IMAGE_NAME}:beta"
+          else
+            TAGS="${TAGS},${IMAGE_NAME}:latest"
           fi
 
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
@@ -229,10 +232,11 @@ jobs:
                 const oldBody = release.body || '';
                 const bodyHasImage = oldBody.includes(imageUrl) || oldBody.includes(`docker pull ${imageUrl}`);
                 const newBody = bodyHasImage ? oldBody : (oldBody + "\n\n" + imageInfo).trim();
-
+                const isPrerelease = tag.includes('beta') || tag.includes('alpha') || tag.includes('rc');
+                
                 if (release.draft === true) {
                   // Publish the draft but preserve/append body
-                  await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: newBody, draft: false, prerelease: false });
+                  await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, name: releaseTitle, body: newBody, draft: false, prerelease: isPrerelease });
                   console.log(`Draft release ${tag} published in ${owner}/${repo} with title: ${releaseTitle}`);
                 } else {
                   // Already published: update body by appending image info if missing
@@ -242,7 +246,7 @@ jobs:
               } catch (errGet) {
                 if (errGet.status === 404) {
                   // No release exists: create a published release with image info
-                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: imageInfo, draft: false, prerelease: false, generate_release_notes: true });
+                  await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: releaseTitle, body: imageInfo, draft: false, prerelease: isPrerelease, generate_release_notes: true });
                   console.log(`Release ${tag} created in ${owner}/${repo} with title: ${releaseTitle}`);
                 } else {
                   throw errGet;
