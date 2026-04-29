@@ -115,29 +115,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           SHORT_SHA="${GITHUB_SHA::7}"
-          APP_VERSION="$SHORT_SHA"
-
-          # Base: siempre el SHA para trazabilidad
-          TAGS="${IMAGE_NAME}:sha-${SHORT_SHA}"
-
-          INPUT_VERSION="${{ github.event.inputs.version || '' }}"
-
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            TAG_VERSION="${GITHUB_REF#refs/tags/}"
-            APP_VERSION="${TAG_VERSION#v}"  # v1.2.0-beta.2 → 1.2.0-beta.2
-          elif [[ -n "$INPUT_VERSION" ]]; then
-            APP_VERSION="$INPUT_VERSION"
+          
+          # 1. Prioridad de Versión: Input > Tag > SHA
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            RAW_VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            RAW_VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            RAW_VERSION="sha-${SHORT_SHA}"
           fi
 
-          # Tag de versión explícita
-          TAGS="${TAGS},${IMAGE_NAME}:${APP_VERSION}"
+          # Normalizar: quitar 'v' inicial si existe (v1.1.0-beta.1 -> 1.1.0-beta.1)
+          APP_VERSION="${RAW_VERSION#v}"
+          
+          # 2. Inicializar TAGS con la versión específica y el SHA
+          TAGS="${IMAGE_NAME}:${APP_VERSION},${IMAGE_NAME}:sha-${SHORT_SHA}"
 
-          # Tags flotantes según si es beta o estable
+          # 3. Lógica de etiquetas flotantes (EL CAMBIO IMPORTANTE AQUÍ)
           if [[ "$APP_VERSION" == *"beta"* ]]; then
+            # Es una beta: Solo actualizamos el tag :beta
             TAGS="${TAGS},${IMAGE_NAME}:beta"
+            echo "MODO: Beta detectada. No se tocará la etiqueta :latest"
           else
+            # NO es una beta: Es una versión estable
             TAGS="${TAGS},${IMAGE_NAME}:latest"
+            echo "MODO: Versión estable detectada. Actualizando :latest"
           fi
 
           echo "app_version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
