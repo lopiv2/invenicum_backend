@@ -29,7 +29,7 @@ const templateRoutes = require("./routes/templateRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const appRoutes = require("./routes/appRoutes");
 const scraperRoutes = require("./routes/scraperRoutes");
-
+const achievementRoutes = require('./routes/achievementRoutes');
 
 
 
@@ -147,6 +147,7 @@ app.use(API_BASE_PATH + "/market", upcMarketRoutes);
 app.use(API_BASE_PATH + "/templates", templateRoutes);
 app.use(API_BASE_PATH + "/reports", reportRoutes);
 app.use(API_BASE_PATH + "/scrapers", scraperRoutes);
+app.use(API_BASE_PATH + "/achievements", achievementRoutes);
 
 if (HAS_WEB_BUILD) {
   // Fallback para rutas de Flutter Web (SPA)

@@ -51,6 +51,7 @@ class TemplateService {
   async _getGitHubTemplates() {
     try {
       const { templateRepoUrl } = this._githubConfig;
+      console.log(`🌐 Fetching templates from GitHub: ${templateRepoUrl}`);
       const response = await axios.get(templateRepoUrl);
 
       if (response.data && response.data.templates) {

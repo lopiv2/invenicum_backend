@@ -10,6 +10,7 @@
     "full": "concurrently \"npm run dev\" \"cd ../invenicum && flutter run -d chrome --web-port 5555 --dart-define=API_URL=http://localhost:3000\"",
     "dev": "node --watch src/app.js",
     "db:seed": "node prisma/seeders/seed.js",
+    "seed:achievements": "node src/seeds/achievementSeed.js",
     "db:reset": "prisma migrate reset && npm run db:seed"
   },
   "author": "",
