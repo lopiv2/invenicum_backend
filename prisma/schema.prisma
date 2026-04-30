@@ -10,28 +10,31 @@ datasource db {
 }
 
 model User {
-  id              Int              @id @default(autoincrement())
-  email           String           @unique
-  password        String
-  name            String?
-  username        String?          @unique @db.VarChar(30)
-  githubHandle    String?          @unique @map("github_handle")
-  githubId        String?          @unique
-  githubToken     String?          @db.Text // The token will be stored encrypted
-  githubLinkedAt  DateTime?        @map("github_linked_at")
-  avatarUrl       String?  @db.Text
+  id                  Int                       @id @default(autoincrement())
+  email               String                    @unique
+  password            String
+  name                String?
+  username            String?                   @unique @db.VarChar(30)
+  githubHandle        String?                   @unique @map("github_handle")
+  githubId            String?                   @unique
+  githubToken         String?                   @db.Text // The token will be stored encrypted
+  githubLinkedAt      DateTime?                 @map("github_linked_at")
+  avatarUrl           String?                   @db.Text
   // User relations
-  themeConfig     UserThemeConfig? // 1:1 relation to the active theme configuration
-  savedThemes     CustomTheme[]    // 1:N relation to saved themes
-  preferences     UserPreferences? // 1:1 relation to user preferences
-  integrations    UserIntegration[]
-  loans           Loan[]
-  containers      Container[]
-  assignedItems   InventoryItem[]  @relation("UserAssignedItems")
-  alerts          Alert[]
-  plugins         UserPlugin[]
-  createdTemplates AssetTemplate[] @relation("TemplateCreator")
-  savedTemplates   UserTemplate[]
+  themeConfig         UserThemeConfig? // 1:1 relation to the active theme configuration
+  savedThemes         CustomTheme[] // 1:N relation to saved themes
+  preferences         UserPreferences? // 1:1 relation to user preferences
+  integrations        UserIntegration[]
+  loans               Loan[]
+  containers          Container[]
+  assignedItems       InventoryItem[]           @relation("UserAssignedItems")
+  alerts              Alert[]
+  plugins             UserPlugin[]
+  createdTemplates    AssetTemplate[]           @relation("TemplateCreator")
+  savedTemplates      UserTemplate[]
+  achievementProgress UserAchievementProgress[]
+  events              UserEvent[]
+  achievementSyncs    AchievementSync[]
 
   @@map("user")
 }
@@ -41,15 +44,15 @@ model User {
 // ============================================
 model UserIntegration {
   id        Int      @id @default(autoincrement())
-  type      String   // "gemini", "telegram", "whatsapp"
-  config    Json     // Will store the tokens/keys (preferably encrypted)
+  type      String // "gemini", "telegram", "whatsapp"
+  config    Json // Will store the tokens/keys (preferably encrypted)
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relation with User
-  userId    Int      @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int  @map("user_id")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type]) // A user can only have one config per service type
   @@map("user_integration")
@@ -68,35 +71,35 @@ model ChatMessage {
 
 // Theme configuration currently applied by the user
 model UserThemeConfig {
-  id              Int      @id @default(autoincrement())
-  themeColor      String   @default("#1A237E") // Hexadecimal
-  themeBrightness String   @default("light")   // "light" or "dark"
-  userId          Int      @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              Int    @id @default(autoincrement())
+  themeColor      String @default("#1A237E") // Hexadecimal
+  themeBrightness String @default("light") // "light" or "dark"
+  userId          Int    @unique
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_theme_config")
 }
 
 // Library of themes created by the user
 model CustomTheme {
-  id              String   @id @default(uuid())
-  name            String
-  primaryColor    String
-  brightness      String   @default("light")
-  userId          Int
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String @id @default(uuid())
+  name         String
+  primaryColor String
+  brightness   String @default("light")
+  userId       Int
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("custom_theme")
 }
 
 // To avoid repeating the same search (e.g., "Pikachu" in "es")
 model EnrichedCache {
-  id          String   @id @default(uuid())
-  source      String
-  query       String
-  locale      String
-  data        Json
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  source    String
+  query     String
+  locale    String
+  data      Json
+  createdAt DateTime @default(now())
 
   @@unique([source, query, locale])
   @@map("enriched_cache")
@@ -105,10 +108,10 @@ model EnrichedCache {
 // API mapper for cache
 model ApiMapper {
   id            String   @id @default(uuid())
-  source        String   // 'pokemon', 'bgg', 'books'
-  structureHash String   @unique 
-  mappingJson   Json     // Mapping instructions
-  locale        String   @default("en") 
+  source        String // 'pokemon', 'bgg', 'books'
+  structureHash String   @unique
+  mappingJson   Json // Mapping instructions
+  locale        String   @default("en")
   createdAt     DateTime @default(now())
 
   @@map("api_mapper")
@@ -116,34 +119,114 @@ model ApiMapper {
 
 // General user preferences (language, theme, etc.)
 model UserPreferences {
-  id              Int      @id @default(autoincrement())
-  language        String   @default("en")   // Language code (es, en, etc.)
-  currency        String   @default("USD")
-  showAssetTypeLogo   Boolean @default(true) @map("show_asset_type_logo")
+  id                Int     @id @default(autoincrement())
+  language          String  @default("en") // Language code (es, en, etc.)
+  currency          String  @default("USD")
+  showAssetTypeLogo Boolean @default(true) @map("show_asset_type_logo")
   // --- THEME CONFIGURATION ---
-  useSystemTheme  Boolean  @default(true) @map("use_system_theme")
-  
-  isDarkMode      Boolean  @default(false) @map("is_dark_mode")
-  aiEnabled       Boolean  @default(true) @map("ai_enabled")
-  aiProvider      String   @default("gemini") @map("ai_provider") // "gemini" | "openai" | "claude"
-  aiModel         String   @default("gemini-3-flash-preview") @map("ai_model")
-  createdAt       DateTime @default(now())  @map("created_at")
-  updatedAt       DateTime @updatedAt       @map("updated_at")
-  channelOrder    String  @default("telegram,email") @map("channel_order")
+  useSystemTheme    Boolean @default(true) @map("use_system_theme")
+
+  isDarkMode         Boolean  @default(false) @map("is_dark_mode")
+  aiEnabled          Boolean  @default(true) @map("ai_enabled")
+  aiProvider         String   @default("gemini") @map("ai_provider") // "gemini" | "openai" | "claude"
+  aiModel            String   @default("gemini-3-flash-preview") @map("ai_model")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  channelOrder       String   @default("telegram,email") @map("channel_order")
   // --- ALERTS CONFIGURATION ---
-  alertStockLow       Boolean @default(true)  @map("alert_stock_low")     // Low stock alert
-  alertPreSales       Boolean @default(true)  @map("alert_pre_sales")    // Your pre-sales alert
-  alertLoanReminders  Boolean @default(true)  @map("alert_loan_reminders") // Your loan reminder
-  
+  alertStockLow      Boolean  @default(true) @map("alert_stock_low") // Low stock alert
+  alertPreSales      Boolean  @default(true) @map("alert_pre_sales") // Your pre-sales alert
+  alertLoanReminders Boolean  @default(true) @map("alert_loan_reminders") // Your loan reminder
+
   // --- NEW PROPOSALS ---
-  alertOverdueLoans   Boolean @default(true)  @map("alert_overdue_loans") // Overdue loans
-  alertMaintenance    Boolean @default(false) @map("alert_maintenance")    // Preventive maintenance
-  alertPriceChange    Boolean @default(false) @map("alert_price_change")   // Sudden value changes (Marketplace)
-  
-  userId          Int      @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertOverdueLoans Boolean @default(true) @map("alert_overdue_loans") // Overdue loans
+  alertMaintenance  Boolean @default(false) @map("alert_maintenance") // Preventive maintenance
+  alertPriceChange  Boolean @default(false) @map("alert_price_change") // Sudden value changes (Marketplace)
+
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")
+}
+
+// ============================================
+// Achievements SYSTEM
+// ============================================
+
+model Achievement {
+  id          String  @id // "catalogerSmall", etc.
+  title       String
+  description String
+  icon        String // nombre del icono (no IconData)
+  category    String  @default("general")
+  isLegendary Boolean @default(false)
+
+  // 🔥 CORE LOGIC
+  eventType     String // "ITEM_CREATED", "LOAN_CREATED", etc.
+  requiredValue Int? // para contadores simples
+
+  // 🔥 lógica avanzada (market, fórmulas, etc.)
+  extraConfig Json?
+
+  createdAt DateTime @default(now())
+
+  // Relaciones
+  progresses UserAchievementProgress[]
+
+  @@map("achievement")
+}
+
+model UserEvent {
+  id Int @id @default(autoincrement())
+
+  userId Int    @map("user_id")
+  type   String // "ITEM_CREATED", "LOGIN", etc.
+  value  Int    @default(1)
+
+  // 🔥 clave para logros complejos
+  metadata Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relación
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("user_event")
+}
+
+model UserAchievementProgress {
+  id Int @id @default(autoincrement())
+
+  userId        Int    @map("user_id")
+  achievementId String @map("achievement_id")
+
+  progress   Int       @default(0)
+  unlocked   Boolean   @default(false)
+  unlockedAt DateTime? @map("unlocked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@map("user_achievement_progress")
+}
+
+model AchievementSync {
+  id     Int @id @default(autoincrement())
+  userId Int @map("user_id")
+
+  lastSyncAt DateTime? @map("last_sync_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("achievement_sync")
 }
 
 // ============================================
@@ -151,22 +234,22 @@ model UserPreferences {
 // ============================================
 
 model Plugin {
-  id           String   @id @default(uuid())
+  id           String  @id @default(uuid())
   name         String
-  version      String?  @default("1.0.0")
-  description  String?  @db.Text
-  slot         String   
-  ui           Json     
-  isPublic     Boolean  @default(true) @map("is_public")
-  authorAvatar String?  @db.Text
+  version      String? @default("1.0.0")
+  description  String? @db.Text
+  slot         String
+  ui           Json
+  isPublic     Boolean @default(true) @map("is_public")
+  authorAvatar String? @db.Text
 
   // 🚩 KEY CHANGE: We only store the GitHub handle string
-  author       String?  @map("author_handle") 
+  author String? @map("author_handle")
 
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  installedBy  UserPlugin[]
+  installedBy UserPlugin[]
 
   @@map("plugin")
 }
@@ -176,35 +259,35 @@ model UserPlugin {
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relation with User
-  userId    Int      @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  isActive  Boolean  @default(true) @map("is_active")
+  userId   Int     @map("user_id")
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isActive Boolean @default(true) @map("is_active")
   // Relation with Plugin
-  pluginId  String   @map("plugin_id")
-  plugin    Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+  pluginId String  @map("plugin_id")
+  plugin   Plugin  @relation(fields: [pluginId], references: [id], onDelete: Cascade)
 
   @@unique([userId, pluginId]) // A user cannot install the same plugin twice
   @@map("user_plugin")
 }
 
 model Container {
-  id            Int             @id @default(autoincrement())
-  name          String
-  description   String?
-  isCollection  Boolean         @default(false) @map("is_collection")
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  userId        Int
-  user          User            @relation(fields: [userId], references: [id])
-  items         InventoryItem[]
+  id           Int             @id @default(autoincrement())
+  name         String
+  description  String?
+  isCollection Boolean         @default(false) @map("is_collection")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  userId       Int
+  user         User            @relation(fields: [userId], references: [id])
+  items        InventoryItem[]
   // ADDED RELATION: A container can have many asset types
-  assetTypes    AssetType[]
+  assetTypes   AssetType[]
   // ADDED RELATION: A container can have many data lists
-  dataLists     DataList[]
-  locations     Location[]
-  loans         Loan[]
+  dataLists    DataList[]
+  locations    Location[]
+  loans        Loan[]
   // Relation: a container can have many scrapers
-  scrapers      Scraper[]
+  scrapers     Scraper[]
 
   @@map("container")
 }
@@ -213,152 +296,151 @@ model Container {
 // NUEVO MODELO: Location (Define lugares físicos/lógicos) 📍
 // ============================================
 model Location {
-  id            Int     @id @default(autoincrement())
-  name          String
-  description   String?
-  
-  // Jerarquía (opcional): Permite crear ubicaciones anidadas (Edificio > Piso > Sala)
-  parentId      Int?    @map("parent_id")
-  parent        Location?       @relation("LocationHierarchy", fields: [parentId], references: [id])
-  children      Location[]      @relation("LocationHierarchy")
-  
-  // Relación con Container (Muchos a Uno)
-  containerId   Int
-  container     Container       @relation(fields: [containerId], references: [id], onDelete: Cascade)
-  
-  // Relación con InventoryItem (Una ubicación puede contener muchos ítems)
-  inventoryItems InventoryItem[]
-  
-  @@map("location")
+  id          Int     @id @default(autoincrement())
+  name        String
+  description String?
+
+  // Jerarquía (opcional): Permite crear ubicaciones anidadas (Edificio > Piso > Sala)
+  parentId Int?       @map("parent_id")
+  parent   Location?  @relation("LocationHierarchy", fields: [parentId], references: [id])
+  children Location[] @relation("LocationHierarchy")
+
+  // Relación con Container (Muchos a Uno)
+  containerId Int
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
+
+  // Relación con InventoryItem (Una ubicación puede contener muchos ítems)
+  inventoryItems InventoryItem[]
+
+  @@map("location")
 }
 
 // NUEVO MODELO: Define la plantilla para un tipo de activo (Ej: "Ordenador")
 model AssetType {
-  id                Int                     @id @default(autoincrement())
-  name              String
-  isSerialized      Boolean                 @default(true) @map("is_serialized")
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
-  
+  id           Int      @id @default(autoincrement())
+  name         String
+  isSerialized Boolean  @default(true) @map("is_serialized")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
   // Relación con Container (Muchos a Uno)
-  containerId       Int
-  container         Container               @relation(fields: [containerId], references: [id])
-  
+  containerId Int
+  container   Container @relation(fields: [containerId], references: [id])
+
   // Relación con CustomFieldDefinition (Uno a Muchos)
-  fieldDefinitions  CustomFieldDefinition[]
-  inventoryItems    InventoryItem[]
-  
+  fieldDefinitions CustomFieldDefinition[]
+  inventoryItems   InventoryItem[]
+
   // Relación con las imágenes
-  images           AssetTypeImage[]
-  
+  images AssetTypeImage[]
+
   // 🎯 Campos para colecciones: IDs de los campos booleanos
-  possessionFieldId Int?                    @map("possession_field_id")
-  desiredFieldId    Int?                    @map("desired_field_id")
-  
+  possessionFieldId Int? @map("possession_field_id")
+  desiredFieldId    Int? @map("desired_field_id")
+
   @@map("asset_type")
 }
 
 // NUEVO MODELO: Define cada campo que tendrá un AssetType (Ej: "Serial Number", "Fecha de Compra")
 model CustomFieldDefinition {
-  id              Int         @id @default(autoincrement())
-  name            String
+  id          Int     @id @default(autoincrement())
+  name        String
   // El tipo debe ser mapeado a una cadena o un enum de la DB (TEXT, INTEGER, etc.)
-  type            String      
-  isRequired      Boolean     @default(false) @map("is_required")
-  isSummable      Boolean     @default(false) @map("is_summable") // true si es un campo numérico que se debe sumar
-  isMonetary      Boolean     @default(false) @map("is_monetary") //Solo para valor económico
-  isCountable     Boolean     @default(false) @map("is_countable")
+  type        String
+  isRequired  Boolean @default(false) @map("is_required")
+  isSummable  Boolean @default(false) @map("is_summable") // true si es un campo numérico que se debe sumar
+  isMonetary  Boolean @default(false) @map("is_monetary") //Solo para valor económico
+  isCountable Boolean @default(false) @map("is_countable")
 
   // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
-  dataListId      Int?        @map("data_list_id") 
-  
-  // Relación con AssetType (Muchos a Uno)
-  assetTypeId     Int         @map("asset_type_id")
-  assetType       AssetType   @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+  dataListId Int? @map("data_list_id")
 
-  dataList        DataList?   @relation(fields: [dataListId], references: [id])
+  // Relación con AssetType (Muchos a Uno)
+  assetTypeId Int       @map("asset_type_id")
+  assetType   AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
+
+  dataList DataList? @relation(fields: [dataListId], references: [id])
 
   @@map("custom_field_definition")
 }
 
-
 model InventoryItem {
-  id                Int                     @id @default(autoincrement())
-  name              String
-  description       String?              @db.Text
-  condition         String               @default("loose")
-  barcode           String?              @unique @map("barcode")
+  id              Int       @id @default(autoincrement())
+  name            String
+  description     String?   @db.Text
+  condition       String    @default("loose")
+  barcode         String?   @unique @map("barcode")
   // 2. Identificador de Unidad (Solo para objetos seriados)
-  serialNumber      String?              @unique @map("serial_number")
+  serialNumber    String?   @unique @map("serial_number")
   // --- VALORACIÓN DE MERCADO (Campos Base) ---
   // Añadidos directamente para cálculos globales rápidos
-  marketValue       Float?               @default(0) @map("market_value")
-  lastPriceUpdate   DateTime?            @map("last_price_update")
-  currency          String               @default("EUR") @map("currency")
+  marketValue     Float?    @default(0) @map("market_value")
+  lastPriceUpdate DateTime? @map("last_price_update")
+  currency        String    @default("EUR") @map("currency")
   // Si AssetType.isSerialized es true, este valor siempre será 1.
   // Si es false, aquí guardamos cuántas unidades hay en esta ubicación.
-  quantity          Int                     @default(1)
+  quantity        Int       @default(1)
   // 🔑 NUEVO: Stock mínimo - para alertas de reorden
-  minStock          Int                     @default(0) @map("min_stock")
+  minStock        Int       @default(0) @map("min_stock")
 
   // ============================================
-  // CAMPOS DE UBICACIÓN Y ASIGNACIÓN (USUARIO) 🎯
-  // ============================================
-  
-  // RELACIÓN 1: Ubicación Física/Lógica (REQUERIDO)
-  locationId        Int                     @map("location_id")
-  location          Location                @relation(fields: [locationId], references: [id])
+  // CAMPOS DE UBICACIÓN Y ASIGNACIÓN (USUARIO) 🎯
+  // ============================================
+
+  // RELACIÓN 1: Ubicación Física/Lógica (REQUERIDO)
+  locationId Int      @map("location_id")
+  location   Location @relation(fields: [locationId], references: [id])
 
   // RELACIÓN 2: Usuario Asignado (OPCIONAL)
-  assignedToUserId  Int?                    @map("assigned_to_user_id")
-  assignedToUser    User?                   @relation("UserAssignedItems", fields: [assignedToUserId], references: [id])
-  
-  assetTypeId       Int                     @map("asset_type_id")
-  assetType         AssetType               @relation(fields: [assetTypeId], references: [id])
-  customFieldValues Json?                   @map("custom_field_values")
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  assignedToUserId Int?  @map("assigned_to_user_id")
+  assignedToUser   User? @relation("UserAssignedItems", fields: [assignedToUserId], references: [id])
+
+  assetTypeId       Int                  @map("asset_type_id")
+  assetType         AssetType            @relation(fields: [assetTypeId], references: [id])
+  customFieldValues Json?                @map("custom_field_values")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   containerId       Int
-  container         Container               @relation(fields: [containerId], references: [id])
+  container         Container            @relation(fields: [containerId], references: [id])
   images            InventoryItemImage[]
   loans             Loan[]
   priceHistory      PriceHistory[]
-  
-  @@map("inventory_item") 
+
+  @@map("inventory_item")
 }
 
 model PriceHistory {
-  id              Int           @id @default(autoincrement())
-  price           Float
-  currency        String        @default("USD")
-  createdAt       DateTime      @default(now())
-  
+  id        Int      @id @default(autoincrement())
+  price     Float
+  currency  String   @default("USD")
+  createdAt DateTime @default(now())
+
   // Relación con el Item
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
   inventoryItemId Int
-  
-  @@map("price_history") 
+
   @@index([inventoryItemId])
   @@index([createdAt])
+  @@map("price_history")
 }
 
 // NUEVO MODELO: Almacena la URL o ruta de una imagen adjunta a un InventoryItem
 model InventoryItemImage {
-  id                Int       @id @default(autoincrement())
-  url               String    // URL o ruta al archivo de la imagen
-  
-  // Opcional: descripción para accesibilidad o contexto
-  altText           String?   @map("alt_text")
-  
-  // Opcional: Un número para definir el orden en el que se muestran las imágenes
-  order             Int       @default(0)
-  
-  // Relación con InventoryItem (Muchos a Uno)
-  inventoryItemId   Int       @map("inventory_item_id")
-  inventoryItem     InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  id  Int    @id @default(autoincrement())
+  url String // URL o ruta al archivo de la imagen
 
-  createdAt         DateTime  @default(now())
-  
+  // Opcional: descripción para accesibilidad o contexto
+  altText String? @map("alt_text")
+
+  // Opcional: Un número para definir el orden en el que se muestran las imágenes
+  order Int @default(0)
+
+  // Relación con InventoryItem (Muchos a Uno)
+  inventoryItemId Int           @map("inventory_item_id")
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@map("inventory_item_image")
 }
 
@@ -367,12 +449,12 @@ model DataList {
   id          Int      @id @default(autoincrement())
   name        String
   description String?
-  items       Json     // Almacenará el array de strings como JSON
+  items       Json // Almacenará el array de strings como JSON
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  
+
   // Relación con Container (Muchos a Uno)
-  containerId Int      @map("container_id")
+  containerId Int       @map("container_id")
   container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
 
   customFields CustomFieldDefinition[]
@@ -382,16 +464,16 @@ model DataList {
 
 // Modelo para las imágenes de los tipos de activo
 model AssetTypeImage {
-  id          Int      @id @default(autoincrement())
-  url         String   // URL o ruta al archivo de la imagen
-  filename    String   // Nombre del archivo físico
-  altText     String?  @map("alt_text")
-  order       Int      @default(0)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  
+  id        Int      @id @default(autoincrement())
+  url       String // URL o ruta al archivo de la imagen
+  filename  String // Nombre del archivo físico
+  altText   String?  @map("alt_text")
+  order     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   // Relación con AssetType (Muchos a Uno)
-  assetTypeId Int      @map("asset_type_id")
+  assetTypeId Int       @map("asset_type_id")
   assetType   AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
 
   @@map("asset_type_image")
@@ -399,61 +481,60 @@ model AssetTypeImage {
 
 // Modelo para los préstamos de artículos
 model Loan {
-  id                  Int       @id @default(autoincrement())
-  userId              Int       @map("user_id")
-  user                User      @relation(fields: [userId], references: [id])
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  user        User      @relation(fields: [userId], references: [id])
   // Relación con Container (Muchos a Uno)
-  containerId         Int       @map("container_id")
-  container           Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
-  
-  // Relación con InventoryItem (Muchos a Uno)
-  inventoryItemId     Int       @map("inventory_item_id")
-  inventoryItem       InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
-  // Permite prestar 5 cables de un stock de 100.
-  quantity            Int       @default(1)
-  
-  itemName            String    // Nombre del artículo (copia para referencia histórica)
-  borrowerName        String?
-  borrowerEmail       String?
-  borrowerPhone       String?
-  loanDate            DateTime  @default(now()) @map("loan_date")
-  expectedReturnDate  DateTime? @map("expected_return_date")
-  actualReturnDate    DateTime? @map("actual_return_date")
-  notes               String?
-  status              String    @default("active") // 'active', 'returned', 'overdue'
-  
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  containerId Int       @map("container_id")
+  container   Container @relation(fields: [containerId], references: [id], onDelete: Cascade)
 
-  
+  // Relación con InventoryItem (Muchos a Uno)
+  inventoryItemId Int           @map("inventory_item_id")
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  // Permite prestar 5 cables de un stock de 100.
+  quantity        Int           @default(1)
+
+  itemName           String // Nombre del artículo (copia para referencia histórica)
+  borrowerName       String?
+  borrowerEmail      String?
+  borrowerPhone      String?
+  loanDate           DateTime  @default(now()) @map("loan_date")
+  expectedReturnDate DateTime? @map("expected_return_date")
+  actualReturnDate   DateTime? @map("actual_return_date")
+  notes              String?
+  status             String    @default("active") // 'active', 'returned', 'overdue'
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   @@map("loan")
 }
 
 model VoucherConfig {
-  id           Int      @id @default(autoincrement())
-  template     String   @db.Text
-  logoPath     String?  // Ruta del archivo en el servidor
-  updatedAt    DateTime @updatedAt
+  id        Int      @id @default(autoincrement())
+  template  String   @db.Text
+  logoPath  String? // Ruta del archivo en el servidor
+  updatedAt DateTime @updatedAt
 
   @@map("voucher_config")
 }
 
 model Alert {
-  id        Int      @id @default(autoincrement())
-  title     String
-  message   String   @db.Text
-  type      String   @default("info") // 'info', 'warning', 'critical', 'stock_low'
-  isRead    Boolean  @default(false) @map("is_read")
-  createdAt DateTime @default(now()) @map("created_at")
+  id          Int       @id @default(autoincrement())
+  title       String
+  message     String    @db.Text
+  type        String    @default("info") // 'info', 'warning', 'critical', 'stock_low'
+  isRead      Boolean   @default(false) @map("is_read")
+  createdAt   DateTime  @default(now()) @map("created_at")
   // --- NUEVOS CAMPOS PARA NOTIFICACIONES/CALENDARIO ---
-  isEvent     Boolean  @default(false) @map("is_event") // Diferencia alerta de notificación
-  scheduledAt DateTime? @map("scheduled_at")             // Fecha del evento
-  notifyAt    DateTime? @map("notify_at")    // Fecha exacta del aviso
+  isEvent     Boolean   @default(false) @map("is_event") // Diferencia alerta de notificación
+  scheduledAt DateTime? @map("scheduled_at") // Fecha del evento
+  notifyAt    DateTime? @map("notify_at") // Fecha exacta del aviso
   endDate     DateTime? @map("end_date")
-  
+
   // Relación con el usuario para que cada uno vea solo sus alertas
-  userId    Int      @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int  @map("user_id")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("alert")
 }
@@ -463,47 +544,47 @@ model Alert {
 // ============================================
 
 model AssetTemplate {
-  id              String   @id @default(uuid())
+  id              String  @id @default(uuid())
   name            String
-  description     String   @db.Text
+  description     String  @db.Text
   category        String
-  tags            Json?    // ["retro", "tecnología"]
-  downloadCount   Int      @default(0)
-  authorName      String   @map("author_name")
-  authorAvatarUrl String?  @map("author_avatar_url") @db.Text
-  
+  tags            Json? // ["retro", "tecnología"]
+  downloadCount   Int     @default(0)
+  authorName      String  @map("author_name")
+  authorAvatarUrl String? @map("author_avatar_url") @db.Text
+
   // Estructura de campos (CustomFieldDefinition[])
-  fields          Json     
-  downloadUrl     String?
-  version         Float    @default(1.0)
-  isOfficial      Boolean  @default(false) @map("is_official")
-  isPublic        Boolean  @default(true) @map("is_public")
-  
+  fields      Json
+  downloadUrl String?
+  version     Float   @default(1.0)
+  isOfficial  Boolean @default(false) @map("is_official")
+  isPublic    Boolean @default(true) @map("is_public")
+
   // Relación con el creador original
-  creatorId       Int?     @map("creator_id")
-  creator         User?    @relation("TemplateCreator", fields: [creatorId], references: [id])
+  creatorId Int?  @map("creator_id")
+  creator   User? @relation("TemplateCreator", fields: [creatorId], references: [id])
 
   // Usuarios que han guardado/instalado esta plantilla
-  users           UserTemplate[]
+  users UserTemplate[]
 
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("asset_template")
 }
 
 model UserTemplate {
-  id              Int      @id @default(autoincrement())
-  userId          Int      @map("user_id")
-  templateId      String   @map("template_id")
-  
-  // Permite al usuario renombrar su copia local si quiere
-  customName      String?  @map("custom_name") 
-  
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  template        AssetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id         Int    @id @default(autoincrement())
+  userId     Int    @map("user_id")
+  templateId String @map("template_id")
 
-  createdAt       DateTime @default(now()) @map("created_at")
+  // Permite al usuario renombrar su copia local si quiere
+  customName String? @map("custom_name")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template AssetTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([userId, templateId]) // Un usuario no guarda la misma plantilla dos veces
   @@map("user_template")
@@ -514,29 +595,28 @@ model UserTemplate {
 // Guarda configuraciones de scrapers basados en XPath
 // ============================================
 model Scraper {
-  id         Int            @id @default(autoincrement())
-  name       String
-  url        String         // URL donde probar/detectar el mapping
-  urlPattern String?        @map("url_pattern") // opcional: patrón para asociar automáticamente
-  createdAt  DateTime       @default(now())
+  id          Int        @id @default(autoincrement())
+  name        String
+  url         String // URL donde probar/detectar el mapping
+  urlPattern  String?    @map("url_pattern") // opcional: patrón para asociar automáticamente
+  createdAt   DateTime   @default(now())
   // Relación opcional con Container para asociar scrapers a un contenedor específico
-  containerId Int?          @map("container_id")
-  container   Container?    @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  containerId Int?       @map("container_id")
+  container   Container? @relation(fields: [containerId], references: [id], onDelete: Cascade)
 
-  fields     ScraperField[]
+  fields ScraperField[]
 
   @@map("scraper")
 }
 
 model ScraperField {
-  id        Int     @id @default(autoincrement())
-  name      String  // nombre lógico del campo (ej: title, price)
-  xpath     String  // expresión XPath para extraer el valor
-  order     Int?    @default(0)
+  id    Int    @id @default(autoincrement())
+  name  String // nombre lógico del campo (ej: title, price)
+  xpath String // expresión XPath para extraer el valor
+  order Int?   @default(0)
 
   scraperId Int     @map("scraper_id")
   scraper   Scraper @relation(fields: [scraperId], references: [id], onDelete: Cascade)
 
   @@map("scraper_field")
 }
-
