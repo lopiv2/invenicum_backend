@@ -48,7 +48,6 @@ echo "[Startup] Ejecutando migraciones Prisma..."
 npx prisma migrate deploy
 
 echo "[Startup] Ejecutando seed de logros..."
-npm run db:seed
 node src/seeds/achievementSeed.js
 
 echo "[Startup] Iniciando API..."
