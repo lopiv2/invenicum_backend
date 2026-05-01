@@ -47,5 +47,8 @@ npx prisma generate
 echo "[Startup] Ejecutando migraciones Prisma..."
 npx prisma migrate deploy
 
+echo "[Startup] Ejecutando seed de logros..."
+npm run db:seed
+
 echo "[Startup] Iniciando API..."
 exec node src/app.js
