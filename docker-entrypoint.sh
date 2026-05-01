@@ -49,6 +49,7 @@ npx prisma migrate deploy
 
 echo "[Startup] Ejecutando seed de logros..."
 npm run db:seed
+node src/seeds/achievementSeed.js
 
 echo "[Startup] Iniciando API..."
 exec node src/app.js
