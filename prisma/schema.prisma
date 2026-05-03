@@ -142,6 +142,7 @@ model UserPreferences {
   alertOverdueLoans Boolean @default(true) @map("alert_overdue_loans") // Overdue loans
   alertMaintenance  Boolean @default(false) @map("alert_maintenance") // Preventive maintenance
   alertPriceChange  Boolean @default(false) @map("alert_price_change") // Sudden value changes (Marketplace)
+  autoResetFieldsOnSaveAndContinue Boolean @default(false) @map("auto_reset_fields_on_save_and_continue")
 
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)

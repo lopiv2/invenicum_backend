@@ -26,6 +26,8 @@
       alertMaintenance: prefs.alertMaintenance ?? false,
       alertPriceChange: prefs.alertPriceChange ?? false,
     };
+
+    this.autoResetFieldsOnSaveAndContinue = prefs.autoResetFieldsOnSaveAndContinue ?? false;
   }
 
   static toPrismaData(body) {
@@ -71,6 +73,10 @@
           ? n.channelOrder.join(",")
           : n.channelOrder;
       }
+    }
+
+    if (body.autoResetFieldsOnSaveAndContinue !== undefined) {
+      prismaData.autoResetFieldsOnSaveAndContinue = body.autoResetFieldsOnSaveAndContinue;
     }
 
     return prismaData;
