@@ -52,9 +52,21 @@ class ScraperService {
 
   // Interpreta un subconjunto de xpath usando cheerio
   // Soporta: //tag, //tag[@attr='val'], //tag[contains(@attr,'val')],
-  //          //tag[OtherTag='text'], text(), @attr, normalize-space(), substring-after()
+  //          //tag[OtherTag='text'], text(), @attr, normalize-space(), substring-after(), substring-before()
   _evalXpath($, xpathExpr) {
     const expr = xpathExpr.trim();
+
+    // normalize-space(substring-before(INNER_EXPR, 'delimiter'))
+    const nsSubBefore = expr.match(
+      /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
+    );
+    if (nsSubBefore) {
+      const inner = this._evalXpath($, nsSubBefore[1]);
+      const delim = nsSubBefore[2];
+      if (inner == null) return null;
+      const idx = String(inner).indexOf(delim);
+      return idx >= 0 ? String(inner).slice(0, idx).trim() : null;
+    }
 
     // normalize-space(substring-after(INNER_EXPR, 'delimiter'))
     const nsSubAfter = expr.match(
@@ -77,6 +89,16 @@ class ScraperService {
     if (nsMatch) {
       const inner = this._evalXpath($, nsMatch[1]);
       return inner != null ? String(inner).replace(/\s+/g, " ").trim() : null;
+    }
+
+    // substring-before(INNER_EXPR, 'delimiter')
+    const subBefore = expr.match(/^substring-before\((.+),\s*'([^']*)'\)$/);
+    if (subBefore) {
+      const inner = this._evalXpath($, subBefore[1]);
+      const delim = subBefore[2];
+      if (inner == null) return null;
+      const idx = String(inner).indexOf(delim);
+      return idx >= 0 ? String(inner).slice(0, idx) : null;
     }
 
     // substring-after(INNER_EXPR, 'delimiter')
@@ -158,16 +180,24 @@ class ScraperService {
     const contains = pred.match(/^contains\(@([\w-]+),\s*'([^']*)'\)$/);
     if (contains) return `${tag}[${contains[1]}*="${contains[2]}"]`;
 
+    // contains(.,'text') -> filtrado por texto del nodo
+    const containsText = pred.match(/^contains\(\.,\s*'([^']*)'\)$/);
+    if (containsText) {
+      return {
+        __textFilter: true,
+        tag,
+        text: containsText[1],
+      };
+    }
+
     // número posicional
     if (/^\d+$/.test(pred)) {
       return `${tag}:nth-of-type(${pred})`;
     }
 
-    // ChildTag='text' -> no se puede en CSS puro, marcar para filtrado
-    // Usamos objeto en vez de string con : para evitar conflictos
+    // ChildTag='text'
     const childText = pred.match(/^([\w-]+)='([^']*)'$/);
     if (childText) {
-      // Señal especial como objeto — se detecta en _resolveSelector
       return {
         __childFilter: true,
         tag,
@@ -182,6 +212,27 @@ class ScraperService {
   // Versión corregida de _evalXpath que maneja el caso CHILD_FILTER
   _evalXpathFull($, xpathExpr) {
     const expr = xpathExpr.trim();
+
+    // regex:XPATH_EXPR::PATRON
+    const regexMatch = expr.match(/^regex:(.+?)::(.+)$/);
+    if (regexMatch) {
+      const inner = this._evalXpathFull($, regexMatch[1]);
+      if (inner == null) return null;
+      const match = String(inner).match(new RegExp(regexMatch[2]));
+      return match?.[1] ?? null;
+    }
+
+    // normalize-space(substring-before(...))
+    const nsSubBefore = expr.match(
+      /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
+    );
+    if (nsSubBefore) {
+      const inner = this._evalXpathFull($, nsSubBefore[1]);
+      const delim = nsSubBefore[2];
+      if (inner == null) return null;
+      const idx = String(inner).indexOf(delim);
+      return idx >= 0 ? String(inner).slice(0, idx).trim() : null;
+    }
 
     // normalize-space(substring-after(...))
     const nsSubAfter = expr.match(
@@ -206,6 +257,34 @@ class ScraperService {
       return inner != null ? String(inner).replace(/\s+/g, " ").trim() : null;
     }
 
+    // substring-before(substring-after(...), 'delim')  <- caso anidado
+    const subBeforeAfter = expr.match(
+      /^substring-before\(substring-after\((.+),\s*'([^']*)'\),\s*'([^']*)'\)$/,
+    );
+    if (subBeforeAfter) {
+      const inner = this._evalXpathFull($, subBeforeAfter[1]);
+      if (inner == null) return null;
+      const afterDelim = subBeforeAfter[2];
+      const beforeDelim = subBeforeAfter[3];
+      const afterIdx = String(inner).indexOf(afterDelim);
+      if (afterIdx < 0) return null;
+      const afterStr = String(inner).slice(afterIdx + afterDelim.length);
+      const beforeIdx = afterStr.indexOf(beforeDelim);
+      return beforeIdx >= 0
+        ? afterStr.slice(0, beforeIdx).trim()
+        : afterStr.trim();
+    }
+
+    // substring-before(...)
+    const subBefore = expr.match(/^substring-before\((.+),\s*'([^']*)'\)$/);
+    if (subBefore) {
+      const inner = this._evalXpathFull($, subBefore[1]);
+      const delim = subBefore[2];
+      if (inner == null) return null;
+      const idx = String(inner).indexOf(delim);
+      return idx >= 0 ? String(inner).slice(0, idx) : null;
+    }
+
     // substring-after(...)
     const subAfter = expr.match(/^substring-after\((.+),\s*'([^']*)'\)$/);
     if (subAfter) {
@@ -228,7 +307,6 @@ class ScraperService {
       finalPart = `@${attrMatch[2]}`;
     }
 
-    // Resolver con soporte CHILD_FILTER
     const el = this._resolveSelector($, selectorExpr);
     if (!el || !el.length) return null;
 
@@ -240,11 +318,9 @@ class ScraperService {
   _resolveSelector($, xpathExpr) {
     let expr = xpathExpr.trim();
 
-    // Detectar si es búsqueda global (//) o descendente relativa (/)
     const isGlobal = expr.startsWith("//");
     expr = expr.replace(/^\/\//, "").replace(/^\//, "");
 
-    // Dividir por / respetando []
     const parts = [];
     let depth = 0,
       current = "";
@@ -258,25 +334,26 @@ class ScraperService {
     }
     if (current) parts.push(current);
 
-    // Construir selector CSS acumulado
-    // Para xpath global (//a/b/c), el primer segmento busca en todo el doc
-    // Para xpath relativo (/a/b/c), busca desde el padre
     let context = $("body");
 
     for (let i = 0; i < parts.length; i++) {
       const css = this._xpathPartToCSS(parts[i]);
 
-      if (css && typeof css === "object" && css.__childFilter) {
-        // Filtrar por texto de hijo
+      if (css && typeof css === "object" && css.__textFilter) {
+        // contains(., 'texto') -> filtrar por texto del nodo
+        const { tag, text } = css;
+        const selector = tag || "*";
+        const candidates = context.find(selector);
+        context = candidates.filter((_, el) => {
+          return $(el).text().includes(text);
+        });
+      } else if (css && typeof css === "object" && css.__childFilter) {
+        // ChildTag='text' -> filtrar por texto de hijo
         const { tag, childTag, childText } = css;
         const selector = tag || "*";
-        // En el primer segmento con isGlobal, buscar en todo body
-        const candidates =
-          i === 0 && isGlobal ? context.find(selector) : context.find(selector);
-
+        const candidates = context.find(selector);
         context = candidates.filter((_, el) => {
           const $el = $(el);
-          // Busca hijo directo o descendiente con ese texto exacto
           return (
             $el.children(childTag).text().trim() === childText ||
             $el.find(childTag).first().text().trim() === childText
@@ -286,8 +363,8 @@ class ScraperService {
         const selectorStr = typeof css === "string" ? css : "*";
         context =
           i === 0 && isGlobal
-            ? context.find(selectorStr) // busca en todo body
-            : context.children(selectorStr); // descendencia directa
+            ? context.find(selectorStr)
+            : context.children(selectorStr);
       }
 
       if (!context || !context.length) return null;
