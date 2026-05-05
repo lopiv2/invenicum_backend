@@ -144,6 +144,7 @@ model UserPreferences {
   alertPriceChange                 Boolean @default(false) @map("alert_price_change") // Sudden value changes (Marketplace)
   autoResetFieldsOnSaveAndContinue Boolean @default(false) @map("auto_reset_fields_on_save_and_continue")
   enableCloneBusterOmatic          Boolean @default(false) @map("enable_clone_buster_omatic")
+  font                                String  @default("Inter") // Fuente de la aplicación
 
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)

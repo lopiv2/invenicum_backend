@@ -29,6 +29,7 @@
 
     this.autoResetFieldsOnSaveAndContinue = prefs.autoResetFieldsOnSaveAndContinue ?? false;
     this.enableCloneBusterOmatic = prefs.enableCloneBusterOmatic ?? false;
+    this.font = prefs.font || "Inter";
   }
 
   static toPrismaData(body) {
@@ -83,6 +84,8 @@
     if (body.enableCloneBusterOmatic !== undefined) {
       prismaData.enableCloneBusterOmatic = body.enableCloneBusterOmatic;
     }
+
+    if (body.font) prismaData.font = body.font;
 
     return prismaData;
   }
