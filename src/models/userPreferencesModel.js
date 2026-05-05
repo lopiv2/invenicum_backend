@@ -28,6 +28,7 @@
     };
 
     this.autoResetFieldsOnSaveAndContinue = prefs.autoResetFieldsOnSaveAndContinue ?? false;
+    this.enableCloneBusterOmatic = prefs.enableCloneBusterOmatic ?? false;
   }
 
   static toPrismaData(body) {
@@ -77,6 +78,10 @@
 
     if (body.autoResetFieldsOnSaveAndContinue !== undefined) {
       prismaData.autoResetFieldsOnSaveAndContinue = body.autoResetFieldsOnSaveAndContinue;
+    }
+
+    if (body.enableCloneBusterOmatic !== undefined) {
+      prismaData.enableCloneBusterOmatic = body.enableCloneBusterOmatic;
     }
 
     return prismaData;
