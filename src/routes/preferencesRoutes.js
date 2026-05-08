@@ -114,7 +114,7 @@ router.get("/custom-themes", verifyToken, async (req, res) => {
       data: themes, // Flutter espera esto en response.data['data']
     });
   } catch (error) {
-    console.error("Error al obtener temas:", error.message);
+    console.error("Error getting themes", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });

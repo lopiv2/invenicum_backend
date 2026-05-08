@@ -21,7 +21,7 @@ class PreferencesService {
       // 3. Return everything together
       return {
         ...prefsData,
-        exchangeRates: rates, // Flutter will use this to multiply the marketValue
+        exchangeRates: rates,
       };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
@@ -36,7 +36,6 @@ class PreferencesService {
     try {
       const userIdInt = parseInt(userId);
 
-      // The DTO filters only what is valid for Prisma
       const dataToUpdate = UserPreferencesDTO.toPrismaData(data);
 
       const updated = await prisma.userPreferences.upsert({
@@ -44,7 +43,7 @@ class PreferencesService {
         update: dataToUpdate,
         create: {
           userId: userIdInt,
-          ...dataToUpdate, // Prisma will use the sent values or the schema defaults
+          ...dataToUpdate,
         },
       });
 
@@ -61,9 +60,6 @@ class PreferencesService {
     }
   }
 
-  /**
-   * Specific methods if you prefer to keep atomic calls from the controller
-   */
   async updateLanguage(userId, languageCode) {
     return this.updatePreferences(userId, { language: languageCode });
   }
@@ -78,57 +74,54 @@ class PreferencesService {
 
   async getThemePreference(userId) {
     return await prisma.userThemeConfig.findUnique({
-      where: { userId: userId },
+      where: { userId },
     });
   }
 
   async getCustomThemes(userId) {
     return await prisma.customTheme.findMany({
-      where: {
-        userId: userId,
-      },
-      orderBy: {
-        id: "desc",
-      },
+      where: { userId },
+      orderBy: { id: "desc" },
     });
   }
 
-  /**
-   * 🔔 new: updates the notifications (the 6 switches or the reorder of channels)
-   */
   async updateNotificationSettings(userId, notificationData) {
     return this.updatePreferences(userId, notificationData);
   }
 
+  /**
+   * Persists the user's active theme.
+   * Only color + brightness are stored — palette/retro logic is client-only.
+   */
   async updateThemePreference(userId, themeData) {
     const { themeColor, themeBrightness } = themeData;
-    // Use upsert to create the record if it doesn't exist or update it if it does
+
     return await prisma.userThemeConfig.upsert({
-      where: { userId: userId },
+      where: { userId },
       update: { themeColor, themeBrightness },
       create: { userId, themeColor, themeBrightness },
     });
   }
 
+  /**
+   * Saves a new theme to the user's library.
+   * User-created themes are always plain Material themes — no palette field.
+   */
   async saveCustomTheme(userId, themeData) {
     return await prisma.customTheme.create({
       data: {
         name: themeData.name,
         primaryColor: themeData.primaryColor,
         brightness: themeData.brightness || "light",
-        userId: userId,
+        userId,
       },
     });
   }
 
   async deleteCustomTheme(userId, themeId) {
     try {
-      // we search the theme ensuring it belongs to the user
       const theme = await prisma.customTheme.findFirst({
-        where: {
-          id: themeId,
-          userId: userId,
-        },
+        where: { id: themeId, userId },
       });
 
       if (!theme) {
@@ -138,9 +131,7 @@ class PreferencesService {
         };
       }
 
-      await prisma.customTheme.delete({
-        where: { id: themeId },
-      });
+      await prisma.customTheme.delete({ where: { id: themeId } });
 
       return { success: true, message: "Theme deleted successfully" };
     } catch (error) {
