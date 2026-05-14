@@ -19,6 +19,13 @@ const {
 } = require("../middleware/utils");
 require("dotenv").config();
 
+const CACHE_TTL_DAYS = {
+  pokemon: 30,
+  bgg: 30,
+  books: 90,
+  tcgdex: 7,
+};
+
 class IntegrationService {
   /**
    * Runs a connection test without saving data
@@ -917,6 +924,8 @@ class IntegrationService {
     source,
     locale = "es",
     fieldOptions = null,
+    page = 1,
+    pageSize = 30,
   ) {
     const normalizedQuery = query.toLowerCase().trim();
 
@@ -998,16 +1007,21 @@ class IntegrationService {
         });
 
         const results = searchRes.data.items?.item;
-        if (!results) throw new Error("No se encontró ningún juego en BGG.");
+
+        if (!results) {
+          throw new Error("No se encontró ningún juego en BGG.");
+        }
 
         if (Array.isArray(results) && results.length > 1) {
           const candidates = results.map((item) => {
             const nameObj = Array.isArray(item.name)
               ? item.name.find((n) => n.type === "primary") || item.name[0]
               : item.name;
+
             const imageObj = Array.isArray(item.thumbnail)
               ? item.thumbnail[0]
               : item.thumbnail;
+
             return {
               id: item.id,
               name: nameObj?.value || nameObj || "Sin nombre",
@@ -1015,6 +1029,7 @@ class IntegrationService {
               image: imageObj?.value || imageObj || null,
             };
           });
+
           return {
             multipleResults: true,
             source: "bgg",
@@ -1023,7 +1038,11 @@ class IntegrationService {
           };
         }
 
+        // ============================================
+        // DETAILS
+        // ============================================
         const selectedId = Array.isArray(results) ? results[0].id : results.id;
+
         console.log(`🎯 Game selected ID: ${selectedId}`);
 
         const detailRes = await axios.get(PROXY_URL, {
@@ -1031,8 +1050,8 @@ class IntegrationService {
         });
 
         rawData = JSON.stringify(detailRes.data);
+
         contextHint = "un juego de mesa de BoardGameGeek";
-        break;
       }
       case "books": {
         contextHint = "un libro de OpenLibrary";
@@ -1065,19 +1084,25 @@ class IntegrationService {
       }
       case "tcgdex": {
         contextHint = "una carta de Pokémon TCG de TCGdex";
+        const parsedPage = parseInt(page || "1");
+        const parsedPageSize = parseInt(pageSize || "30");
         const TCGDEX_URL = "https://api.tcgdex.net/v2/en/cards";
 
         const searchRes = await axios.get(TCGDEX_URL, {
-          params: { name: normalizedQuery },
+          params: {
+            name: normalizedQuery,
+            "pagination:page": parsedPage,
+            "pagination:itemsPerPage": parsedPageSize,
+          },
           timeout: 10000,
         });
 
         const results = searchRes.data;
         if (!results || !results.length)
-          throw new Error("No se encontró ninguna carta en TCGdex.");
+          throw new Error("No card found in TCGdex.");
 
-        if (results.length > 1) {
-          const candidates = results.slice(0, 30).map((card) => ({
+        if (results.length >= 1) {
+          const candidates = results.map((card) => ({
             id: card.id,
             name: card.name || "Sin nombre",
             image: card.image ? `${card.image}/low.webp` : null,
@@ -1087,6 +1112,9 @@ class IntegrationService {
             multipleResults: true,
             source: "tcgdex",
             query: normalizedQuery,
+            page: parsedPage,
+            pageSize: parsedPageSize,
+            hasMore: results.length >= parsedPageSize,
             candidates,
           };
         }

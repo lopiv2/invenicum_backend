@@ -18,10 +18,17 @@ class PreferencesService {
       // 2. Get the current exchange rates
       const rates = await currencyService.getLatestRates();
 
+      const themeConfig = await prisma.userThemeConfig.findUnique({
+        where: { userId: parseInt(userId) },
+      });
+
       // 3. Return everything together
       return {
         ...prefsData,
-        exchangeRates: rates, // Flutter will use this to multiply the marketValue
+        exchangeRates: rates,
+        themeColor: themeConfig?.themeColor ?? null,
+        themeBrightness: themeConfig?.themeBrightness ?? null,
+        paletteId: themeConfig?.paletteId ?? null,
       };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
@@ -101,12 +108,21 @@ class PreferencesService {
   }
 
   async updateThemePreference(userId, themeData) {
-    const { themeColor, themeBrightness } = themeData;
+    const { themeColor, themeBrightness, paletteId } = themeData;
     // Use upsert to create the record if it doesn't exist or update it if it does
     return await prisma.userThemeConfig.upsert({
-      where: { userId: userId },
-      update: { themeColor, themeBrightness },
-      create: { userId, themeColor, themeBrightness },
+      where: { userId },
+      update: {
+        themeColor,
+        themeBrightness,
+        paletteId: paletteId ?? null,
+      },
+      create: {
+        userId,
+        themeColor,
+        themeBrightness,
+        paletteId: paletteId ?? null,
+      },
     });
   }
 

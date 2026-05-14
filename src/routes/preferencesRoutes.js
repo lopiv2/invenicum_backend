@@ -139,10 +139,29 @@ router.patch("/visual-settings", verifyToken, async (req, res) => {
 // PUT /api/v1/preferences/theme
 router.put("/theme", verifyToken, async (req, res) => {
   try {
-    const result = await preferencesService.updateThemePreference(
-      req.user.id,
-      req.body,
-    );
+    const { themeColor, themeBrightness, paletteId } = req.body;
+
+    if (!themeColor || !themeBrightness) {
+      return res.status(400).json({
+        success: false,
+        message: "Fields 'themeColor' and 'themeBrightness' are required",
+      });
+    }
+
+    const VALID_PALETTE_IDS = ["cga", "ega", "scumm_crt", "vga_arcade", "pipboy3000"];
+    if (paletteId && !VALID_PALETTE_IDS.includes(paletteId)) {
+      return res.status(400).json({
+        success: false,
+        message: `paletteId invalid. Possible values: ${VALID_PALETTE_IDS.join(", ")}`,
+      });
+    }
+
+    const result = await preferencesService.updateThemePreference(req.user.id, {
+      themeColor,
+      themeBrightness,
+      paletteId: paletteId || null,
+    });
+
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

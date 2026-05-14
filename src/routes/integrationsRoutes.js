@@ -79,7 +79,7 @@ router.get("/status", verifyToken, async (req, res) => {
 router.get("/enrich", verifyToken, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { query, source, locale, fieldOptions } = req.query;
+    const { query, source, locale, fieldOptions, page, pageSize } = req.query;
 
     // Basic validation
     if (!query) {
@@ -94,6 +94,8 @@ router.get("/enrich", verifyToken, async (req, res) => {
       source || "bgg",
       locale || "es",
       fieldOptions,
+      parseInt(page ?? "1"),
+      parseInt(pageSize ?? "30"),
     );
 
     res.status(200).json({
