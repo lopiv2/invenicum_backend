@@ -71,11 +71,12 @@ model ChatMessage {
 
 // Theme configuration currently applied by the user
 model UserThemeConfig {
-  id              Int    @id @default(autoincrement())
-  themeColor      String @default("#1A237E") // Hexadecimal
-  themeBrightness String @default("light") // "light" or "dark"
-  userId          Int    @unique
-  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              Int     @id @default(autoincrement())
+  themeColor      String  @default("#1A237E") // Hexadecimal
+  themeBrightness String  @default("light") // "light" or "dark"
+  paletteId       String?
+  userId          Int     @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_theme_config")
 }
@@ -144,7 +145,7 @@ model UserPreferences {
   alertPriceChange                 Boolean @default(false) @map("alert_price_change") // Sudden value changes (Marketplace)
   autoResetFieldsOnSaveAndContinue Boolean @default(false) @map("auto_reset_fields_on_save_and_continue")
   enableCloneBusterOmatic          Boolean @default(false) @map("enable_clone_buster_omatic")
-  font                                String  @default("Inter") // Fuente de la aplicación
+  font                             String  @default("Inter") // Fuente de la aplicación
 
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
