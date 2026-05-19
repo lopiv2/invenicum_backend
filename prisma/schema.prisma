@@ -35,6 +35,7 @@ model User {
   achievementProgress UserAchievementProgress[]
   events              UserEvent[]
   achievementSyncs    AchievementSync[]
+  crossToonConfigs    CrossToonConfig[]
 
   @@map("user")
 }
@@ -541,6 +542,34 @@ model Alert {
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("alert")
+}
+
+// ============================================
+// CROSS-TOON CONFIG (overlay floating images)
+// ============================================
+model CrossToonConfig {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  isDefault    Boolean  @default(false) @map("is_default")
+  imagePath    String   @map("image_path")
+  speed        Int      @default(8)
+  direction    String   @default("alternate")
+  frequency    Int      @default(600)
+  zone         String   @default("bottom")
+  imageSize    Float    @default(80) @map("image_size")
+  turnMode     String   @default("on") @map("turn_mode")
+  turnMinDelay Int      @default(2) @map("turn_min_delay")
+  turnMaxDelay Int      @default(6) @map("turn_max_delay")
+  maxTurns     Int      @default(3) @map("max_turns")
+  animationFps Int      @default(60) @map("animation_fps")
+  enabled      Boolean  @default(true) @map("enabled")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("cross_toon_config")
 }
 
 // ============================================

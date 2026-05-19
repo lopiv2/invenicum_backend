@@ -1,6 +1,8 @@
 ﻿const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
+const CrossToonDTO = require("../models/userCrossToonModel");
 const currencyService = require("../services/currencyService");
+const { getPublicUrl } = require("../middleware/upload");
 
 class PreferencesService {
   /**
@@ -22,13 +24,17 @@ class PreferencesService {
         where: { userId: parseInt(userId) },
       });
 
-      // 3. Return everything together
+      // 3. Get cross-toon configs
+      const crossToons = await this.getCrossToonConfigs(userId);
+
+      // 4. Return everything together
       return {
         ...prefsData,
         exchangeRates: rates,
         themeColor: themeConfig?.themeColor ?? null,
         themeBrightness: themeConfig?.themeBrightness ?? null,
         paletteId: themeConfig?.paletteId ?? null,
+        crossToonConfigs: crossToons.map((c) => new CrossToonDTO(c).toJSON()),
       };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
@@ -162,6 +168,75 @@ class PreferencesService {
     } catch (error) {
       throw new Error("Error deleting theme: " + error.message);
     }
+  }
+  // ── Cross-Toon Configs ─────────────────────────────────────────────────────
+
+  async getCrossToonConfigs(userId) {
+    return prisma.crossToonConfig.findMany({
+      where: { userId: parseInt(userId) },
+      orderBy: { id: "asc" },
+    });
+  }
+
+  async createCrossToon(userId, body, file) {
+    const userIdInt = parseInt(userId);
+    const configData = CrossToonDTO.fromFormData(body);
+    const imagePath = file ? getPublicUrl(file.path) : "";
+
+    const created = await prisma.crossToonConfig.create({
+      data: {
+        userId: userIdInt,
+        imagePath,
+        ...configData,
+      },
+    });
+
+    return new CrossToonDTO(created).toJSON();
+  }
+
+  async updateCrossToon(id, userId, body, file) {
+    const userIdInt = parseInt(userId);
+    const configId = parseInt(id);
+
+    const existing = await prisma.crossToonConfig.findFirst({
+      where: { id: configId, userId: userIdInt },
+    });
+
+    if (!existing) {
+      throw new Error("Cross-toon not found or not authorized");
+    }
+
+    const configData = CrossToonDTO.fromFormData(body);
+
+    if (file) {
+      configData.imagePath = getPublicUrl(file.path);
+    }
+
+    const updated = await prisma.crossToonConfig.update({
+      where: { id: configId },
+      data: configData,
+    });
+
+    return new CrossToonDTO(updated).toJSON();
+  }
+
+  async deleteCrossToon(id, userId) {
+    const userIdInt = parseInt(userId);
+    const configId = parseInt(id);
+
+    const existing = await prisma.crossToonConfig.findFirst({
+      where: { id: configId, userId: userIdInt },
+    });
+
+    if (!existing) {
+      throw new Error("Cross-toon not found or not authorized");
+    }
+
+    await prisma.crossToonConfig.delete({
+      where: { id: configId },
+    });
+
+    return { success: true, message: "Cross-toon deleted successfully" };
   }
 }
 

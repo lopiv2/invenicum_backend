@@ -48,6 +48,8 @@ const storage = multer.diskStorage({
       subDir = "asset-types";
     } else if (url.includes("items") || url.includes("assets")) {
       subDir = "items";
+    } else if (url.includes("cross-toons") || url.includes("cross_toons")) {
+      subDir = "cross-toons";
     }
 
     const finalPath = path.resolve(process.cwd(), BASE_DIR, subDir);
@@ -71,6 +73,7 @@ const storage = multer.diskStorage({
     const url = req.originalUrl;
     if (url.includes("asset-types")) prefix = "asset-type-";
     else if (url.includes("items") || url.includes("assets")) prefix = "item-";
+    else if (url.includes("cross-toons") || url.includes("cross_toons")) prefix = "cross-toon-";
 
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${prefix}${uniqueSuffix}${ext}`);
