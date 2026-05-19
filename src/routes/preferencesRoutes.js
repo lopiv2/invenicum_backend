@@ -2,6 +2,7 @@
 const router = express.Router();
 const preferencesService = require("../services/preferencesService");
 const verifyToken = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 const {
   AI_MODELS,
   AI_PROVIDERS,
@@ -306,6 +307,50 @@ router.patch("/ai-provider", verifyToken, async (req, res) => {
     }
 
     return res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ── Cross-Toon Configs ─────────────────────────────────────────────────────
+
+// POST /api/v1/preferences/cross-toons
+router.post("/cross-toons", verifyToken, upload.single("image"), async (req, res) => {
+  try {
+    const result = await preferencesService.createCrossToon(
+      req.user.id,
+      req.body,
+      req.file,
+    );
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PATCH /api/v1/preferences/cross-toons/:id
+router.patch("/cross-toons/:id", verifyToken, upload.single("image"), async (req, res) => {
+  try {
+    const result = await preferencesService.updateCrossToon(
+      req.params.id,
+      req.user.id,
+      req.body,
+      req.file,
+    );
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/v1/preferences/cross-toons/:id
+router.delete("/cross-toons/:id", verifyToken, async (req, res) => {
+  try {
+    const result = await preferencesService.deleteCrossToon(
+      req.params.id,
+      req.user.id,
+    );
+    res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
