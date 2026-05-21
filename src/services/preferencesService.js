@@ -1,8 +1,11 @@
-﻿const prisma = require("../middleware/prisma");
+﻿const path = require("path");
+const fs = require("fs");
+const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
 const CrossToonDTO = require("../models/userCrossToonModel");
 const currencyService = require("../services/currencyService");
 const { getPublicUrl } = require("../middleware/upload");
+const { AppConstants } = require("../config/appConstants");
 
 class PreferencesService {
   /**
@@ -230,6 +233,20 @@ class PreferencesService {
 
     if (!existing) {
       throw new Error("Cross-toon not found or not authorized");
+    }
+
+    const imagePath = existing.imagePath;
+    if (imagePath) {
+      try {
+        const uploadBase = process.env.UPLOAD_FOLDER || "uploads/inventory";
+        const relativePath = imagePath.replace(AppConstants.STATIC_URL_PREFIX, "").replace(/^\//, "");
+        const fullPath = path.resolve(process.cwd(), uploadBase, relativePath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.error("Error deleting cross-toon image file:", err.message);
+      }
     }
 
     await prisma.crossToonConfig.delete({

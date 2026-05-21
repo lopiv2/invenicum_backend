@@ -184,7 +184,6 @@ router.post("/", verifyToken, async (req, res) => {
         .json({ error: "Tipo y configuración son obligatorios" });
     }
 
-    // Guardamos (the service se encarga del encrypted)
     await integrationService.saveConfig(userId, type, config);
 
     res.status(200).json({
