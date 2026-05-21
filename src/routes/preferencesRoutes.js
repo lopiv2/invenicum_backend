@@ -2,6 +2,7 @@
 const router = express.Router();
 const preferencesService = require("../services/preferencesService");
 const verifyToken = require("../middleware/authMiddleware");
+const upload = require("../middleware/upload");
 const {
   AI_MODELS,
   AI_PROVIDERS,
@@ -20,9 +21,22 @@ router.get("/", verifyToken, async (req, res) => {
 
 router.use((req, res, next) => {
   console.log(
-    `[DEBUG] Método: ${req.method} | Path solicitado: ${req.path} | Full URL: ${req.originalUrl}`,
+    `[DEBUG] Method: ${req.method} | Path solicited: ${req.path} | Full URL: ${req.originalUrl}`,
   );
   next();
+});
+
+// PATCH /api/v1/preferences
+router.patch("/", verifyToken, async (req, res) => {
+  try {
+    const result = await preferencesService.updatePreferences(
+      req.user.id,
+      req.body,
+    );
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 // PUT /api/v1/preferences/notifications
@@ -101,7 +115,7 @@ router.get("/custom-themes", verifyToken, async (req, res) => {
       data: themes, // Flutter espera esto en response.data['data']
     });
   } catch (error) {
-    console.error("Error al obtener temas:", error.message);
+    console.error("Error getting themes", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -126,10 +140,29 @@ router.patch("/visual-settings", verifyToken, async (req, res) => {
 // PUT /api/v1/preferences/theme
 router.put("/theme", verifyToken, async (req, res) => {
   try {
-    const result = await preferencesService.updateThemePreference(
-      req.user.id,
-      req.body,
-    );
+    const { themeColor, themeBrightness, paletteId } = req.body;
+
+    if (!themeColor || !themeBrightness) {
+      return res.status(400).json({
+        success: false,
+        message: "Fields 'themeColor' and 'themeBrightness' are required",
+      });
+    }
+
+    const VALID_PALETTE_IDS = ["cga", "ega", "scumm_crt", "vga_arcade", "pipboy3000"];
+    if (paletteId && !VALID_PALETTE_IDS.includes(paletteId)) {
+      return res.status(400).json({
+        success: false,
+        message: `paletteId invalid. Possible values: ${VALID_PALETTE_IDS.join(", ")}`,
+      });
+    }
+
+    const result = await preferencesService.updateThemePreference(req.user.id, {
+      themeColor,
+      themeBrightness,
+      paletteId: paletteId || null,
+    });
+
     res.json({ success: true, data: result });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -274,6 +307,50 @@ router.patch("/ai-provider", verifyToken, async (req, res) => {
     }
 
     return res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ── Cross-Toon Configs ─────────────────────────────────────────────────────
+
+// POST /api/v1/preferences/cross-toons
+router.post("/cross-toons", verifyToken, upload.single("image"), async (req, res) => {
+  try {
+    const result = await preferencesService.createCrossToon(
+      req.user.id,
+      req.body,
+      req.file,
+    );
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PATCH /api/v1/preferences/cross-toons/:id
+router.patch("/cross-toons/:id", verifyToken, upload.single("image"), async (req, res) => {
+  try {
+    const result = await preferencesService.updateCrossToon(
+      req.params.id,
+      req.user.id,
+      req.body,
+      req.file,
+    );
+    res.json({ success: true, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/v1/preferences/cross-toons/:id
+router.delete("/cross-toons/:id", verifyToken, async (req, res) => {
+  try {
+    const result = await preferencesService.deleteCrossToon(
+      req.params.id,
+      req.user.id,
+    );
+    res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

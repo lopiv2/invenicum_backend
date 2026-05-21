@@ -41,8 +41,14 @@ echo "[Startup] Verificando permisos sobre la base de datos..."
 mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" \
   -e "CREATE TABLE IF NOT EXISTS $DB_NAME.__startup_check (id INT PRIMARY KEY); DROP TABLE IF EXISTS $DB_NAME.__startup_check;"
 
+echo "[Startup] Generando Prisma Client..."
+npx prisma generate
+
 echo "[Startup] Ejecutando migraciones Prisma..."
 npx prisma migrate deploy
+
+echo "[Startup] Ejecutando seed de logros..."
+node src/seeds/achievementSeed.js
 
 echo "[Startup] Iniciando API..."
 exec node src/app.js

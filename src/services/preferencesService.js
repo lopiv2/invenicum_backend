@@ -1,6 +1,11 @@
-﻿const prisma = require("../middleware/prisma");
+﻿const path = require("path");
+const fs = require("fs");
+const prisma = require("../middleware/prisma");
 const UserPreferencesDTO = require("../models/userPreferencesModel");
+const CrossToonDTO = require("../models/userCrossToonModel");
 const currencyService = require("../services/currencyService");
+const { getPublicUrl } = require("../middleware/upload");
+const { AppConstants } = require("../config/appConstants");
 
 class PreferencesService {
   /**
@@ -18,10 +23,21 @@ class PreferencesService {
       // 2. Get the current exchange rates
       const rates = await currencyService.getLatestRates();
 
-      // 3. Return everything together
+      const themeConfig = await prisma.userThemeConfig.findUnique({
+        where: { userId: parseInt(userId) },
+      });
+
+      // 3. Get cross-toon configs
+      const crossToons = await this.getCrossToonConfigs(userId);
+
+      // 4. Return everything together
       return {
         ...prefsData,
-        exchangeRates: rates, // Flutter will use this to multiply the marketValue
+        exchangeRates: rates,
+        themeColor: themeConfig?.themeColor ?? null,
+        themeBrightness: themeConfig?.themeBrightness ?? null,
+        paletteId: themeConfig?.paletteId ?? null,
+        crossToonConfigs: crossToons.map((c) => new CrossToonDTO(c).toJSON()),
       };
     } catch (error) {
       console.error("[PREFERENCES SERVICE - GET]:", error.message);
@@ -101,12 +117,21 @@ class PreferencesService {
   }
 
   async updateThemePreference(userId, themeData) {
-    const { themeColor, themeBrightness } = themeData;
+    const { themeColor, themeBrightness, paletteId } = themeData;
     // Use upsert to create the record if it doesn't exist or update it if it does
     return await prisma.userThemeConfig.upsert({
-      where: { userId: userId },
-      update: { themeColor, themeBrightness },
-      create: { userId, themeColor, themeBrightness },
+      where: { userId },
+      update: {
+        themeColor,
+        themeBrightness,
+        paletteId: paletteId ?? null,
+      },
+      create: {
+        userId,
+        themeColor,
+        themeBrightness,
+        paletteId: paletteId ?? null,
+      },
     });
   }
 
@@ -146,6 +171,89 @@ class PreferencesService {
     } catch (error) {
       throw new Error("Error deleting theme: " + error.message);
     }
+  }
+  // ── Cross-Toon Configs ─────────────────────────────────────────────────────
+
+  async getCrossToonConfigs(userId) {
+    return prisma.crossToonConfig.findMany({
+      where: { userId: parseInt(userId) },
+      orderBy: { id: "asc" },
+    });
+  }
+
+  async createCrossToon(userId, body, file) {
+    const userIdInt = parseInt(userId);
+    const configData = CrossToonDTO.fromFormData(body);
+    const imagePath = file ? getPublicUrl(file.path) : "";
+
+    const created = await prisma.crossToonConfig.create({
+      data: {
+        userId: userIdInt,
+        imagePath,
+        ...configData,
+      },
+    });
+
+    return new CrossToonDTO(created).toJSON();
+  }
+
+  async updateCrossToon(id, userId, body, file) {
+    const userIdInt = parseInt(userId);
+    const configId = parseInt(id);
+
+    const existing = await prisma.crossToonConfig.findFirst({
+      where: { id: configId, userId: userIdInt },
+    });
+
+    if (!existing) {
+      throw new Error("Cross-toon not found or not authorized");
+    }
+
+    const configData = CrossToonDTO.fromFormData(body);
+
+    if (file) {
+      configData.imagePath = getPublicUrl(file.path);
+    }
+
+    const updated = await prisma.crossToonConfig.update({
+      where: { id: configId },
+      data: configData,
+    });
+
+    return new CrossToonDTO(updated).toJSON();
+  }
+
+  async deleteCrossToon(id, userId) {
+    const userIdInt = parseInt(userId);
+    const configId = parseInt(id);
+
+    const existing = await prisma.crossToonConfig.findFirst({
+      where: { id: configId, userId: userIdInt },
+    });
+
+    if (!existing) {
+      throw new Error("Cross-toon not found or not authorized");
+    }
+
+    const imagePath = existing.imagePath;
+    if (imagePath) {
+      try {
+        const uploadBase = process.env.UPLOAD_FOLDER || "uploads/inventory";
+        const relativePath = imagePath.replace(AppConstants.STATIC_URL_PREFIX, "").replace(/^\//, "");
+        const fullPath = path.resolve(process.cwd(), uploadBase, relativePath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (err) {
+        console.error("Error deleting cross-toon image file:", err.message);
+      }
+    }
+
+    await prisma.crossToonConfig.delete({
+      where: { id: configId },
+    });
+
+    return { success: true, message: "Cross-toon deleted successfully" };
   }
 }
 

@@ -19,6 +19,15 @@ const {
 } = require("../middleware/utils");
 require("dotenv").config();
 
+const CACHE_TTL_DAYS = {
+  pokemon: 30,
+  bgg: 30,
+  books: 90,
+  tcgdex: 7,
+  pokemon_price_tracker: 7,
+  rawg: 30,
+};
+
 class IntegrationService {
   /**
    * Runs a connection test without saving data
@@ -176,6 +185,111 @@ class IntegrationService {
             throw new Error(
               error.response
                 ? `Error al conectar con TCGdex: ${error.message}`
+                : error.message,
+            );
+          }
+        }
+        case "pokemon_price_tracker": {
+          try {
+            console.log(`🧪 Testing Pokémon Price Tracker API connection...`);
+
+            const apiKey = config?.apiKey || await this.getPokemonTrackerApiKey(userId);
+            if (!apiKey) {
+              throw new Error(
+                "API key de Pokémon Price Tracker requerida. Pásala en config.apiKey o guárdala en Integraciones.",
+              );
+            }
+
+            const response = await axios.get(
+              "https://www.pokemonpricetracker.com/api/v2/cards",
+              {
+                params: { search: "Pikachu", limit: 1 },
+                headers: { Authorization: `Bearer ${apiKey}` },
+                timeout: 10000,
+              },
+            );
+
+            const data = response.data;
+            const cards = data?.data || [];
+            if (!cards.length) {
+              throw new Error(
+                "Pokémon Price Tracker no devolvió datos. Verifica tu API key.",
+              );
+            }
+
+            const aiClient = await this.getActiveAiClient(userId);
+            const aiWarning = !aiClient
+              ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
+              : "";
+
+            return {
+              success: true,
+              message: `¡Conexión exitosa! Pokémon Price Tracker operativo. Test: se encontraron ${cards.length} cartas de "Pikachu"${aiWarning}.`,
+            };
+          } catch (error) {
+            console.error("❌ Error en el Test de Pokémon Price Tracker:", error.message);
+
+            if (error.response?.status === 401 || error.response?.status === 403) {
+              throw new Error(
+                "API key de Pokémon Price Tracker inválida. Verifica tu clave en Integraciones.",
+              );
+            }
+
+            throw new Error(
+              error.response
+                ? `Error al conectar con Pokémon Price Tracker: ${error.message}`
+                : error.message,
+            );
+          }
+        }
+        case "rawg": {
+          try {
+            console.log(`🧪 Testing RAWG API connection...`);
+
+            const apiKey = config?.apiKey || await this.getRawgApiKey(userId);
+            if (!apiKey) {
+              throw new Error(
+                "API key de RAWG requerida. Pásala en config.apiKey o guárdala en Integraciones.",
+              );
+            }
+
+            const response = await axios.get(
+              "https://api.rawg.io/api/games",
+              {
+                params: { search: "Mario", key: apiKey, page_size: 1 },
+                timeout: 10000,
+              },
+            );
+
+            const data = response.data;
+            const games = data?.results || [];
+            if (!games.length) {
+              throw new Error(
+                "RAWG no devolvió datos. Verifica tu API key.",
+              );
+            }
+
+            const aiClient = await this.getActiveAiClient(userId);
+            const aiWarning = !aiClient
+              ? " (Nota: ningún proveedor de IA configurado, el auto-completado no funcionará)"
+              : "";
+
+            return {
+              success: true,
+              message: `¡Conexión exitosa! RAWG operativo. Test: se encontraron ${data.count || games.length} juegos de "Mario"${aiWarning}.`,
+            };
+          } catch (error) {
+            console.error("❌ Error en el Test de RAWG:", error.message);
+
+            if (error.response?.status === 401 || error.response?.status === 403) {
+              throw new Error(
+                "API key de RAWG inválida. Verifica tu clave en Integraciones.",
+              );
+            }
+
+            throw new Error(
+              error.response
+                ? `Error al conectar con RAWG: ${error.message}`
                 : error.message,
             );
           }
@@ -708,7 +822,55 @@ class IntegrationService {
       record.config = JSON.parse(decrypted);
       return new IntegrationDTO(record);
     } catch (e) {
-      console.error("Error decrypting config:", e.message);
+      console.error("[UPC API KEY]", e.message);
+      return null;
+    }
+  }
+
+  async getPokemonTrackerApiKey(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: {
+          userId_type: {
+            userId: parseInt(userId),
+            type: "pokemon_price_tracker",
+          },
+        },
+      });
+
+      if (!record || !record.isActive || !record.config?.data) {
+        return null;
+      }
+
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+      return configObj.apiKey || null;
+    } catch (e) {
+      console.error("[POKEMONTRACKER API KEY]", e.message);
+      return null;
+    }
+  }
+
+  async getRawgApiKey(userId) {
+    try {
+      const record = await prisma.userIntegration.findUnique({
+        where: {
+          userId_type: {
+            userId: parseInt(userId),
+            type: "rawg",
+          },
+        },
+      });
+
+      if (!record || !record.isActive || !record.config?.data) {
+        return null;
+      }
+
+      const decrypted = decrypt(record.config.data);
+      const configObj = JSON.parse(decrypted);
+      return configObj.apiKey || null;
+    } catch (e) {
+      console.error("[RAWG API KEY]", e.message);
       return null;
     }
   }
@@ -917,6 +1079,8 @@ class IntegrationService {
     source,
     locale = "es",
     fieldOptions = null,
+    page = 1,
+    pageSize = 30,
   ) {
     const normalizedQuery = query.toLowerCase().trim();
 
@@ -998,16 +1162,21 @@ class IntegrationService {
         });
 
         const results = searchRes.data.items?.item;
-        if (!results) throw new Error("No se encontró ningún juego en BGG.");
+
+        if (!results) {
+          throw new Error("No se encontró ningún juego en BGG.");
+        }
 
         if (Array.isArray(results) && results.length > 1) {
           const candidates = results.map((item) => {
             const nameObj = Array.isArray(item.name)
               ? item.name.find((n) => n.type === "primary") || item.name[0]
               : item.name;
+
             const imageObj = Array.isArray(item.thumbnail)
               ? item.thumbnail[0]
               : item.thumbnail;
+
             return {
               id: item.id,
               name: nameObj?.value || nameObj || "Sin nombre",
@@ -1015,6 +1184,7 @@ class IntegrationService {
               image: imageObj?.value || imageObj || null,
             };
           });
+
           return {
             multipleResults: true,
             source: "bgg",
@@ -1023,7 +1193,11 @@ class IntegrationService {
           };
         }
 
+        // ============================================
+        // DETAILS
+        // ============================================
         const selectedId = Array.isArray(results) ? results[0].id : results.id;
+
         console.log(`🎯 Game selected ID: ${selectedId}`);
 
         const detailRes = await axios.get(PROXY_URL, {
@@ -1031,8 +1205,8 @@ class IntegrationService {
         });
 
         rawData = JSON.stringify(detailRes.data);
+
         contextHint = "un juego de mesa de BoardGameGeek";
-        break;
       }
       case "books": {
         contextHint = "un libro de OpenLibrary";
@@ -1065,19 +1239,25 @@ class IntegrationService {
       }
       case "tcgdex": {
         contextHint = "una carta de Pokémon TCG de TCGdex";
+        const parsedPage = parseInt(page || "1");
+        const parsedPageSize = parseInt(pageSize || "30");
         const TCGDEX_URL = "https://api.tcgdex.net/v2/en/cards";
 
         const searchRes = await axios.get(TCGDEX_URL, {
-          params: { name: normalizedQuery },
+          params: {
+            name: normalizedQuery,
+            "pagination:page": parsedPage,
+            "pagination:itemsPerPage": parsedPageSize,
+          },
           timeout: 10000,
         });
 
         const results = searchRes.data;
         if (!results || !results.length)
-          throw new Error("No se encontró ninguna carta en TCGdex.");
+          throw new Error("No card found in TCGdex.");
 
-        if (results.length > 1) {
-          const candidates = results.slice(0, 30).map((card) => ({
+        if (results.length >= 1) {
+          const candidates = results.map((card) => ({
             id: card.id,
             name: card.name || "Sin nombre",
             image: card.image ? `${card.image}/low.webp` : null,
@@ -1087,6 +1267,9 @@ class IntegrationService {
             multipleResults: true,
             source: "tcgdex",
             query: normalizedQuery,
+            page: parsedPage,
+            pageSize: parsedPageSize,
+            hasMore: results.length >= parsedPageSize,
             candidates,
           };
         }
@@ -1095,6 +1278,94 @@ class IntegrationService {
         console.log(`🎯 Carta única seleccionada ID: ${results[0].id}`);
         const detailRes = await axios.get(`${TCGDEX_URL}/${results[0].id}`);
         rawData = JSON.stringify(detailRes.data);
+        break;
+      }
+      case "pokemon_price_tracker": {
+        contextHint = "una carta de Pokémon TCG de Pokémon Price Tracker";
+        const parsedPage = parseInt(page || "1");
+        const parsedPageSize = parseInt(pageSize || "30");
+        const PTCG_TRACKER_URL = "https://www.pokemonpricetracker.com/api/v2";
+
+        const apiKey = await this.getPokemonTrackerApiKey(userId);
+        if (!apiKey) {
+          throw new Error(
+            "No hay API key de Pokémon Price Tracker configurada. Guárdala en Integraciones primero.",
+          );
+        }
+
+        const searchRes = await axios.get(`${PTCG_TRACKER_URL}/cards`, {
+          params: { search: normalizedQuery, limit: parsedPageSize },
+          headers: { Authorization: `Bearer ${apiKey}` },
+          timeout: 10000,
+        });
+
+        const results = searchRes.data?.data || [];
+        if (!results.length)
+          throw new Error("No card found in Pokémon Price Tracker.");
+
+        if (results.length > 1) {
+          const candidates = results.map((card) => ({
+            id: card.tcgPlayerId || card.id,
+            name: card.name || "Sin nombre",
+            image: card.imageCdnUrl200 || card.imageCdnUrl || null,
+          }));
+
+          return {
+            multipleResults: true,
+            source: "pokemon_price_tracker",
+            query: normalizedQuery,
+            page: parsedPage,
+            pageSize: parsedPageSize,
+            hasMore: results.length >= parsedPageSize,
+            candidates,
+          };
+        }
+
+        console.log(`🎯 Carta única seleccionada ID: ${results[0].tcgPlayerId}`);
+        rawData = JSON.stringify(results[0]);
+        break;
+      }
+      case "rawg": {
+        contextHint = "un videojuego de RAWG";
+        const parsedPage = parseInt(page || "1");
+        const parsedPageSize = parseInt(pageSize || "30");
+
+        const apiKey = await this.getRawgApiKey(userId);
+        if (!apiKey) {
+          throw new Error(
+            "No hay API key de RAWG configurada. Guárdala en Integraciones primero.",
+          );
+        }
+
+        const searchRes = await axios.get("https://api.rawg.io/api/games", {
+          params: { search: normalizedQuery, key: apiKey, page_size: parsedPageSize, page: parsedPage },
+          timeout: 10000,
+        });
+
+        const results = searchRes.data?.results || [];
+        if (!results.length)
+          throw new Error("No game found in RAWG.");
+
+        if (results.length > 1) {
+          const candidates = results.map((game) => ({
+            id: game.id,
+            name: game.name || "Sin nombre",
+            image: game.background_image || null,
+          }));
+
+          return {
+            multipleResults: true,
+            source: "rawg",
+            query: normalizedQuery,
+            page: parsedPage,
+            pageSize: parsedPageSize,
+            hasMore: results.length >= parsedPageSize,
+            candidates,
+          };
+        }
+
+        console.log(`🎯 Juego único seleccionado ID: ${results[0].id}`);
+        rawData = JSON.stringify(results[0]);
         break;
       }
       default:
@@ -1142,7 +1413,7 @@ class IntegrationService {
         contextHint = "un juego de mesa de BoardGameGeek";
         const PROXY_URL = "https://api.invenicum.com/api/bgg";
 
-        console.log(`🎯 Procesando juego BGG seleccionado ID: ${itemId}`);
+        console.log(`🎯 Proccesing selected BGG ID: ${itemId}`);
 
         const detailRes = await axios.get(PROXY_URL, {
           params: { action: "thing", id: itemId },
@@ -1171,6 +1442,47 @@ class IntegrationService {
         );
         //console.log("Detalle completo de carta obtenido:", cardRes.data);
         rawData = JSON.stringify(cardRes.data);
+        break;
+      }
+      case "pokemon_price_tracker": {
+        contextHint = "una carta de Pokémon TCG de Pokémon Price Tracker";
+        console.log(`🎯 Procesando carta Pokémon Price Tracker seleccionada ID: ${itemId}`);
+
+        const apiKey = await this.getPokemonTrackerApiKey(userId);
+        if (!apiKey) {
+          throw new Error(
+            "No hay API key de Pokémon Price Tracker configurada. Guárdala en Integraciones primero.",
+          );
+        }
+
+        const cardRes = await axios.get(
+          "https://www.pokemonpricetracker.com/api/v2/cards",
+          {
+            params: { tcgPlayerId: itemId },
+            headers: { Authorization: `Bearer ${apiKey}` },
+          },
+        );
+        const rawCard = cardRes.data?.data;
+        const cardData = Array.isArray(rawCard) ? rawCard[0] : rawCard;
+        rawData = JSON.stringify(cardData);
+        break;
+      }
+      case "rawg": {
+        contextHint = "un videojuego de RAWG";
+        console.log(`🎯 Proccesing selected RAWG ID: ${itemId}`);
+
+        const apiKey = await this.getRawgApiKey(userId);
+        if (!apiKey) {
+          throw new Error(
+            "No hay API key de RAWG configurada. Guárdala en Integraciones primero.",
+          );
+        }
+
+        const gameRes = await axios.get(
+          `https://api.rawg.io/api/games/${encodeURIComponent(itemId)}`,
+          { params: { key: apiKey } },
+        );
+        rawData = JSON.stringify(gameRes.data);
         break;
       }
       default:
@@ -1249,7 +1561,7 @@ class IntegrationService {
     let finalData = null;
 
     if (isNewStructure) {
-      // if the estructura es new, pedimos the Mapping and the enriquecimiento completo
+      // if the structure is new, we request the Mapping and the full enrichment
       finalPrompt = generateUniversalPrompt(
         contextHint,
         rawData,
@@ -1258,7 +1570,7 @@ class IntegrationService {
         fieldOptions,
       );
     } else {
-      // if ya conocemos the estructura, mapeamos localmente without volver a llamar a the IA
+      // if we know the structure, we map it locally without calling the IA again
       const extractedData = this.applyLocalMapping(
         JSON.parse(rawData),
         existingMapper.mappingJson,
@@ -1281,7 +1593,7 @@ class IntegrationService {
       }
     }
     if (isNewStructure) {
-      // --- FASE DE IA (only when the estructura es new) ---
+      // --- FASE DE IA (only when the structure is new) ---
       const aiData = await this.getActiveAiClient(userId);
       if (!aiData)
         throw new Error("No AI provider configured. Go to Integrations.");
