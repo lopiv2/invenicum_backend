@@ -365,7 +365,6 @@ class ScraperService {
           return $(el).text().includes(text);
         });
       } else if (css && typeof css === "object" && css.__childFilter) {
-        // ChildTag='text' -> filtrar por texto de hijo
         const { tag, childTag, childText } = css;
         const selector = tag || "*";
         const candidates = context.find(selector);
