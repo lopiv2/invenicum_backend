@@ -222,6 +222,20 @@ class ScraperService {
       return match?.[1] ?? null;
     }
 
+    // Support for /text()[N] -> text node by index (1-based)
+    const textIndexMatch = expr.match(/^(.*?)\/text\(\)\[(\d+)\]$/);
+    if (textIndexMatch) {
+      const el = this._resolveSelector($, textIndexMatch[1]);
+      if (!el || !el.length) return null;
+      const index = parseInt(textIndexMatch[2]) - 1;
+      const textNodes = el
+        .get(0)
+        .childNodes.filter(
+          (n) => n.type === "text" && n.data.trim().length > 0,
+        );
+      return textNodes[index]?.data?.trim() || null;
+    }
+
     // normalize-space(substring-before(...))
     const nsSubBefore = expr.match(
       /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
