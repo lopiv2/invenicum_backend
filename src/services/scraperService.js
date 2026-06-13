@@ -334,7 +334,7 @@ class ScraperService {
     }
     if (current) parts.push(current);
 
-    let context = $("body");
+    let context = $("html");
 
     for (let i = 0; i < parts.length; i++) {
       const css = this._xpathPartToCSS(parts[i]);
