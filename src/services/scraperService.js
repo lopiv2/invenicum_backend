@@ -226,7 +226,9 @@ class ScraperService {
     const textIndexMatch = expr.match(/^(.*?)\/text\(\)\[(\d+)\]$/);
     if (textIndexMatch) {
       const el = this._resolveSelector($, textIndexMatch[1]);
-      if (!el || !el.length) return null;
+      if (!el || !el.length) {
+        return null;
+      }
       const index = parseInt(textIndexMatch[2]) - 1;
       const textNodes = el
         .get(0)
@@ -332,6 +334,7 @@ class ScraperService {
   _resolveSelector($, xpathExpr) {
     let expr = xpathExpr.trim();
 
+    const isAbsolute = expr.startsWith("/") && !expr.startsWith("//");
     const isGlobal = expr.startsWith("//");
     expr = expr.replace(/^\/\//, "").replace(/^\//, "");
 
@@ -348,7 +351,7 @@ class ScraperService {
     }
     if (current) parts.push(current);
 
-    let context = $("html");
+    let context = isAbsolute ? $("html") : $("body");
 
     for (let i = 0; i < parts.length; i++) {
       const css = this._xpathPartToCSS(parts[i]);
@@ -375,10 +378,15 @@ class ScraperService {
         });
       } else {
         const selectorStr = typeof css === "string" ? css : "*";
-        context =
-          i === 0 && isGlobal
-            ? context.find(selectorStr)
-            : context.children(selectorStr);
+        if (i === 0 && isAbsolute) {
+          const tagName = context.get(0)?.tagName?.toLowerCase();
+          const expectedTag = selectorStr.replace(/\[.*\]/, "").toLowerCase();
+          if (tagName !== expectedTag) return null;
+        } else if (i === 0 && isGlobal) {
+          context = context.find(selectorStr);
+        } else {
+          context = context.children(selectorStr);
+        }
       }
 
       if (!context || !context.length) return null;
