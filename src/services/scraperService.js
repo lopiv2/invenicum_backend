@@ -222,6 +222,22 @@ class ScraperService {
       return match?.[1] ?? null;
     }
 
+    // Support for /text()[N] -> text node by index (1-based)
+    const textIndexMatch = expr.match(/^(.*?)\/text\(\)\[(\d+)\]$/);
+    if (textIndexMatch) {
+      const el = this._resolveSelector($, textIndexMatch[1]);
+      if (!el || !el.length) {
+        return null;
+      }
+      const index = parseInt(textIndexMatch[2]) - 1;
+      const textNodes = el
+        .get(0)
+        .childNodes.filter(
+          (n) => n.type === "text" && n.data.trim().length > 0,
+        );
+      return textNodes[index]?.data?.trim() || null;
+    }
+
     // normalize-space(substring-before(...))
     const nsSubBefore = expr.match(
       /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
@@ -318,6 +334,7 @@ class ScraperService {
   _resolveSelector($, xpathExpr) {
     let expr = xpathExpr.trim();
 
+    const isAbsolute = expr.startsWith("/") && !expr.startsWith("//");
     const isGlobal = expr.startsWith("//");
     expr = expr.replace(/^\/\//, "").replace(/^\//, "");
 
@@ -334,7 +351,7 @@ class ScraperService {
     }
     if (current) parts.push(current);
 
-    let context = $("html");
+    let context = isAbsolute ? $("html") : $("body");
 
     for (let i = 0; i < parts.length; i++) {
       const css = this._xpathPartToCSS(parts[i]);
@@ -348,7 +365,6 @@ class ScraperService {
           return $(el).text().includes(text);
         });
       } else if (css && typeof css === "object" && css.__childFilter) {
-        // ChildTag='text' -> filtrar por texto de hijo
         const { tag, childTag, childText } = css;
         const selector = tag || "*";
         const candidates = context.find(selector);
@@ -361,10 +377,15 @@ class ScraperService {
         });
       } else {
         const selectorStr = typeof css === "string" ? css : "*";
-        context =
-          i === 0 && isGlobal
-            ? context.find(selectorStr)
-            : context.children(selectorStr);
+        if (i === 0 && isAbsolute) {
+          const tagName = context.get(0)?.tagName?.toLowerCase();
+          const expectedTag = selectorStr.replace(/\[.*\]/, "").toLowerCase();
+          if (tagName !== expectedTag) return null;
+        } else if (i === 0 && isGlobal) {
+          context = context.find(selectorStr);
+        } else {
+          context = context.children(selectorStr);
+        }
       }
 
       if (!context || !context.length) return null;
