@@ -36,13 +36,16 @@
     "multer": "^2.0.2",
     "openai": "^6.32.0",
     "pdfkit": "^0.18.0",
+    "puppeteer": "^25.1.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "resend": "^6.9.3",
     "semver": "^7.7.4",
     "xpath": "^0.0.34"
   },
   "devDependencies": {
     "@prisma/client": "^7.7.0",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "prisma": "^7.7.0"
   },
   "overrides": {
