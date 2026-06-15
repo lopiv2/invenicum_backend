@@ -4,6 +4,9 @@ const xpath = require("xpath");
 const scraperModel = require("../models/scraperModel");
 const prisma = require("../middleware/prisma");
 const cheerio = require("cheerio");
+const puppeteer = require("puppeteer-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+puppeteer.use(StealthPlugin());
 
 class ScraperService {
   _resolveUrl(value, baseUrl) {
@@ -34,6 +37,32 @@ class ScraperService {
       }
     }
     return results;
+  }
+
+  async _fetchWithPuppeteer(url) {
+    const browser = await puppeteer.launch({
+      headless: "new",
+      userDataDir: "./puppeteer_profile",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+      ],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      );
+      await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+      // Espera a que aparezca el dl de datos, máximo 10s
+      await page
+        .waitForSelector("dl.dl-horizontal", { timeout: 10000 })
+        .catch(() => {});
+      return await page.content();
+    } finally {
+      await browser.close().catch(() => {});
+    }
   }
 
   // Solo resuelve como URL si el valor parece una ruta/URL, no texto libre
@@ -443,19 +472,40 @@ class ScraperService {
     if (looksLikeHtml) {
       html = url;
     } else if (looksLikeUrl) {
-      const resp = await axios.get(url, {
-        timeout: 10000,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          Referer: "https://www.google.com/",
-        },
-      });
-      html = resp.data;
+      try {
+        const resp = await axios.get(url, {
+          timeout: 10000,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "max-age=0",
+            "Sec-Ch-Ua":
+              '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            Connection: "keep-alive",
+          },
+        });
+        html = resp.data;
+      } catch (e) {
+        if (e.response?.status === 403 || e.response?.status === 429) {
+          console.log(
+            `[Scraper] axios blocked (${e.response?.status}), retrying with puppeteer...`,
+          );
+          html = await this._fetchWithPuppeteer(url);
+        } else {
+          throw e;
+        }
+      }
     }
     if (!html) throw new Error("Could not obtain HTML for ad-hoc run");
     return this._extractFields(html, fields, url);
