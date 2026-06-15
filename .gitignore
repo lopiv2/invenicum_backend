@@ -5,6 +5,7 @@ node_modules
 /src/generated/prisma
 /src/uploads/inventory
 /uploads/
+/puppeteer_profile/
 
 # Docker image exports (if generated locally)
 *.tar

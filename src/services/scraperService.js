@@ -41,7 +41,7 @@ class ScraperService {
 
   async _fetchWithPuppeteer(url) {
     const browser = await puppeteer.launch({
-      headless: "new",
+      headless: false,
       userDataDir: "./puppeteer_profile",
       args: [
         "--no-sandbox",
@@ -59,7 +59,10 @@ class ScraperService {
       await page
         .waitForSelector("dl.dl-horizontal", { timeout: 10000 })
         .catch(() => {});
-      return await page.content();
+      const html = await page.content();
+      // LOG TEMPORAL
+      console.log("[Puppeteer] HTML snippet:", html.slice(0, 500));
+      return html;
     } finally {
       await browser.close().catch(() => {});
     }
@@ -77,93 +80,6 @@ class ScraperService {
       return this._resolveUrl(str, baseUrl);
     }
     return value;
-  }
-
-  // Interpreta un subconjunto de xpath usando cheerio
-  // Soporta: //tag, //tag[@attr='val'], //tag[contains(@attr,'val')],
-  //          //tag[OtherTag='text'], text(), @attr, normalize-space(), substring-after(), substring-before()
-  _evalXpath($, xpathExpr) {
-    const expr = xpathExpr.trim();
-
-    // normalize-space(substring-before(INNER_EXPR, 'delimiter'))
-    const nsSubBefore = expr.match(
-      /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
-    );
-    if (nsSubBefore) {
-      const inner = this._evalXpath($, nsSubBefore[1]);
-      const delim = nsSubBefore[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(0, idx).trim() : null;
-    }
-
-    // normalize-space(substring-after(INNER_EXPR, 'delimiter'))
-    const nsSubAfter = expr.match(
-      /^normalize-space\(substring-after\((.+),\s*'([^']*)'\)\)$/,
-    );
-    if (nsSubAfter) {
-      const inner = this._evalXpath($, nsSubAfter[1]);
-      const delim = nsSubAfter[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0
-        ? String(inner)
-            .slice(idx + delim.length)
-            .trim()
-        : null;
-    }
-
-    // normalize-space(INNER_EXPR)
-    const nsMatch = expr.match(/^normalize-space\((.+)\)$/);
-    if (nsMatch) {
-      const inner = this._evalXpath($, nsMatch[1]);
-      return inner != null ? String(inner).replace(/\s+/g, " ").trim() : null;
-    }
-
-    // substring-before(INNER_EXPR, 'delimiter')
-    const subBefore = expr.match(/^substring-before\((.+),\s*'([^']*)'\)$/);
-    if (subBefore) {
-      const inner = this._evalXpath($, subBefore[1]);
-      const delim = subBefore[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(0, idx) : null;
-    }
-
-    // substring-after(INNER_EXPR, 'delimiter')
-    const subAfter = expr.match(/^substring-after\((.+),\s*'([^']*)'\)$/);
-    if (subAfter) {
-      const inner = this._evalXpath($, subAfter[1]);
-      const delim = subAfter[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(idx + delim.length) : null;
-    }
-
-    // Separar selector del path final (/text() o /@attr)
-    let selectorExpr = expr;
-    let finalPart = null;
-
-    const textMatch = expr.match(/^(.*?)\/text\(\)$/);
-    const attrMatch = expr.match(/^(.*?)\/@([\w-]+)$/);
-    if (textMatch) {
-      selectorExpr = textMatch[1];
-      finalPart = "text";
-    } else if (attrMatch) {
-      selectorExpr = attrMatch[1];
-      finalPart = `@${attrMatch[2]}`;
-    }
-
-    // Convertir ruta xpath a selector CSS cheerio
-    const selector = this._xpathToSelector(selectorExpr);
-    if (!selector) return null;
-
-    const el = $(selector).first();
-    if (!el.length) return null;
-
-    if (finalPart === "text") return el.text().trim() || null;
-    if (finalPart?.startsWith("@")) return el.attr(finalPart.slice(1)) || null;
-    return el.text().trim() || null;
   }
 
   _xpathToSelector(xpathExpr) {
@@ -249,6 +165,26 @@ class ScraperService {
       if (inner == null) return null;
       const match = String(inner).match(new RegExp(regexMatch[2]));
       return match?.[1] ?? null;
+    }
+
+    // label-value:LABEL::ATTR → busca datum-row por texto del label y extrae atributo del span de valor
+    const labelValueMatch = expr.match(/^label-value:(.+?)::(.+)$/);
+    if (labelValueMatch) {
+      const labelText = labelValueMatch[1];
+      const attr = labelValueMatch[2];
+      let found = null;
+      $("div.datum-row").each((_, row) => {
+        const label = $(row).find("span.label").text().trim();
+        if (label.includes(labelText)) {
+          found = $(row)
+            .find(`span[${attr}]`)
+            .attr(attr.split("=")[0].replace("[", ""));
+          if (!found)
+            found = $(row).find("span[data-value]").attr("data-value");
+          return false;
+        }
+      });
+      return found || null;
     }
 
     // Support for /text()[N] -> text node by index (1-based)
