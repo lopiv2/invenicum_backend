@@ -4,6 +4,9 @@ const xpath = require("xpath");
 const scraperModel = require("../models/scraperModel");
 const prisma = require("../middleware/prisma");
 const cheerio = require("cheerio");
+const puppeteer = require("puppeteer-extra");
+const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+puppeteer.use(StealthPlugin());
 
 class ScraperService {
   _resolveUrl(value, baseUrl) {
@@ -36,6 +39,35 @@ class ScraperService {
     return results;
   }
 
+  async _fetchWithPuppeteer(url) {
+    const browser = await puppeteer.launch({
+      headless: false,
+      userDataDir: "./puppeteer_profile",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-blink-features=AutomationControlled",
+      ],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      );
+      await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
+      // Espera a que aparezca el dl de datos, máximo 10s
+      await page
+        .waitForSelector("dl.dl-horizontal", { timeout: 10000 })
+        .catch(() => {});
+      const html = await page.content();
+      // LOG TEMPORAL
+      console.log("[Puppeteer] HTML snippet:", html.slice(0, 500));
+      return html;
+    } finally {
+      await browser.close().catch(() => {});
+    }
+  }
+
   // Solo resuelve como URL si el valor parece una ruta/URL, no texto libre
   _maybeResolveUrl(value, baseUrl) {
     if (!value || !baseUrl) return value;
@@ -48,93 +80,6 @@ class ScraperService {
       return this._resolveUrl(str, baseUrl);
     }
     return value;
-  }
-
-  // Interpreta un subconjunto de xpath usando cheerio
-  // Soporta: //tag, //tag[@attr='val'], //tag[contains(@attr,'val')],
-  //          //tag[OtherTag='text'], text(), @attr, normalize-space(), substring-after(), substring-before()
-  _evalXpath($, xpathExpr) {
-    const expr = xpathExpr.trim();
-
-    // normalize-space(substring-before(INNER_EXPR, 'delimiter'))
-    const nsSubBefore = expr.match(
-      /^normalize-space\(substring-before\((.+),\s*'([^']*)'\)\)$/,
-    );
-    if (nsSubBefore) {
-      const inner = this._evalXpath($, nsSubBefore[1]);
-      const delim = nsSubBefore[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(0, idx).trim() : null;
-    }
-
-    // normalize-space(substring-after(INNER_EXPR, 'delimiter'))
-    const nsSubAfter = expr.match(
-      /^normalize-space\(substring-after\((.+),\s*'([^']*)'\)\)$/,
-    );
-    if (nsSubAfter) {
-      const inner = this._evalXpath($, nsSubAfter[1]);
-      const delim = nsSubAfter[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0
-        ? String(inner)
-            .slice(idx + delim.length)
-            .trim()
-        : null;
-    }
-
-    // normalize-space(INNER_EXPR)
-    const nsMatch = expr.match(/^normalize-space\((.+)\)$/);
-    if (nsMatch) {
-      const inner = this._evalXpath($, nsMatch[1]);
-      return inner != null ? String(inner).replace(/\s+/g, " ").trim() : null;
-    }
-
-    // substring-before(INNER_EXPR, 'delimiter')
-    const subBefore = expr.match(/^substring-before\((.+),\s*'([^']*)'\)$/);
-    if (subBefore) {
-      const inner = this._evalXpath($, subBefore[1]);
-      const delim = subBefore[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(0, idx) : null;
-    }
-
-    // substring-after(INNER_EXPR, 'delimiter')
-    const subAfter = expr.match(/^substring-after\((.+),\s*'([^']*)'\)$/);
-    if (subAfter) {
-      const inner = this._evalXpath($, subAfter[1]);
-      const delim = subAfter[2];
-      if (inner == null) return null;
-      const idx = String(inner).indexOf(delim);
-      return idx >= 0 ? String(inner).slice(idx + delim.length) : null;
-    }
-
-    // Separar selector del path final (/text() o /@attr)
-    let selectorExpr = expr;
-    let finalPart = null;
-
-    const textMatch = expr.match(/^(.*?)\/text\(\)$/);
-    const attrMatch = expr.match(/^(.*?)\/@([\w-]+)$/);
-    if (textMatch) {
-      selectorExpr = textMatch[1];
-      finalPart = "text";
-    } else if (attrMatch) {
-      selectorExpr = attrMatch[1];
-      finalPart = `@${attrMatch[2]}`;
-    }
-
-    // Convertir ruta xpath a selector CSS cheerio
-    const selector = this._xpathToSelector(selectorExpr);
-    if (!selector) return null;
-
-    const el = $(selector).first();
-    if (!el.length) return null;
-
-    if (finalPart === "text") return el.text().trim() || null;
-    if (finalPart?.startsWith("@")) return el.attr(finalPart.slice(1)) || null;
-    return el.text().trim() || null;
   }
 
   _xpathToSelector(xpathExpr) {
@@ -220,6 +165,26 @@ class ScraperService {
       if (inner == null) return null;
       const match = String(inner).match(new RegExp(regexMatch[2]));
       return match?.[1] ?? null;
+    }
+
+    // label-value:LABEL::ATTR → busca datum-row por texto del label y extrae atributo del span de valor
+    const labelValueMatch = expr.match(/^label-value:(.+?)::(.+)$/);
+    if (labelValueMatch) {
+      const labelText = labelValueMatch[1];
+      const attr = labelValueMatch[2];
+      let found = null;
+      $("div.datum-row").each((_, row) => {
+        const label = $(row).find("span.label").text().trim();
+        if (label.includes(labelText)) {
+          found = $(row)
+            .find(`span[${attr}]`)
+            .attr(attr.split("=")[0].replace("[", ""));
+          if (!found)
+            found = $(row).find("span[data-value]").attr("data-value");
+          return false;
+        }
+      });
+      return found || null;
     }
 
     // Support for /text()[N] -> text node by index (1-based)
@@ -443,19 +408,40 @@ class ScraperService {
     if (looksLikeHtml) {
       html = url;
     } else if (looksLikeUrl) {
-      const resp = await axios.get(url, {
-        timeout: 10000,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept:
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Cache-Control": "no-cache",
-          Referer: "https://www.google.com/",
-        },
-      });
-      html = resp.data;
+      try {
+        const resp = await axios.get(url, {
+          timeout: 10000,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept:
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Cache-Control": "max-age=0",
+            "Sec-Ch-Ua":
+              '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            Connection: "keep-alive",
+          },
+        });
+        html = resp.data;
+      } catch (e) {
+        if (e.response?.status === 403 || e.response?.status === 429) {
+          console.log(
+            `[Scraper] axios blocked (${e.response?.status}), retrying with puppeteer...`,
+          );
+          html = await this._fetchWithPuppeteer(url);
+        } else {
+          throw e;
+        }
+      }
     }
     if (!html) throw new Error("Could not obtain HTML for ad-hoc run");
     return this._extractFields(html, fields, url);
