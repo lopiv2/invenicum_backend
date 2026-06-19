@@ -32,11 +32,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
-# Activar pnpm vía corepack
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+
+RUN echo "enable-pre-post-scripts=true" > .npmrc && \
+    pnpm install --frozen-lockfile
 
 COPY prisma ./prisma
 RUN npx prisma generate
