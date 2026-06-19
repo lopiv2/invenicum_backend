@@ -38,9 +38,9 @@ RUN pnpm config set store-dir /root/.local/share/pnpm/store
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-RUN pnpm fetch
-
-RUN pnpm install --offline
+RUN pnpm fetch && \
+    pnpm approve-builds --all && \
+    pnpm install --offline
 
 COPY prisma ./prisma
 RUN npx prisma generate
