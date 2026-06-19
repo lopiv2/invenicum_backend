@@ -50,5 +50,14 @@
   },
   "overrides": {
     "rimraf": "^4.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@google/genai",
+      "@prisma/engines",
+      "prisma",
+      "protobufjs",
+      "puppeteer"
+    ]
   }
 }
