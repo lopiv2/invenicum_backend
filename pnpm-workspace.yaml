@@ -1,10 +1,15 @@
+onlyBuiltDependencies:
+  - "@google/genai"
+  - "@prisma/engines"
+  - prisma
+  - protobufjs
+  - puppeteer
+
+ignoredBuiltDependencies: []
+
 allowBuilds:
   '@google/genai': set this to true or false
   '@prisma/engines': set this to true or false
   prisma: set this to true or false
   protobufjs: set this to true or false
   puppeteer: set this to true or false
-onlyBuiltDependencies:
-  - "@prisma/engines"
-  - prisma
-  - puppeteer
