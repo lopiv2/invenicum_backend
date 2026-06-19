@@ -34,9 +34,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
+RUN pnpm config set store-dir /root/.local/share/pnpm/store
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm fetch
+
+RUN pnpm install --offline
 
 COPY prisma ./prisma
 RUN npx prisma generate
