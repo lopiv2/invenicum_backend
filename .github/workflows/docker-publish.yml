@@ -38,7 +38,7 @@ jobs:
     steps:
       - name: Checkout backend
         uses: actions/checkout@v4
-      
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -122,7 +122,7 @@ jobs:
           set -euo pipefail
 
           SHORT_SHA="${GITHUB_SHA::7}"
-          
+
           # 1. Prioridad de Versión: Input > Tag > SHA
           if [[ -n "${{ github.event.inputs.version }}" ]]; then
             RAW_VERSION="${{ github.event.inputs.version }}"
@@ -134,7 +134,7 @@ jobs:
 
           # Normalizar: quitar 'v' inicial si existe (v1.1.0-beta.1 -> 1.1.0-beta.1)
           APP_VERSION="${RAW_VERSION#v}"
-          
+
           # 2. Inicializar TAGS con la versión específica y el SHA
           TAGS="${IMAGE_NAME}:${APP_VERSION},${IMAGE_NAME}:sha-${SHORT_SHA}"
 
@@ -231,7 +231,7 @@ jobs:
             // Use provided release name (for workflow_dispatch) or fall back to tag
             const providedName = context.payload && context.payload.inputs && context.payload.inputs.release_name ? context.payload.inputs.release_name : null;
             const releaseTitle = providedName && providedName.trim().length > 0 ? providedName.trim() : tag;
-
+            const isPrerelease = tag.includes('beta') || tag.includes('alpha') || tag.includes('rc');
             try {
               const imageUrl = `https://ghcr.io/lopiv2/invenicum:${tag}`;
               const imageInfo = `Docker image: ${imageUrl}\n\nPull with:\n\tdocker pull ${imageUrl}`;
@@ -241,7 +241,7 @@ jobs:
                 const oldBody = release.body || '';
                 const bodyHasImage = oldBody.includes(imageUrl) || oldBody.includes(`docker pull ${imageUrl}`);
                 const newBody = bodyHasImage ? oldBody : (oldBody + "\n\n" + imageInfo).trim();
-                const isPrerelease = tag.includes('beta') || tag.includes('alpha') || tag.includes('rc');
+
                 
                 if (release.draft === true) {
                   // Publish the draft but preserve/append body
