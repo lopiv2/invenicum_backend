@@ -1,5 +1,22 @@
 # syntax=docker/dockerfile:1.7
 
+##############################
+# Flutter dependencies
+##############################
+
+FROM ghcr.io/cirruslabs/flutter:stable AS frontend-deps
+
+WORKDIR /frontend
+
+COPY --from=frontend pubspec.yaml pubspec.lock ./
+
+RUN --mount=type=cache,target=/root/.pub-cache \
+    flutter pub get
+
+##############################
+# Flutter build
+##############################
+
 FROM ghcr.io/cirruslabs/flutter:stable AS frontend-build
 
 WORKDIR /frontend
@@ -7,46 +24,66 @@ WORKDIR /frontend
 ARG API_URL=/api/v1
 ARG APP_VERSION=0.0.0
 
-COPY --from=frontend pubspec.yaml pubspec.lock ./
-RUN flutter pub get
+COPY --from=frontend-deps /root/.pub-cache /root/.pub-cache
+COPY --from=frontend-deps /frontend/.dart_tool /frontend/.dart_tool
 
 COPY --from=frontend . .
 
 RUN flutter config --enable-web
-RUN set -eux; \
-		if [ "${APP_VERSION}" != "0.0.0" ]; then \
-			BUILD_VERSION="${APP_VERSION}"; \
-		else \
-			BUILD_VERSION=$(grep '^version:' pubspec.yaml | head -n1 | awk '{print $2}' || echo "0.0.0"); \
-			BUILD_VERSION=$(echo "$BUILD_VERSION" | sed -E 's/\+.*$//; s/^v//;'); \
-			if [ -z "$BUILD_VERSION" ]; then BUILD_VERSION="0.0.0"; fi; \
-		fi; \
-		echo "Using APP_VERSION=$BUILD_VERSION"; \
-			flutter build web --release --dart-define=API_URL=${API_URL} --dart-define=APP_VERSION=$BUILD_VERSION && \
-			printf "%s" "$BUILD_VERSION" > build/web/APP_VERSION.txt
 
+RUN --mount=type=cache,target=/root/.pub-cache \
+    set -eux; \
+    flutter build web \
+      --release \
+      --dart-define=API_URL=${API_URL}
+
+RUN set -eux; \
+    if [ "${APP_VERSION}" != "0.0.0" ]; then \
+        BUILD_VERSION="${APP_VERSION}"; \
+    else \
+        BUILD_VERSION=$(grep '^version:' pubspec.yaml | head -n1 | awk '{print $2}' || echo "0.0.0"); \
+        BUILD_VERSION=$(echo "$BUILD_VERSION" | sed -E 's/\+.*$//; s/^v//'); \
+        [ -n "$BUILD_VERSION" ] || BUILD_VERSION="0.0.0"; \
+    fi; \
+    echo "Using APP_VERSION=$BUILD_VERSION"; \
+    printf "%s" "$BUILD_VERSION" > build/web/APP_VERSION.txt
+
+##############################
+# Backend dependencies
+##############################
 
 FROM node:22-bookworm-slim AS backend-deps
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssl && \
+    rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-RUN pnpm config set store-dir /root/.local/share/pnpm/store
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN corepack enable && \
+    corepack prepare pnpm@latest --activate
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-RUN pnpm fetch && \
+RUN pnpm config set store-dir /pnpm/store
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm fetch
+
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm approve-builds --all && \
-    pnpm install --offline
+    pnpm install --offline --frozen-lockfile
 
 COPY prisma ./prisma
-RUN npx prisma generate
 
+RUN --mount=type=cache,target=/root/.cache/prisma \
+    npx prisma generate
+
+##############################
+# Runtime
+##############################
 
 FROM node:22-bookworm-slim AS runtime
 
@@ -54,19 +91,26 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN apt-get update && apt-get install -y --no-install-recommends openssl mariadb-client && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      openssl \
+      mariadb-client && \
+    rm -rf /var/lib/apt/lists/*
 
-# Activar pnpm también en runtime (por si el entrypoint lo necesita)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && \
+    corepack prepare pnpm@latest --activate
 
 COPY --from=backend-deps /app/node_modules ./node_modules
+
 COPY prisma ./prisma
 COPY prisma.config.js ./
 COPY src ./src
+
 COPY --from=frontend-build /frontend/build/web ./public/web
+
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
-RUN chmod +x ./docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 3000
 

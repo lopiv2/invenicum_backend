@@ -6,7 +6,7 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 require("dotenv").config(); // Asegura que las variables de entorno se carguen
-const { Temporal } = require('@js-temporal/polyfill');
+const { Temporal } = require("@js-temporal/polyfill");
 const { AppConstants } = require("./config/appConstants");
 const authRoutes = require("./routes/authRoutes");
 const containerRoutes = require("./routes/containersRoutes");
@@ -29,9 +29,7 @@ const templateRoutes = require("./routes/templateRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const appRoutes = require("./routes/appRoutes");
 const scraperRoutes = require("./routes/scraperRoutes");
-const achievementRoutes = require('./routes/achievementRoutes');
-
-
+const achievementRoutes = require("./routes/achievementRoutes");
 
 // Create a instancia de the application Express
 const app = express();
@@ -44,13 +42,13 @@ app.use(
     origin: "*",
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    credentials: true,
   }),
 );
 
 // Increase the limit for soportar payloads Base64 de IA
-app.use(express.json({ limit: '10mb' })); 
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 // Environment constants
 const STATIC_URL_PREFIX = AppConstants.STATIC_URL_PREFIX;
@@ -75,7 +73,11 @@ const HAS_WEB_BUILD = fs.existsSync(WEB_INDEX_FILE);
 // the server inicia from a directorio distinto a the raiz del proyecto,
 // the archivos se guardarian en a lugar and Express the serviria from otro -> Cannot GET.
 const UPLOAD_DIR_TO_SERVE = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER);
-const ASSET_TYPES_DIR = path.resolve(process.cwd(), UPLOAD_BASE_FOLDER, ASSET_TYPES_SUBDIR);
+const ASSET_TYPES_DIR = path.resolve(
+  process.cwd(),
+  UPLOAD_BASE_FOLDER,
+  ASSET_TYPES_SUBDIR,
+);
 
 // Ensure que the directorios existan al iniciar
 [UPLOAD_DIR_TO_SERVE, ASSET_TYPES_DIR].forEach((dir) => {
@@ -123,7 +125,9 @@ console.log(
   `[Static] Serving ${API_BASE_PATH + STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`,
 );
 app.use((req, res, next) => {
-  console.log(`[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`);
+  console.log(
+    `[${Temporal.Now.plainDateISO().toString()}] ${req.method} ${req.url}`,
+  );
   next();
 });
 app.use(API_BASE_PATH + "/auth", authRoutes);
@@ -152,7 +156,10 @@ app.use(API_BASE_PATH + "/achievements", achievementRoutes);
 if (HAS_WEB_BUILD) {
   // Fallback para rutas de Flutter Web (SPA)
   app.get(/.*/, (req, res, next) => {
-    if (req.path.startsWith("/api/") || req.path.startsWith(STATIC_URL_PREFIX)) {
+    if (
+      req.path.startsWith("/api/") ||
+      req.path.startsWith(STATIC_URL_PREFIX)
+    ) {
       return next();
     }
 
@@ -168,7 +175,5 @@ if (HAS_WEB_BUILD) {
 app.listen(port, () => {
   console.log(`The application is running at http://localhost:${port}`);
   console.log(`API Base Path: http://localhost:${port}${API_BASE_PATH}`);
-  console.log(
-    `Static images at: http://localhost:${port}${STATIC_URL_PREFIX}`,
-  );
+  console.log(`Static images at: http://localhost:${port}${STATIC_URL_PREFIX}`);
 });

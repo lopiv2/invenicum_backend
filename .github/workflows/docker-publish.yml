@@ -39,15 +39,15 @@ jobs:
       - name: Checkout backend
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
+      #- name: Setup pnpm
+      #  uses: pnpm/action-setup@v4
+      #  with:
+      #    version: latest
 
-      - name: Setup Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      #- name: Setup Node 22
+      #  uses: actions/setup-node@v4
+      #  with:
+      #    node-version: "22"
 
       - name: Create backend tag (if requested)
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' }}
@@ -194,9 +194,15 @@ jobs:
           context: .
           file: Dockerfile.selfhosted
           push: true
+
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
           tags: ${{ steps.vars.outputs.tags }}
+
           build-contexts: |
             frontend=${{ steps.frontend.outputs.path }}
+
           build-args: |
             API_URL=/api/v1
             APP_VERSION=${{ steps.vars.outputs.app_version }}
