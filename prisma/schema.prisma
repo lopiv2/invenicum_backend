@@ -147,6 +147,7 @@ model UserPreferences {
   autoResetFieldsOnSaveAndContinue Boolean @default(false) @map("auto_reset_fields_on_save_and_continue")
   enableCloneBusterOmatic          Boolean @default(false) @map("enable_clone_buster_omatic")
   font                             String  @default("Inter") // Fuente de la aplicación
+  loadingAnimation                 String  @default("rotatingPlain") @map("loading_animation")
 
   userId Int  @unique
   user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -324,6 +325,7 @@ model Location {
 model AssetType {
   id           Int      @id @default(autoincrement())
   name         String
+  kind         String   @default("standard") @map("asset_kind")
   isSerialized Boolean  @default(true) @map("is_serialized")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -408,6 +410,7 @@ model InventoryItem {
   containerId       Int
   container         Container            @relation(fields: [containerId], references: [id])
   images            InventoryItemImage[]
+  model3dFiles      InventoryItemModel3D[]
   loans             Loan[]
   priceHistory      PriceHistory[]
 
@@ -447,6 +450,25 @@ model InventoryItemImage {
   createdAt DateTime @default(now())
 
   @@map("inventory_item_image")
+}
+
+model InventoryItemModel3D {
+  id              Int           @id @default(autoincrement())
+  sourceType      String        @default("upload") @map("source_type")
+  relativePath    String        @map("relative_path")
+  url             String
+  filename        String?
+  originalName    String?       @map("original_name")
+  mimeType        String?       @map("mime_type")
+  size            Int?
+  order           Int           @default(0)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  inventoryItemId Int           @map("inventory_item_id")
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId])
+  @@map("inventory_item_model_3d")
 }
 
 // Modelo para las listas de datos personalizadas

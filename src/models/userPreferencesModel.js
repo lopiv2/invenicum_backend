@@ -30,6 +30,46 @@
     this.autoResetFieldsOnSaveAndContinue = prefs.autoResetFieldsOnSaveAndContinue ?? false;
     this.enableCloneBusterOmatic = prefs.enableCloneBusterOmatic ?? false;
     this.font = prefs.font || "Inter";
+    this.loadingAnimation = UserPreferencesDTO.normalizeLoadingAnimation(
+      prefs.loadingAnimation,
+    );
+  }
+
+  static normalizeLoadingAnimation(value) {
+    const allowed = new Set([
+      "rotatingPlain",
+      "doubleBounce",
+      "wanderingCubes",
+      "fadingFour",
+      "fadingCube",
+      "pulse",
+      "fadingCircle",
+      "wave",
+      "threeBounce",
+      "circle",
+      "cubeGrid",
+      "chasingDots",
+      "rotatingCircle",
+      "hourGlass",
+      "foldingCube",
+      "pumpingHeart",
+      "pouringHourGlass",
+      "pouringHourGlassRefined",
+      "fadingGrid",
+      "ring",
+      "ripple",
+      "spinningCircle",
+      "spinningLines",
+      "squareCircle",
+      "dualRing",
+      "pianoWave",
+      "dancingSquare",
+      "threeInOut",
+      "waveSpinner",
+      "pulsingGrid",
+    ]);
+
+    return allowed.has(value) ? value : "rotatingPlain";
   }
 
   static toPrismaData(body) {
@@ -86,6 +126,16 @@
     }
 
     if (body.font) prismaData.font = body.font;
+
+    if (body.loadingAnimation !== undefined) {
+      const loadingAnimation = UserPreferencesDTO.normalizeLoadingAnimation(
+        body.loadingAnimation,
+      );
+      if (loadingAnimation !== body.loadingAnimation) {
+        throw new Error("Invalid loading animation");
+      }
+      prismaData.loadingAnimation = loadingAnimation;
+    }
 
     return prismaData;
   }

@@ -14,6 +14,97 @@ const prisma = require("../middleware/prisma");
 // getPublicUrl: fuente de verdad única for construir URLs de imágenes,
 // igual que en assetTypeService. Evita the bug __dirname vs process.cwd().
 const { getPublicUrl } = require("../middleware/upload");
+const model3dService = require("../services/model3dService");
+
+const model3dStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, model3dService.MODEL_DIR),
+  filename: (req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    cb(null, `model-${unique}.glb`);
+  },
+});
+const model3dUpload = multer({
+  storage: model3dStorage,
+  limits: { fileSize: model3dService.MAX_SIZE },
+  fileFilter: (req, file, cb) => {
+    if (path.extname(file.originalname).toLowerCase() === ".glb") {
+      return cb(null, true);
+    }
+    cb(new Error("Solo se permiten archivos GLB."));
+  },
+});
+
+router.post(
+  "/items/:id/models-3d/upload",
+  verifyToken,
+  (req, res, next) => {
+    model3dUpload.single("model")(req, res, (err) => {
+      if (err) {
+        const MulterError = require("multer").MulterError;
+        if (err instanceof MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(400).json({
+              success: false,
+              message: `El archivo supera el tamaño máximo permitido de ${model3dService.MAX_SIZE_MB} MB.`,
+            });
+          }
+          if (err.code === "LIMIT_UNEXPECTED_FILE") {
+            return res.status(400).json({
+              success: false,
+              message: "Nombre de campo inesperado. Usa 'model'.",
+            });
+          }
+          return res.status(400).json({
+            success: false,
+            message: `Error de upload: ${err.message}`,
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          message: err.message,
+        });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const model = await model3dService.addUploadedModel(
+        req.params.id,
+        req.user.id,
+        req.file,
+        req.body.order,
+      );
+      res.status(201).json({ success: true, data: model });
+    } catch (error) {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      res.status(400).json({ success: false, message: error.message });
+    }
+  },
+);
+
+router.post("/items/:id/models-3d/path", verifyToken, async (req, res) => {
+  try {
+    const model = await model3dService.addServerModel(
+      req.params.id,
+      req.user.id,
+      req.body.relativePath,
+      req.body.order,
+    );
+    res.status(201).json({ success: true, data: model });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+router.delete("/items/models-3d/:modelId", verifyToken, async (req, res) => {
+  try {
+    await model3dService.deleteModel(req.params.modelId, req.user.id);
+    res.status(204).send();
+  } catch (error) {
+    res.status(404).json({ success: false, message: error.message });
+  }
+});
 
 // use process.cwd() (igual que upload.js) so that the route de Createción
 // de directorio and the de guardado de Multer coincidan siempre.

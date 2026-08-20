@@ -18,8 +18,54 @@ const UPLOAD_DIR_ABSOLUTE = path.resolve(
   process.env.UPLOAD_FOLDER || "uploads/inventory",
 );
 
+const MODEL_3D_DIR = path.resolve(
+  process.cwd(),
+  process.env.MODEL_3D_ROOT || path.join(UPLOAD_DIR_ABSOLUTE, "models3d"),
+);
+
 // getPublicUrl: converts Multer's file.path to the correct public URL.
 const { getPublicUrl } = require("../middleware/upload");
+
+function deleteGlbFiles(models) {
+  if (!models || models.length === 0) return;
+  for (const model of models) {
+    if (model.sourceType !== "upload" || !model.filename) continue;
+    const filePath = path.join(MODEL_3D_DIR, model.filename);
+    try {
+      if (filePath.startsWith(`${MODEL_3D_DIR}${path.sep}`) && fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[deleteGlbFiles] GLB borrado: ${filePath}`);
+      }
+    } catch (err) {
+      console.error(`[deleteGlbFiles] Error borrando GLB ${filePath}:`, err);
+    }
+  }
+}
+
+function deleteItemPhysicalFiles(item) {
+  const staticPrefix = AppConstants.STATIC_URL_PREFIX.replace(/\/+$/, "");
+
+  if (item.images && item.images.length > 0) {
+    for (const image of item.images) {
+      let relativePath = image.url;
+      if (relativePath.startsWith(staticPrefix + "/")) {
+        relativePath = relativePath.substring(staticPrefix.length + 1);
+      } else if (relativePath.startsWith("/")) {
+        relativePath = relativePath.substring(1);
+      }
+      const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
+      try {
+        if (fs.existsSync(absolutePath)) fs.unlinkSync(absolutePath);
+      } catch (err) {
+        console.error(`[deleteItemPhysicalFiles] Error borrando imagen:`, err);
+      }
+    }
+  }
+
+  if (item.model3dFiles && item.model3dFiles.length > 0) {
+    deleteGlbFiles(item.model3dFiles);
+  }
+}
 
 class InventoryItemService {
   parseNumericInput(value, fallback = 0) {
@@ -164,6 +210,7 @@ class InventoryItemService {
         },
         include: {
           images: { orderBy: { order: "asc" } },
+          model3dFiles: { orderBy: { order: "asc" } },
         },
       });
 
@@ -197,6 +244,7 @@ class InventoryItemService {
       assetTypeId,
       locationId,
       images: imagesFromRequest,
+      model3dFiles: _model3dFiles,
       customFieldValues,
       barcode,
       totalMarketValue: _tmv, // Lo extraemos para que no caiga en restOfData
@@ -430,6 +478,7 @@ class InventoryItemService {
         },
         include: {
           images: true,
+          model3dFiles: { orderBy: { order: "asc" } },
           location: true,
         },
       });
@@ -511,6 +560,7 @@ class InventoryItemService {
         images: {
           orderBy: { order: "asc" },
         },
+        model3dFiles: { orderBy: { order: "asc" } },
       },
     });
 
@@ -594,6 +644,7 @@ class InventoryItemService {
         images: {
           orderBy: { order: "asc" },
         },
+        model3dFiles: { orderBy: { order: "asc" } },
       },
     });
   }
@@ -619,6 +670,7 @@ class InventoryItemService {
       imageUrl: _imageUrl,
       location: _location,
       priceHistory: _ph,
+      model3dFiles: _model3dFiles,
       ...restOfData
     } = data;
     // 2. CONVERSIÓN DE TIPOS CRÍTICOS
@@ -771,7 +823,10 @@ class InventoryItemService {
 
     const finalItem = await prisma.inventoryItem.findUnique({
       where: { id: itemIdInt },
-      include: { images: { orderBy: { order: "asc" } } },
+      include: {
+        images: { orderBy: { order: "asc" } },
+        model3dFiles: { orderBy: { order: "asc" } },
+      },
     });
 
     if (!finalItem) throw new Error("Item not found after update.");
@@ -795,6 +850,7 @@ class InventoryItemService {
         },
         include: {
           images: true, // Incluimos imágenes por si las necesitas en el dashboard
+          model3dFiles: { orderBy: { order: "asc" } },
           location: true,
           assetType: true,
         },
@@ -1000,6 +1056,7 @@ class InventoryItemService {
       // 💡 Incluir the imágenes es FUNDAMENTAL
       include: {
         images: true,
+        model3dFiles: true,
       },
     });
 
@@ -1008,42 +1065,7 @@ class InventoryItemService {
     }
 
     // 2. DELETE FILES FROM disk
-    // the URLs en DB tienen formato /images/items/item-xxx.jpg
-    // UPLOAD_DIR_ABSOLUTE apunta a uploads/inventory
-    // → hay que quitar the prefijo /images/ for get items/item-xxx.jpg
-    //   and unirlo with UPLOAD_DIR_ABSOLUTE → uploads/inventory/items/item-xxx.jpg
-    if (itemToDelete.images && itemToDelete.images.length > 0) {
-      const staticPrefix = AppConstants.STATIC_URL_PREFIX.replace(/\/+$/, "");
-
-      for (const image of itemToDelete.images) {
-        let relativePath = image.url;
-
-        // Quitamos the prefijo estático (/images) for quedarnos with items/archivo.jpg
-        if (relativePath.startsWith(staticPrefix + "/")) {
-          relativePath = relativePath.substring(staticPrefix.length + 1);
-        } else if (relativePath.startsWith("/")) {
-          relativePath = relativePath.substring(1);
-        }
-
-        const absolutePath = path.join(UPLOAD_DIR_ABSOLUTE, relativePath);
-
-        try {
-          if (fs.existsSync(absolutePath)) {
-            fs.unlinkSync(absolutePath);
-            console.log(`[deleteItem] ✅ Imagen borrada: ${absolutePath}`);
-          } else {
-            console.warn(
-              `[deleteItem] ⚠️ Imagen no encontrada en disco: ${absolutePath}`,
-            );
-          }
-        } catch (err) {
-          console.error(
-            `[deleteItem] ❌ Error borrando imagen ${absolutePath}:`,
-            err,
-          );
-        }
-      }
-    }
+    deleteItemPhysicalFiles(itemToDelete);
 
     // 3. BORRAR REGISTRO DE the BASE DE data
     // Use `delete` on the specific record. if the schema has

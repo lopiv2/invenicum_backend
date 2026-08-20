@@ -6,6 +6,7 @@ const fs = require("fs");
 require("dotenv").config();
 const AssetTypeDTO = require("../models/assetTypeModel");
 const BOOLEAN_TYPE_DB = "boolean";
+const ASSET_TYPE_KINDS = new Set(["standard", "gallery3d"]);
 
 // 🔑 getPublicUrl is the ONLY source of truth for building image URLs.
 // Converts the disk path returned by Multer into the public URL served by Express.
@@ -39,8 +40,10 @@ async function createAssetType(containerId, userId, data) {
     possessionFieldId,
     desiredFieldId,
     isSerialized,
+    kind,
   } = data;
   const files = data.files || [];
+  const assetKind = ASSET_TYPE_KINDS.has(kind) ? kind : "standard";
 
   // Basic validation
   if (!name || !fieldDefinitions) {
@@ -87,6 +90,7 @@ async function createAssetType(containerId, userId, data) {
     const newAssetType = await prisma.assetType.create({
       data: {
         name,
+        kind: assetKind,
         containerId: parseInt(containerId),
         isSerialized: !!isSerialized,
         possessionFieldId: possessionFieldId
@@ -192,7 +196,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
 
   // 1. Verify propiedad and existencia
   const verification = await getAssetTypeById(assetTypeIdInt, userId, {
-    include: { images: true, fieldDefinitions: true },
+        include: { images: true, fieldDefinitions: true },
   });
 
   if (!verification.success) {
@@ -288,6 +292,12 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         name: assetTypeUpdates.name,
         isSerialized: !!assetTypeUpdates.isSerialized,
       };
+      if (assetTypeUpdates.kind !== undefined) {
+        if (!ASSET_TYPE_KINDS.has(assetTypeUpdates.kind)) {
+          throw new Error("Tipo de activo no válido.");
+        }
+        mainUpdateData.kind = assetTypeUpdates.kind;
+      }
       if (assetTypeUpdates.possessionFieldId !== undefined) {
         mainUpdateData.possessionFieldId = assetTypeUpdates.possessionFieldId
           ? parseInt(assetTypeUpdates.possessionFieldId)
@@ -376,6 +386,32 @@ async function deleteAssetType(assetTypeId, userId) {
     }
   }
 
+  // 2b. DELETE GLB FILES from disk for all items of this asset type
+  const MODEL_3D_DIR = path.resolve(
+    process.cwd(),
+    process.env.MODEL_3D_ROOT || path.join(
+      process.env.UPLOAD_FOLDER || "uploads/inventory",
+      "models3d",
+    ),
+  );
+  const itemsWithModels = await prisma.inventoryItem.findMany({
+    where: { assetTypeId: assetTypeIdInt, container: { userId: userId } },
+    select: { model3dFiles: { select: { sourceType: true, filename: true } } },
+  });
+  for (const item of itemsWithModels) {
+    for (const model of item.model3dFiles) {
+      if (model.sourceType !== "upload" || !model.filename) continue;
+      const modelPath = path.join(MODEL_3D_DIR, model.filename);
+      try {
+        if (modelPath.startsWith(`${MODEL_3D_DIR}${path.sep}`) && fs.existsSync(modelPath)) {
+          fs.unlinkSync(modelPath);
+        }
+      } catch (err) {
+        console.error(`Error deleting GLB ${modelPath}:`, err);
+      }
+    }
+  }
+
   // 3. BORRAR REGISTROS DE the BASE DE data (Transacción)
   try {
     await prisma.$transaction(async (tx) => {
@@ -431,16 +467,20 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
         assetTypeId: id,
         container: { userId: userId },
       },
-      include: { images: true },
+      include: { images: true, model3dFiles: true },
     });
 
     // 3b. Delete files from disk for each item and its images
+    const staticPrefix = AppConstants.STATIC_URL_PREFIX.replace(/\/+$/, "");
     for (const item of itemsToDelete) {
       for (const image of item.images) {
-        // Use the filename (asumimos que existe and fue guardado)
-        const filename = path.basename(image.url);
-        // 🔑 using the route absoluta corregida for Inventory Items
-        const absolutePath = path.join(UPLOAD_DIR_INVENTORY_ABSOLUTE, filename);
+        let relativePath = image.url;
+        if (relativePath.startsWith(staticPrefix + "/")) {
+          relativePath = relativePath.substring(staticPrefix.length + 1);
+        } else if (relativePath.startsWith("/")) {
+          relativePath = relativePath.substring(1);
+        }
+        const absolutePath = path.join(UPLOAD_DIR_INVENTORY_ABSOLUTE, relativePath);
 
         try {
           if (fs.existsSync(absolutePath)) {
@@ -449,6 +489,25 @@ async function deleteAssetTypeItems(assetTypeId, userId) {
           }
         } catch (err) {
           console.error(`Error deleting item file ${absolutePath}:`, err);
+        }
+      }
+
+      // Delete GLB files for this item
+      if (item.model3dFiles && item.model3dFiles.length > 0) {
+        const MODEL_3D_DIR = path.resolve(
+          process.cwd(),
+          process.env.MODEL_3D_ROOT || path.join(UPLOAD_DIR_INVENTORY_ABSOLUTE, "models3d"),
+        );
+        for (const model of item.model3dFiles) {
+          if (model.sourceType !== "upload" || !model.filename) continue;
+          const modelPath = path.join(MODEL_3D_DIR, model.filename);
+          try {
+            if (modelPath.startsWith(`${MODEL_3D_DIR}${path.sep}`) && fs.existsSync(modelPath)) {
+              fs.unlinkSync(modelPath);
+            }
+          } catch (err) {
+            console.error(`Error deleting GLB ${modelPath}:`, err);
+          }
         }
       }
     }
