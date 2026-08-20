@@ -5,6 +5,7 @@ class AssetTypeDTO {
     this.id = parseInt(prismaAssetType.id);
     this.name = prismaAssetType.name;
     this.containerId = parseInt(prismaAssetType.containerId);
+    this.kind = prismaAssetType.kind || "standard";
     this.isSerialized = !!prismaAssetType.isSerialized;
     this.possessionFieldId = prismaAssetType.possessionFieldId
       ? parseInt(prismaAssetType.possessionFieldId)

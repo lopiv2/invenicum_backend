@@ -37,13 +37,35 @@ const app = express();
 // ----------------------------------------------------
 // 1. MIDDLEWARES (CORS, JSON)
 // ----------------------------------------------------
+const configuredCorsOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const corsOptions = {
+  origin: (requestOrigin, callback) => {
+    // Native clients and same-origin requests do not send an Origin header.
+    if (!requestOrigin) return callback(null, true);
+
+    // In development, allow the configured Flutter Web origins. In
+    // production, set CORS_ORIGINS to an explicit comma-separated allowlist.
+    if (
+      configuredCorsOrigins.length === 0 ||
+      configuredCorsOrigins.includes(requestOrigin)
+    ) {
+      return callback(null, true);
+    }
+
+    return callback(new Error("Origin not allowed by CORS"));
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
 app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-  }),
+  cors(corsOptions),
 );
 
 // Increase the limit for soportar payloads Base64 de IA
@@ -88,7 +110,16 @@ const ASSET_TYPES_DIR = path.resolve(
 });
 
 // Mapping: GET /images/asset-types/file.png -> disk: uploads/inventory/asset-types/file.png
-app.use(STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
+app.use(
+  STATIC_URL_PREFIX,
+  express.static(UPLOAD_DIR_TO_SERVE, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".glb")) {
+        res.setHeader("Content-Type", "model/gltf-binary");
+      }
+    },
+  }),
+);
 console.log(`[Static] Serving ${STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`);
 
 if (HAS_WEB_BUILD) {
@@ -120,7 +151,16 @@ app.get("/", (req, res) => {
 const API_BASE_PATH = "/api/" + API_VERSION;
 // Exponer las mismas imágenes también bajo el prefijo de la API
 // (algunos clientes hacen la petición a /api/v1/images/...)
-app.use(API_BASE_PATH + STATIC_URL_PREFIX, express.static(UPLOAD_DIR_TO_SERVE));
+app.use(
+  API_BASE_PATH + STATIC_URL_PREFIX,
+  express.static(UPLOAD_DIR_TO_SERVE, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith(".glb")) {
+        res.setHeader("Content-Type", "model/gltf-binary");
+      }
+    },
+  }),
+);
 console.log(
   `[Static] Serving ${API_BASE_PATH + STATIC_URL_PREFIX} -> ${UPLOAD_DIR_TO_SERVE}`,
 );

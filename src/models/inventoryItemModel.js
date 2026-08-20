@@ -66,6 +66,18 @@ class InventoryItemDTO {
           order: img.order,
         }))
       : [];
+
+    this.model3dFiles = (prismaItem.model3dFiles || []).map((model) => ({
+      id: parseInt(model.id),
+      sourceType: model.sourceType,
+      relativePath: model.relativePath,
+      url: model.url,
+      filename: model.filename || null,
+      originalName: model.originalName || null,
+      mimeType: model.mimeType || null,
+      size: model.size || null,
+      order: model.order || 0,
+    }));
   }
 
   toJSON() {

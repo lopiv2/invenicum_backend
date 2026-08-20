@@ -59,6 +59,7 @@ router.post(
       const assetTypeData = {
         ...req.body,
         isSerialized: isSerialized,
+        kind: req.body.kind || "standard",
         // CORRECCIÓN: fieldDefinitions se parsea and se incluyen the archivos
         fieldDefinitions: JSON.parse(req.body.fieldDefinitions || "[]"),
         files: uploadedFiles,
@@ -153,6 +154,7 @@ router.patch(
         ...(req.body.isSerialized !== undefined && {
           isSerialized: req.body.isSerialized === "true",
         }),
+        ...(req.body.kind && { kind: req.body.kind }),
 
         // quantity se parsea a entero if existe
         ...(req.body.quantity !== undefined && {
