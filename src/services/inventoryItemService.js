@@ -194,24 +194,41 @@ class InventoryItemService {
 
     try {
       // 5. CreateCIÓN EN PRISMA
-      const newItem = await prisma.inventoryItem.create({
-        data: {
-          ...cleanRestOfData,
-          quantity,
-          minStock,
-                    marketValue,
-          barcode: finalBarcode,
-          serialNumber: finalSerialNumber,
-          customFieldValues: parsedCustomFields,
-          container: { connect: { id: cId } },
-          assetType: { connect: { id: aTId } },
-          location: { connect: { id: lId } },
-          images: { create: imageRelations },
-        },
-        include: {
-          images: { orderBy: { order: "asc" } },
-          model3dFiles: { orderBy: { order: "asc" } },
-        },
+      // A manual market value also stamps lastPriceUpdate and seeds the
+      // price history so charts and syncs have a starting point.
+      const manualPrice = marketValue > 0 ? marketValue : null;
+      const newItem = await prisma.$transaction(async (tx) => {
+        const created = await tx.inventoryItem.create({
+          data: {
+            ...cleanRestOfData,
+            quantity,
+            minStock,
+            marketValue,
+            ...(manualPrice !== null ? { lastPriceUpdate: new Date() } : {}),
+            barcode: finalBarcode,
+            serialNumber: finalSerialNumber,
+            customFieldValues: parsedCustomFields,
+            container: { connect: { id: cId } },
+            assetType: { connect: { id: aTId } },
+            location: { connect: { id: lId } },
+            images: { create: imageRelations },
+          },
+          include: {
+            images: { orderBy: { order: "asc" } },
+            model3dFiles: { orderBy: { order: "asc" } },
+          },
+        });
+        if (manualPrice !== null) {
+          await tx.priceHistory.create({
+            data: {
+              price: manualPrice,
+              currency: created.currency || "USD",
+              inventoryItem: { connect: { id: created.id } },
+              createdAt: new Date(),
+            },
+          });
+        }
+        return created;
       });
 
       // 6. RETORNO AUTOMATIZADO with the DTO 🏆
@@ -717,6 +734,21 @@ class InventoryItemService {
       delete restOfData.market_value;
     }
 
+    // 🔑 Manual market value: remember the previous value so the price
+    // history is only stamped when it actually changes.
+    let previousMarketValue = null;
+    if (restOfData.marketValue !== undefined) {
+      const previous = await prisma.inventoryItem.findUnique({
+        where: { id: itemIdInt },
+        select: { marketValue: true },
+      });
+      previousMarketValue = previous ? Number(previous.marketValue ?? 0) : null;
+    }
+    const manualMarketValueChanged =
+      restOfData.marketValue !== undefined &&
+      previousMarketValue !== null &&
+      Number(restOfData.marketValue ?? 0) !== previousMarketValue;
+
     const updateActions = [];
 
     // ===========================================
@@ -784,6 +816,8 @@ class InventoryItemService {
       assetTypeId: aTId,
       locationId: !isNaN(lId) ? lId : undefined,
       customFieldValues: parsedCustomFields,
+      // Manual price edits count as a fresh valuation.
+      ...(manualMarketValueChanged ? { lastPriceUpdate: new Date() } : {}),
     };
 
     delete itemUpdateData.id;
@@ -831,7 +865,40 @@ class InventoryItemService {
 
     if (!finalItem) throw new Error("Item not found after update.");
 
-    // E. Low Stock Alert
+    // E. Manual market value: record it in the price history (one entry/day)
+    if (manualMarketValueChanged) {
+      const now = new Date();
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
+      const endOfToday = new Date(now);
+      endOfToday.setHours(23, 59, 59, 999);
+      const existingEntryToday = await prisma.priceHistory.findFirst({
+        where: {
+          inventoryItemId: itemIdInt,
+          createdAt: { gte: startOfToday, lte: endOfToday },
+        },
+      });
+      const newPrice = Number(finalItem.marketValue ?? 0);
+      if (existingEntryToday) {
+        if (Number(existingEntryToday.price) !== newPrice) {
+          await prisma.priceHistory.update({
+            where: { id: existingEntryToday.id },
+            data: { price: newPrice },
+          });
+        }
+      } else {
+        await prisma.priceHistory.create({
+          data: {
+            price: newPrice,
+            currency: finalItem.currency || "USD",
+            inventoryItem: { connect: { id: itemIdInt } },
+            createdAt: now,
+          },
+        });
+      }
+    }
+
+    // F. Low Stock Alert
 
     await alertService.checkAndNotifyLowStock(userId, finalItem);
 
