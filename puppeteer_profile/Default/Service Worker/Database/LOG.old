@@ -1,2 +1,3 @@
-2026/06/15-11:10:09.366 29cc Creating DB C:\Programacion\invenicum_backend\puppeteer_profile\Default\Service Worker\Database since it was missing.
-2026/06/15-11:10:09.377 29cc Reusing MANIFEST C:\Programacion\invenicum_backend\puppeteer_profile\Default\Service Worker\Database/MANIFEST-000001
+2026/11/03-11:12:52.450 3c74 Reusing MANIFEST C:\Programacion\invenicum_backend\puppeteer_profile\Default\Service Worker\Database/MANIFEST-000001
+2026/11/03-11:12:52.474 3c74 Recovering log #3
+2026/11/03-11:12:52.475 3c74 Reusing old log C:\Programacion\invenicum_backend\puppeteer_profile\Default\Service Worker\Database/000003.log 
