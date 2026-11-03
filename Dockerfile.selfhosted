@@ -73,7 +73,6 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm fetch
 
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm approve-builds --all && \
     pnpm install --offline --frozen-lockfile
 
 COPY prisma ./prisma
