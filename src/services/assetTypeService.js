@@ -65,7 +65,7 @@ async function createAssetType(containerId, userId, data) {
   }));
 
   // 2. Prepare definitions for Prisma with numeric type validation
-  const fieldDefinitionsForPrisma = fieldDefinitions.map((def) => {
+  const fieldDefinitionsForPrisma = fieldDefinitions.map((def, index) => {
     const type = def.type.toLowerCase();
     // We consider as numeric the types that can be used for calculations
     const isNumeric =
@@ -83,6 +83,8 @@ async function createAssetType(containerId, userId, data) {
       isSummable: isNumeric ? !!def.isSummable : false,
       isMonetary: isNumeric ? !!def.isMonetary : false,
       isCountable: isNumeric ? !!def.isCountable : false,
+      // Visual order follows the array position sent by the client
+      order: index,
     };
   });
 
@@ -105,7 +107,7 @@ async function createAssetType(containerId, userId, data) {
         },
       },
       include: {
-        fieldDefinitions: true,
+        fieldDefinitions: { orderBy: { order: "asc" } },
         images: { orderBy: { order: "asc" } },
       },
     });
@@ -141,7 +143,7 @@ async function getAssetTypeById(assetTypeId, userId) {
       where: { id },
       include: {
         container: true,
-        fieldDefinitions: true,
+        fieldDefinitions: { orderBy: { order: "asc" } },
         images: {
           orderBy: { order: "asc" },
         },
@@ -256,7 +258,8 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         });
 
         // 2. Upsert (update o Create)
-        for (const fd of fieldDefinitions) {
+        for (let index = 0; index < fieldDefinitions.length; index++) {
+          const fd = fieldDefinitions[index];
           const type = fd.type.toLowerCase();
           const isNumeric =
             type === "number" || type === "price" || type === "currency";
@@ -270,6 +273,8 @@ async function updateAssetType(assetTypeId, userId, updateData) {
             isSummable: isNumeric ? !!fd.isSummable : false,
             isMonetary: isNumeric ? !!fd.isMonetary : false,
             isCountable: isNumeric ? !!fd.isCountable : false,
+            // Visual order follows the array position sent by the client
+            order: index,
           };
 
           if (fd.id && parseInt(fd.id) > 0) {
@@ -313,7 +318,7 @@ async function updateAssetType(assetTypeId, userId, updateData) {
         where: { id: assetTypeIdInt },
         data: mainUpdateData,
         include: {
-          fieldDefinitions: { orderBy: { id: "asc" } },
+          fieldDefinitions: { orderBy: { order: "asc" } },
           images: { orderBy: { order: "asc" } },
         },
       });

@@ -13,6 +13,7 @@ class FieldDefinitionDTO {
     this.isMonetary = !!(data.isMonetary || data.is_monetary);
     
     this.dataListId = data.dataListId || data.data_list_id || null;
+    this.order = Number.isFinite(Number(data.order)) ? Number(data.order) : 0;
     this.options = data.options || null;
   }
 
