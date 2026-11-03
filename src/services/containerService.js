@@ -6,7 +6,7 @@ const CONTAINER_INCLUDE = {
   assetTypes: {
     // Include field definitions for each AssetType
     include: {
-      fieldDefinitions: true,
+      fieldDefinitions: { orderBy: { order: "asc" } },
       images: true,
     },
   },

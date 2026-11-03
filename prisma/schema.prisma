@@ -362,6 +362,9 @@ model CustomFieldDefinition {
   // OPCIONAL: ID de una lista de valores predefinidos si type es 'list'
   dataListId Int? @map("data_list_id")
 
+  // Orden visual de los campos dentro del tipo de activo
+  order Int @default(0) @map("order")
+
   // Relación con AssetType (Muchos a Uno)
   assetTypeId Int       @map("asset_type_id")
   assetType   AssetType @relation(fields: [assetTypeId], references: [id], onDelete: Cascade)
