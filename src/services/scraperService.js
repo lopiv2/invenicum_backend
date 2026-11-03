@@ -41,7 +41,7 @@ class ScraperService {
 
   async _fetchWithPuppeteer(url) {
     const browser = await puppeteer.launch({
-      headless: false,
+      headless: true,
       userDataDir: "./puppeteer_profile",
       args: [
         "--no-sandbox",
